@@ -609,6 +609,8 @@ struct StaticSpecializationDependency {
   string function_name;
   vector<string> parameter_types;
   string specialization_key;
+  string callee_callable_identity;
+  SpecId callee_spec_id = InvalidSpecId;
 };
 struct FunctionSpecialization {
   string generated_name;
@@ -840,6 +842,10 @@ struct SemanticCallEdge {
   SpecId callee_spec_id = InvalidSpecId;
   SemanticCallTargetKind target_kind = SemanticCallTargetKind::Unresolved;
   string target_module_identity;
+  // For a higher-order call, these IDs bind each function-valued argument
+  // occurrence to its checked concrete callable specialization. Non-callable
+  // argument slots contain InvalidSpecId.
+  vector<SpecId> argument_callable_spec_ids;
 };
 
 // Minimal resolved-use facts retained by the ordinary checker for semantic

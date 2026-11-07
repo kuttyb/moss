@@ -1871,8 +1871,8 @@ struct TypedSemanticModuleV1 {
               requirement.owner_callable_identity &&
           candidate.specialization_identity ==
               requirement.specialization_identity &&
-          candidate.specialization_context ==
-              requirement.specialization_context;
+          candidate.specialization_id ==
+              requirement.specialization_id;
     };
     const TypedTryContinuationRequirementV1* required = nullptr;
     std::size_t requirement_count = 0;
@@ -1927,7 +1927,7 @@ struct TypedSemanticModuleV1 {
           candidate.source_raise_alternatives ==
               requirement.source_raise_alternatives &&
           candidate.recovery_alternatives == requirement.recovery_alternatives &&
-          candidate.specialization_context == requirement.specialization_context &&
+          candidate.specialization_id == requirement.specialization_id &&
           candidate.specialization_identity == requirement.specialization_identity) {
         if (required) throw std::invalid_argument(
             "duplicate or contradictory required exceptional ownership identity");
@@ -1950,7 +1950,7 @@ struct TypedSemanticModuleV1 {
           fact.raised_variant_identity == requirement.raised_variant_identity &&
           fact.source_raise_alternatives == requirement.source_raise_alternatives &&
           fact.recovery_alternatives == requirement.recovery_alternatives &&
-          fact.specialization_context == requirement.specialization_context &&
+          fact.specialization_id == requirement.specialization_id &&
           fact.specialization_identity == requirement.specialization_identity) {
         if (result) throw std::invalid_argument(
             "duplicate or contradictory exceptional ownership facts");
@@ -2004,8 +2004,8 @@ struct TypedSemanticModuleV1 {
               source_edge.recovery_alternatives ||
           requirement.selected_carrier_type_identity !=
               selected_carrier_type_identity ||
-          requirement.specialization_context !=
-              source_edge.specialization_context ||
+          requirement.specialization_id !=
+              source_edge.specialization_id ||
           requirement.specialization_identity !=
               source_edge.specialization_identity)
         continue;
@@ -2046,8 +2046,8 @@ struct TypedSemanticModuleV1 {
               requirement.source_raise_alternatives;
           exceptional_requirement.recovery_alternatives =
               requirement.recovery_alternatives;
-          exceptional_requirement.specialization_context =
-              requirement.specialization_context;
+          exceptional_requirement.specialization_id =
+              requirement.specialization_id;
           exceptional_requirement.specialization_identity =
               requirement.specialization_identity;
           exceptional_requirement.availability =
@@ -2075,7 +2075,7 @@ struct TypedSemanticModuleV1 {
           item.recovery_alternatives == requirement.recovery_alternatives &&
           item.selected_carrier_type_identity ==
               requirement.selected_carrier_type_identity &&
-          item.specialization_context == requirement.specialization_context &&
+          item.specialization_id == requirement.specialization_id &&
           item.specialization_identity == requirement.specialization_identity;
     };
     std::size_t required_matches = 0;
@@ -2107,7 +2107,7 @@ struct TypedSemanticModuleV1 {
   }
   // Checker-issued bridge from a consumer's existing function-context alias
   // to the stable key in `specializations`. Consumers must not decode either.
-  std::map<std::string, std::string> local_ownership_specialization_contexts;
+  std::map<SpecId, std::string> local_ownership_specialization_identities;
   std::vector<TypedTakeFactV1> take_facts;
   std::vector<TypedTakeRequirementV1> required_take_occurrences;
   std::vector<TypedCopyFactV1> copy_facts;
@@ -2173,7 +2173,7 @@ struct TypedSemanticModuleV1 {
   const TypedEchoArgumentRequirementV1& find_echo_argument_requirement(
       std::uint32_t arena_index, est::ExprId argument_occurrence,
       std::uint32_t argument_index,
-      const std::string& specialization_context) const {
+      SpecId specialization_id) const {
     const TypedEchoArgumentRequirementV1* result = nullptr;
     std::size_t matches = 0;
     for (const auto& requirement : required_echo_argument_occurrences) {
@@ -2181,7 +2181,7 @@ struct TypedSemanticModuleV1 {
           requirement.argument_expression_occurrence_id !=
               argument_occurrence ||
           requirement.argument_index != argument_index ||
-          requirement.specialization_context != specialization_context)
+          requirement.specialization_id != specialization_id)
         continue;
       ++matches;
       result = &requirement;
@@ -2200,7 +2200,7 @@ struct TypedSemanticModuleV1 {
     const auto& retained = find_echo_argument_requirement(
         requirement.est_arena_index,
         requirement.argument_expression_occurrence_id,
-        requirement.argument_index, requirement.specialization_context);
+        requirement.argument_index, requirement.specialization_id);
     auto same_type = [](const TypeRef& left, const TypeRef& right) {
       return (left == right) ||
           (left && right && left->structurally_equal(*right));
@@ -2233,7 +2233,7 @@ struct TypedSemanticModuleV1 {
           fact.est_arena_index != requirement.est_arena_index ||
           fact.argument_expression_occurrence_id !=
               requirement.argument_expression_occurrence_id ||
-          fact.specialization_context != requirement.specialization_context)
+          fact.specialization_id != requirement.specialization_id)
         continue;
       ++fact_matches;
       result = &fact;
@@ -2275,7 +2275,7 @@ struct TypedSemanticModuleV1 {
               right.receiver_expression_occurrence_id &&
           left.source_fingerprint == right.source_fingerprint &&
           left.origin_id == right.origin_id &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           left.receiver_binding == right.receiver_binding &&
           left.receiver_definition_identity == right.receiver_definition_identity &&
@@ -2319,7 +2319,7 @@ struct TypedSemanticModuleV1 {
           candidate.est_arena_index == requirement.est_arena_index &&
           candidate.message_expression_occurrence_id ==
               requirement.message_expression_occurrence_id &&
-          candidate.specialization_context == requirement.specialization_context) {
+          candidate.specialization_id == requirement.specialization_id) {
         retained = &candidate;
         ++requirement_matches;
       }
@@ -2334,7 +2334,7 @@ struct TypedSemanticModuleV1 {
           candidate.est_arena_index == requirement.est_arena_index &&
           candidate.message_expression_occurrence_id ==
               requirement.message_expression_occurrence_id &&
-          candidate.specialization_context == requirement.specialization_context) {
+          candidate.specialization_id == requirement.specialization_id) {
         result = &candidate;
         ++fact_matches;
       }
@@ -2364,7 +2364,7 @@ struct TypedSemanticModuleV1 {
               right.argument_expression_occurrence_id &&
           left.source_fingerprint == right.source_fingerprint &&
           left.selected_handler_identity == right.selected_handler_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_type(left.argument_type, right.argument_type) &&
           left.availability == right.availability;
@@ -2381,8 +2381,8 @@ struct TypedSemanticModuleV1 {
           candidate.argument_expression_occurrence_id ==
               requirement.argument_expression_occurrence_id &&
           candidate.source_fingerprint == requirement.source_fingerprint &&
-          candidate.specialization_context ==
-              requirement.specialization_context;
+          candidate.specialization_id ==
+              requirement.specialization_id;
     };
     const TypedRootIngressArgumentTypeRequirementV1* retained = nullptr;
     std::size_t requirement_matches = 0;
@@ -2424,7 +2424,7 @@ struct TypedSemanticModuleV1 {
               right.argument_expression_occurrence_id &&
           left.source_fingerprint == right.source_fingerprint &&
           left.selected_handler_identity == right.selected_handler_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           left.payload_type && right.payload_type &&
           left.payload_type->structurally_equal(*right.payload_type) &&
@@ -2444,7 +2444,7 @@ struct TypedSemanticModuleV1 {
           candidate.argument_index == requirement.argument_index &&
           candidate.argument_expression_occurrence_id ==
               requirement.argument_expression_occurrence_id &&
-          candidate.specialization_context == requirement.specialization_context;
+          candidate.specialization_id == requirement.specialization_id;
     };
     const TypedRootIngressPayloadRequirementV1* retained = nullptr;
     std::size_t requirement_matches = 0;
@@ -2492,7 +2492,7 @@ struct TypedSemanticModuleV1 {
           left.source_binding_identity == right.source_binding_identity &&
           left.source_definition_identity == right.source_definition_identity &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_type(left.payload_type, right.payload_type) &&
           left.action == right.action &&
@@ -2514,7 +2514,7 @@ struct TypedSemanticModuleV1 {
               requirement.argument_expression_occurrence_id &&
           candidate.source_fingerprint == requirement.source_fingerprint &&
           candidate.specialization_identity == requirement.specialization_identity &&
-          candidate.specialization_context == requirement.specialization_context;
+          candidate.specialization_id == requirement.specialization_id;
     };
     const TypedRootIngressArgumentDispositionRequirementV1* retained = nullptr;
     std::size_t requirement_matches = 0;
@@ -2544,10 +2544,10 @@ struct TypedSemanticModuleV1 {
   }
 
   const std::string& local_ownership_specialization_identity(
-      const std::string& consumer_context) const {
-    const auto found = local_ownership_specialization_contexts.find(
-        consumer_context);
-    if (found == local_ownership_specialization_contexts.end() ||
+      SpecId specialization_id) const {
+    const auto found = local_ownership_specialization_identities.find(
+        specialization_id);
+    if (found == local_ownership_specialization_identities.end() ||
         specializations.find(found->second) == specializations.end())
       throw std::invalid_argument(
           "unknown checker-issued local ownership specialization context");
@@ -2556,9 +2556,9 @@ struct TypedSemanticModuleV1 {
 
   void validate_local_ownership_requirement_specialization(
       const TypedLocalOwnershipRequirementV1& requirement) const {
-    const auto mapping = local_ownership_specialization_contexts.find(
-        requirement.specialization_context);
-    if (mapping == local_ownership_specialization_contexts.end()) {
+    const auto mapping = local_ownership_specialization_identities.find(
+        requirement.specialization_id);
+    if (mapping == local_ownership_specialization_identities.end()) {
       if (!requirement.specialization_identity.empty())
         throw std::invalid_argument(
             "local ownership specialization identity has no checker mapping");
@@ -2566,7 +2566,7 @@ struct TypedSemanticModuleV1 {
     }
     if (requirement.specialization_identity.empty() ||
         local_ownership_specialization_identity(
-            requirement.specialization_context) !=
+            requirement.specialization_id) !=
             requirement.specialization_identity)
       throw std::invalid_argument(
           "local ownership specialization identity mismatch");
@@ -2574,12 +2574,12 @@ struct TypedSemanticModuleV1 {
 
   const TypedLocalOwnershipRequirementV1* find_local_ownership_requirement(
       std::uint32_t arena_index, est::ExprId expr_id,
-      const std::string& context) const {
+      SpecId specialization_id) const {
     const TypedLocalOwnershipRequirementV1* result = nullptr;
     for (const auto& req : required_local_ownership_occurrences) {
       if (req.est_arena_index == arena_index &&
           req.expression_occurrence_id == expr_id &&
-          req.specialization_context == context) {
+          req.specialization_id == specialization_id) {
         if (result)
           throw std::invalid_argument(
               "ambiguous required local ownership occurrence");
@@ -2601,9 +2601,9 @@ struct TypedSemanticModuleV1 {
 
   void validate_loop_ownership_requirement_specialization(
       const TypedLoopOwnershipRequirementV1& requirement) const {
-    const auto mapping = local_ownership_specialization_contexts.find(
-        requirement.specialization_context);
-    if (mapping == local_ownership_specialization_contexts.end()) {
+    const auto mapping = local_ownership_specialization_identities.find(
+        requirement.specialization_id);
+    if (mapping == local_ownership_specialization_identities.end()) {
       if (!requirement.specialization_identity.empty())
         throw std::invalid_argument(
             "loop ownership specialization identity has no checker mapping");
@@ -2611,7 +2611,7 @@ struct TypedSemanticModuleV1 {
     }
     if (requirement.specialization_identity.empty() ||
         local_ownership_specialization_identity(
-            requirement.specialization_context) !=
+            requirement.specialization_id) !=
             requirement.specialization_identity)
       throw std::invalid_argument(
           "loop ownership specialization identity mismatch");
@@ -2639,7 +2639,7 @@ struct TypedSemanticModuleV1 {
         left.killed_definition_identities ==
                right.killed_definition_identities &&
         left.source_binding_identity == right.source_binding_identity &&
-        left.specialization_context == right.specialization_context &&
+        left.specialization_id == right.specialization_id &&
         left.specialization_identity == right.specialization_identity &&
         left.edge_kind == right.edge_kind &&
         left.converged_access == right.converged_access &&
@@ -2681,7 +2681,7 @@ struct TypedSemanticModuleV1 {
           fact.killed_definition_identities !=
               requirement.killed_definition_identities ||
           fact.source_binding_identity != requirement.source_binding_identity ||
-          fact.specialization_context != requirement.specialization_context ||
+          fact.specialization_id != requirement.specialization_id ||
           fact.specialization_identity != requirement.specialization_identity ||
           fact.edge_kind != requirement.edge_kind)
         continue;
@@ -2711,7 +2711,7 @@ struct TypedSemanticModuleV1 {
   const TypedLocalOwnershipRequirementV1* find_local_ownership_requirement(
       std::uint32_t arena_index, est::ExprId expr_id,
       std::uint32_t statement_occurrence_id,
-      const std::string& specialization_context,
+      SpecId specialization_id,
       const std::string& specialization_identity,
       const std::string& definition_identity) const {
     const TypedLocalOwnershipRequirementV1* result = nullptr;
@@ -2719,7 +2719,7 @@ struct TypedSemanticModuleV1 {
       if (req.est_arena_index != arena_index ||
           req.expression_occurrence_id != expr_id ||
           req.statement_occurrence_id != statement_occurrence_id ||
-          req.specialization_context != specialization_context ||
+          req.specialization_id != specialization_id ||
           req.specialization_identity != specialization_identity ||
           req.definition_identity != definition_identity)
         continue;
@@ -2745,7 +2745,7 @@ struct TypedSemanticModuleV1 {
       if (candidate.est_arena_index == req.est_arena_index &&
           candidate.expression_occurrence_id == req.expression_occurrence_id &&
           candidate.statement_occurrence_id == req.statement_occurrence_id &&
-          candidate.specialization_context == req.specialization_context &&
+          candidate.specialization_id == req.specialization_id &&
           candidate.specialization_identity == req.specialization_identity &&
           candidate.definition_identity == req.definition_identity &&
           candidate.binding_identity == req.binding_identity &&
@@ -2773,7 +2773,7 @@ struct TypedSemanticModuleV1 {
       if (fact.est_arena_index != req.est_arena_index ||
           fact.expression_occurrence_id != req.expression_occurrence_id ||
           fact.statement_occurrence_id != req.statement_occurrence_id ||
-          fact.specialization_context != req.specialization_context ||
+          fact.specialization_id != req.specialization_id ||
           fact.specialization_identity != req.specialization_identity ||
           fact.definition_identity != req.definition_identity ||
           fact.binding_identity != req.binding_identity ||
@@ -2847,7 +2847,7 @@ struct TypedSemanticModuleV1 {
           same_type(left.source_type, right.source_type) &&
           same_type(left.target_type, right.target_type) &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
@@ -2870,7 +2870,7 @@ struct TypedSemanticModuleV1 {
               req.rhs_expression_occurrence_id ||
           candidate.statement_occurrence_id != req.statement_occurrence_id ||
           candidate.specialization_identity != req.specialization_identity ||
-          candidate.specialization_context != req.specialization_context) continue;
+          candidate.specialization_id != req.specialization_id) continue;
       result = &candidate;
       ++fact_matches;
     }
@@ -2887,7 +2887,7 @@ struct TypedSemanticModuleV1 {
   const TypedLocalTransferFactV1* find_local_transfer_fact(
       std::uint32_t arena_index, est::ExprId rhs_expression_occurrence_id,
       std::uint32_t statement_occurrence_id,
-      const std::string& specialization_context,
+      SpecId specialization_id,
       const std::string& specialization_identity) const {
     const TypedLocalTransferRequirementV1* result = nullptr;
     for (const auto& requirement : required_local_transfer_occurrences) {
@@ -2895,7 +2895,7 @@ struct TypedSemanticModuleV1 {
           requirement.rhs_expression_occurrence_id !=
               rhs_expression_occurrence_id ||
           requirement.statement_occurrence_id != statement_occurrence_id ||
-          requirement.specialization_context != specialization_context ||
+          requirement.specialization_id != specialization_id ||
           requirement.specialization_identity != specialization_identity)
         continue;
       if (result)
@@ -2947,7 +2947,7 @@ struct TypedSemanticModuleV1 {
           left.place_occurrence_id == right.place_occurrence_id &&
           left.statement_occurrence_id == right.statement_occurrence_id &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           left.root_binding_identity == right.root_binding_identity &&
           left.root_name == right.root_name &&
@@ -2964,8 +2964,8 @@ struct TypedSemanticModuleV1 {
     for (const auto& candidate : required_take_occurrences) {
       if (candidate.est_arena_index != requirement.est_arena_index ||
           candidate.take_occurrence_id != requirement.take_occurrence_id ||
-          candidate.specialization_context !=
-              requirement.specialization_context)
+          candidate.specialization_id !=
+              requirement.specialization_id)
         continue;
       ++matching_requirement_identities;
       if (same_requirement(candidate, requirement))
@@ -2975,12 +2975,12 @@ struct TypedSemanticModuleV1 {
       throw std::invalid_argument(matching_requirement_identities
           ? "duplicate or contradictory required take identity"
           : "take requirement was not checker-issued");
-    const auto mapping = local_ownership_specialization_contexts.find(
-        requirement.specialization_context);
-    if (mapping != local_ownership_specialization_contexts.end()) {
+    const auto mapping = local_ownership_specialization_identities.find(
+        requirement.specialization_id);
+    if (mapping != local_ownership_specialization_identities.end()) {
       if (requirement.specialization_identity.empty() ||
           local_ownership_specialization_identity(
-              requirement.specialization_context) !=
+              requirement.specialization_id) !=
               requirement.specialization_identity)
         throw std::invalid_argument("take specialization identity mismatch");
     } else if (!requirement.specialization_identity.empty()) {
@@ -2994,8 +2994,8 @@ struct TypedSemanticModuleV1 {
           fact.take_occurrence_id != requirement.take_occurrence_id ||
           fact.specialization_identity !=
               requirement.specialization_identity ||
-          fact.specialization_context !=
-              requirement.specialization_context)
+          fact.specialization_id !=
+              requirement.specialization_id)
         continue;
       ++matching_fact_identities;
       result = &fact;
@@ -3029,13 +3029,13 @@ struct TypedSemanticModuleV1 {
 
   const TypedTakeRequirementV1& find_take_requirement(
       std::uint32_t arena_index, est::ExprId take_occurrence,
-      const std::string& specialization_context) const {
+      SpecId specialization_id) const {
     const TypedTakeRequirementV1* result = nullptr;
     std::size_t matches = 0;
     for (const auto& requirement : required_take_occurrences) {
       if (requirement.est_arena_index != arena_index ||
           requirement.take_occurrence_id != take_occurrence ||
-          requirement.specialization_context != specialization_context)
+          requirement.specialization_id != specialization_id)
         continue;
       ++matches;
       result = &requirement;
@@ -3050,10 +3050,10 @@ struct TypedSemanticModuleV1 {
 
   const TypedTakeRequirementV1& find_take_requirement(
       std::uint32_t arena_index, est::ExprId take_occurrence,
-      const std::string& specialization_context,
+      SpecId specialization_id,
       const std::string& specialization_identity) const {
     const auto& requirement = find_take_requirement(
-        arena_index, take_occurrence, specialization_context);
+        arena_index, take_occurrence, specialization_id);
     if (requirement.specialization_identity != specialization_identity)
       throw std::invalid_argument("checker take requirement specialization mismatch");
     return requirement;
@@ -3084,7 +3084,7 @@ struct TypedSemanticModuleV1 {
       if (candidate.est_arena_index != requirement.est_arena_index ||
           candidate.copy_occurrence_id != requirement.copy_occurrence_id ||
           candidate.specialization_identity != requirement.specialization_identity ||
-          candidate.specialization_context != requirement.specialization_context)
+          candidate.specialization_id != requirement.specialization_id)
         continue;
       ++matching_requirements;
       required = &candidate;
@@ -3100,7 +3100,7 @@ struct TypedSemanticModuleV1 {
       if (fact.est_arena_index != requirement.est_arena_index ||
           fact.copy_occurrence_id != requirement.copy_occurrence_id ||
           fact.specialization_identity != requirement.specialization_identity ||
-          fact.specialization_context != requirement.specialization_context)
+          fact.specialization_id != requirement.specialization_id)
         continue;
       ++matching_facts;
       result = &fact;
@@ -3130,13 +3130,13 @@ struct TypedSemanticModuleV1 {
 
   const TypedCopyRequirementV1& find_copy_requirement(
       std::uint32_t arena_index, est::ExprId copy_occurrence,
-      const std::string& specialization_context) const {
+      SpecId specialization_id) const {
     const TypedCopyRequirementV1* result = nullptr;
     std::size_t matches = 0;
     for (const auto& requirement : required_copy_occurrences) {
       if (requirement.est_arena_index != arena_index ||
           requirement.copy_occurrence_id != copy_occurrence ||
-          requirement.specialization_context != specialization_context)
+          requirement.specialization_id != specialization_id)
         continue;
       ++matches;
       result = &requirement;
@@ -3151,10 +3151,10 @@ struct TypedSemanticModuleV1 {
 
   const TypedCopyRequirementV1& find_copy_requirement(
       std::uint32_t arena_index, est::ExprId copy_occurrence,
-      const std::string& specialization_context,
+      SpecId specialization_id,
       const std::string& specialization_identity) const {
     const auto& requirement = find_copy_requirement(
-        arena_index, copy_occurrence, specialization_context);
+        arena_index, copy_occurrence, specialization_id);
     if (requirement.specialization_identity != specialization_identity)
       throw std::invalid_argument("checker copy requirement specialization mismatch");
     return requirement;
@@ -3202,7 +3202,7 @@ struct TypedSemanticModuleV1 {
                     right.operation_occurrence_span) &&
           left.statement_occurrence_id == right.statement_occurrence_id &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance) &&
           left.receiver_binding_identity == right.receiver_binding_identity &&
@@ -3227,7 +3227,7 @@ struct TypedSemanticModuleV1 {
           candidate.operation_expression_occurrence_id !=
               requirement.operation_expression_occurrence_id ||
           candidate.specialization_identity != requirement.specialization_identity ||
-          candidate.specialization_context != requirement.specialization_context)
+          candidate.specialization_id != requirement.specialization_id)
         continue;
       ++matching_requirements;
       required = &candidate;
@@ -3245,7 +3245,7 @@ struct TypedSemanticModuleV1 {
           candidate.operation_expression_occurrence_id !=
               requirement.operation_expression_occurrence_id ||
           candidate.specialization_identity != requirement.specialization_identity ||
-          candidate.specialization_context != requirement.specialization_context)
+          candidate.specialization_id != requirement.specialization_id)
         continue;
       ++matching_facts;
       result = &candidate;
@@ -3305,7 +3305,7 @@ struct TypedSemanticModuleV1 {
           a.error_variant_identity == b.error_variant_identity &&
           a.exceptional_edge_authorized == b.exceptional_edge_authorized &&
           a.specialization_identity == b.specialization_identity &&
-          a.specialization_context == b.specialization_context &&
+          a.specialization_id == b.specialization_id &&
           a.est_fact_context == b.est_fact_context &&
           a.provenance.source_file == b.provenance.source_file &&
           a.provenance.line == b.provenance.line &&
@@ -3318,7 +3318,7 @@ struct TypedSemanticModuleV1 {
           candidate.est_arena_index == requirement.est_arena_index &&
           candidate.operation_expression_occurrence_id ==
               requirement.operation_expression_occurrence_id &&
-          candidate.specialization_context == requirement.specialization_context)
+          candidate.specialization_id == requirement.specialization_id)
         ++required_matches;
     if (required_matches != 1)
       throw std::invalid_argument("missing or duplicate conditional CollectionError requirement");
@@ -3329,7 +3329,7 @@ struct TypedSemanticModuleV1 {
           candidate.est_arena_index == requirement.est_arena_index &&
           candidate.operation_expression_occurrence_id ==
               requirement.operation_expression_occurrence_id &&
-          candidate.specialization_context == requirement.specialization_context) {
+          candidate.specialization_id == requirement.specialization_id) {
         found = &candidate;
         ++fact_matches;
       }
@@ -3348,7 +3348,7 @@ struct TypedSemanticModuleV1 {
       return a.statement_occurrence_id == requirement.statement_occurrence_id &&
           a.est_arena_index == requirement.est_arena_index &&
           a.expression_occurrence_id == requirement.expression_occurrence_id &&
-          a.specialization_context == requirement.specialization_context &&
+          a.specialization_id == requirement.specialization_id &&
           a.specialization_identity == requirement.specialization_identity;
     };
     std::size_t req_count = 0;
@@ -3405,7 +3405,7 @@ struct TypedSemanticModuleV1 {
           a.operation_expression_occurrence_id ==
               requirement.operation_expression_occurrence_id &&
           a.statement_occurrence_id == requirement.statement_occurrence_id &&
-          a.specialization_context == requirement.specialization_context;
+          a.specialization_id == requirement.specialization_id;
     };
     std::size_t req_count = 0;
     for (const auto& item : required_collection_view_occurrences) req_count += key(item);
@@ -3498,7 +3498,7 @@ struct TypedSemanticModuleV1 {
               right.temporary_nonescaping_borrow &&
           left.permits_copy == right.permits_copy &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
@@ -3581,7 +3581,7 @@ struct TypedSemanticModuleV1 {
               right.temporary_nonescaping_borrow &&
           left.permits_copy == right.permits_copy &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
@@ -3678,7 +3678,7 @@ struct TypedSemanticModuleV1 {
           left.temporary_non_escaping_query_borrow ==
               right.temporary_non_escaping_query_borrow &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
@@ -3749,7 +3749,7 @@ struct TypedSemanticModuleV1 {
           left.statement_occurrence_id == right.statement_occurrence_id &&
           left.statement_slot == right.statement_slot &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_context == right.specialization_context &&
+          left.specialization_id == right.specialization_id &&
           left.est_fact_context == right.est_fact_context;
     };
     const TypedIndexedExpressionReadRequirementV1* selected = nullptr;
@@ -3810,7 +3810,7 @@ struct TypedSemanticModuleV1 {
           candidate.scrutinee_occurrence_id != requirement.scrutinee_occurrence_id ||
           candidate.statement_occurrence_id != requirement.statement_occurrence_id ||
           candidate.specialization_identity != requirement.specialization_identity ||
-          candidate.specialization_context != requirement.specialization_context)
+          candidate.specialization_id != requirement.specialization_id)
         continue;
       ++matching_requirements;
       required = &candidate;
@@ -3827,7 +3827,7 @@ struct TypedSemanticModuleV1 {
           fact.scrutinee_occurrence_id != requirement.scrutinee_occurrence_id ||
           fact.statement_occurrence_id != requirement.statement_occurrence_id ||
           fact.specialization_identity != requirement.specialization_identity ||
-          fact.specialization_context != requirement.specialization_context)
+          fact.specialization_id != requirement.specialization_id)
         continue;
       ++matching_facts;
       result = &fact;
@@ -3856,14 +3856,14 @@ struct TypedSemanticModuleV1 {
   const TypedMatchOwnershipRequirementV1& find_match_ownership_requirement(
       std::uint32_t arena_index, est::ExprId scrutinee_occurrence,
       std::uint32_t statement_occurrence,
-      const std::string& specialization_context) const {
+      SpecId specialization_id) const {
     const TypedMatchOwnershipRequirementV1* result = nullptr;
     std::size_t matches = 0;
     for (const auto& requirement : required_match_occurrences) {
       if (requirement.est_arena_index != arena_index ||
           requirement.scrutinee_occurrence_id != scrutinee_occurrence ||
           requirement.statement_occurrence_id != statement_occurrence ||
-          requirement.specialization_context != specialization_context)
+          requirement.specialization_id != specialization_id)
         continue;
       ++matches;
       result = &requirement;
@@ -3879,10 +3879,10 @@ struct TypedSemanticModuleV1 {
   const TypedMatchOwnershipRequirementV1& find_match_ownership_requirement(
       std::uint32_t arena_index, est::ExprId scrutinee_occurrence,
       std::uint32_t statement_occurrence,
-      const std::string& specialization_context,
+      SpecId specialization_id,
       const std::string& specialization_identity) const {
     const auto& requirement = find_match_ownership_requirement(
-        arena_index, scrutinee_occurrence, statement_occurrence, specialization_context);
+        arena_index, scrutinee_occurrence, statement_occurrence, specialization_id);
     if (requirement.specialization_identity != specialization_identity)
       throw std::invalid_argument("checker match requirement specialization mismatch");
     return requirement;
