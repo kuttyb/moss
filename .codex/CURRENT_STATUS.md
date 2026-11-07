@@ -18736,3 +18736,26 @@ untouched.
   and gate commit from this branch.
 - Full suites were not run on this callback follow-up. No production merge was
   performed.
+
+## Phase 28 R7-011 Team A generalized field READ controls (2026-11-07)
+
+- L8's two additional shapes exposed distinct field-effect gaps. In early
+  function-effect inference, an initializer from a non-Copy projected field
+  defaulted to CONSUME; this incorrectly made `size(s)` consume its caller's
+  `State` even when its body only counted an alias. In ownership fact
+  publication, field-source discovery for Assign was guarded by
+  `!had_lexical_binding`, so `b = [9]; b = s.frontier` bypassed alias inference
+  and rejected at line 7. Parameter summaries now classify a plain projected
+  field as READ, and the Assign ownership path records a projected field root
+  even when the target binding already exists.
+- Added `field_parameter_caller_reuse.moss` (Fast Debug and Native both print
+  `3\n3`) and `field_rebind_after_vector_literal.moss` (both print `3`) to the
+  registered field-control gate. The explicit consume control still rejects
+  at line 9 with the unchanged diagnostic. `swarm_027` and `swarm_030` both
+  execute in Fast Debug and Native and are recorded as expected Step 2
+  CollectionView failures; `swarm_028` remains passing.
+- The field-control gate passed directly on the dev compiler and as the
+  registered EST-shadow job (1/1). The existing local ownership drop/perturb
+  matrix passed. Full Default/Shadow suites were not run; no overall Step 0 or
+  Step 1 GO is claimed. Pending feedback validation, exact-SHA freeze, review,
+  and scoped checkpoint push.
