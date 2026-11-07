@@ -16916,6 +16916,7 @@ class Checker {
     if (!finalize) return;
     for (const auto& domain : p_.domains) {
       for (const auto& handler : domain.handlers) {
+        SpecIdScope spec_id_scope(current_spec_id_, handler.spec_id);
         string handler_source = handler.source_file.empty()
             ? domain.source_file : handler.source_file;
         bool has_reply = std::any_of(handler.body.begin(), handler.body.end(),
@@ -24541,19 +24542,25 @@ class Checker {
             next_pipeline_id, next_node_id, domain_fields);
       }
     }
-    if (p_.main)
+    if (p_.main) {
+      SpecIdScope spec_id_scope(current_spec_id_, p_.main->spec_id);
       collect_functional_ir_from_body(
           p_.main->body, std::nullopt, 0, {}, nullptr, nullptr, {}, "main", nullptr,
           next_pipeline_id, next_node_id);
-    for (const auto& test : p_.tests)
+    }
+    for (const auto& test : p_.tests) {
+      SpecIdScope spec_id_scope(current_spec_id_, test.spec_id);
       collect_functional_ir_from_body(
           test.body, std::nullopt, 0, {}, nullptr, nullptr, {},
           "test:" + test.name, nullptr, next_pipeline_id, next_node_id);
-    for (const auto& benchmark : p_.benchmarks)
+    }
+    for (const auto& benchmark : p_.benchmarks) {
+      SpecIdScope spec_id_scope(current_spec_id_, benchmark.spec_id);
       collect_functional_ir_from_body(
           benchmark.body, std::nullopt, 0, {}, nullptr, nullptr, {},
           "bench:" + benchmark.name, nullptr, next_pipeline_id,
           next_node_id);
+    }
   }
 
   void check_method_ownership() {
@@ -35152,6 +35159,7 @@ class Checker {
         err(line, "dynamic callback call occurrence has no EST arena",
             "MOSS_INTERNAL_INVARIANT");
       est::ExprId call_expression = owner_expr;
+      std::uint32_t callback_argument_index = UINT32_MAX;
       if (exact_callback_cursor) {
         const auto root = est::unparenthesized(*owner_arena, owner_expr);
         if (const auto* pipeline =
@@ -35162,10 +35170,17 @@ class Checker {
           call_expression = est::unparenthesized(
               *owner_arena,
               pipeline->stages[exact_callback_cursor->stage_ordinal]);
+          callback_argument_index = exact_callback_cursor->callback_argument_ordinal;
         } else if (exact_callback_cursor->callback_expr < owner_arena->size()) {
           call_expression = exact_callback_cursor->callback_expr;
         }
+      } else if (stage_occurrence &&
+                 stage_occurrence->kind ==
+                     BodyTypeState::ExpressionOccurrence::Kind::PipelineStage) {
+        callback_argument_index = stage_occurrence->operation_id ==
+            "functional:Reduce" ? 1u : 0u;
       }
+      std::size_t matching_edges = 0;
       for (const auto& edge : p_.semantic_call_edges)
         if (edge.caller_spec_id == current_spec_id_ &&
             edge.call_est_arena_index == arena_index &&
@@ -35174,8 +35189,16 @@ class Checker {
             err(line,
                 "dynamic callback occurrence contradicts an existing static call fact",
                 "MOSS_INTERNAL_INVARIANT");
-          return;
+          if (edge.callback_argument_index != callback_argument_index)
+            err(line,
+                "dynamic callback argument identity is contradictory",
+                "MOSS_INTERNAL_INVARIANT");
+          ++matching_edges;
         }
+      if (matching_edges > 1)
+        err(line, "duplicate checked dynamic callback call fact",
+            "MOSS_INTERNAL_INVARIANT");
+      if (matching_edges == 1) return;
       SemanticCallEdge callback_edge;
       callback_edge.source = current_semantic_context_;
       callback_edge.target = "dynamic-callback:" + callback_source;
@@ -35186,6 +35209,18 @@ class Checker {
       callback_edge.call_est_arena_index = arena_index;
       callback_edge.call_expression_occurrence_id = call_expression;
       callback_edge.target_kind = SemanticCallTargetKind::DynamicCallback;
+      callback_edge.callback_argument_index = callback_argument_index;
+      if (const auto* stage_call = std::get_if<est::Call>(
+              &owner_arena->at(call_expression))) {
+        if (callback_argument_index >= stage_call->arguments.size())
+          err(line, "dynamic callback argument slot is outside the stage call",
+              "MOSS_INTERNAL_INVARIANT");
+        callback_edge.argument_callable_spec_ids.assign(
+            stage_call->arguments.size(), InvalidSpecId);
+      } else {
+        err(line, "dynamic callback identity is not an EST Call occurrence",
+            "MOSS_INTERNAL_INVARIANT");
+      }
       p_.semantic_call_edges.push_back(std::move(callback_edge));
       return;  // Dynamic callbacks have no static owner arena or static edge.
     }
@@ -35296,6 +35331,84 @@ class Checker {
         throw std::invalid_argument(
             "checked pipeline callback specialization key is unresolved");
       stable_key = *key->stable_key();
+    }
+    if (pipeline_callback) {
+      est::ExprId stage_expression = UINT32_MAX;
+      std::uint32_t callback_argument_index = UINT32_MAX;
+      std::size_t exact_stage_matches = 0;
+      const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(owner_root));
+      if (!pipeline)
+        throw std::invalid_argument(
+            "checked functional callback owner is not an EST Pipeline");
+      for (const auto candidate_stage : pipeline->stages) {
+        const auto* call = std::get_if<est::Call>(&arena->at(candidate_stage));
+        if (!call) continue;
+        for (std::size_t argument_index = 0;
+             argument_index < call->arguments.size(); ++argument_index)
+          if (call->arguments[argument_index] == callback_id) {
+            stage_expression = candidate_stage;
+            callback_argument_index =
+                static_cast<std::uint32_t>(argument_index);
+            ++exact_stage_matches;
+          }
+      }
+      if (exact_stage_matches != 1 || stage_expression == UINT32_MAX)
+        throw std::invalid_argument(
+            "checked functional callback has missing or duplicate stage Call owner");
+      SpecId callback_spec_id = function.spec_id;
+      if (function.static_dispatch) {
+        std::size_t matches = 0;
+        for (const auto& specialization : function.specializations)
+          if (specialization.stable_type_key == stable_key) {
+            callback_spec_id = specialization.spec_id;
+            ++matches;
+          }
+        if (matches != 1 || callback_spec_id == InvalidSpecId)
+          throw std::invalid_argument(
+              "checked functional callback has missing or duplicate callee SpecId");
+      }
+      std::vector<SemanticCallEdge*> matching_edges;
+      for (auto& edge : p_.semantic_call_edges)
+        if (edge.caller_spec_id == current_spec_id_ &&
+            edge.call_est_arena_index == arena_index &&
+            edge.call_expression_occurrence_id == stage_expression)
+          matching_edges.push_back(&edge);
+      if (matching_edges.size() > 1)
+        throw std::invalid_argument(
+            "duplicate checked functional callback stage call fact");
+      if (!matching_edges.empty()) {
+        const auto& edge = *matching_edges.front();
+        if (edge.target_kind != SemanticCallTargetKind::Static ||
+            edge.callee_spec_id != callback_spec_id ||
+            edge.callback_argument_index != callback_argument_index ||
+            callback_argument_index >= edge.argument_callable_spec_ids.size() ||
+            edge.argument_callable_spec_ids[callback_argument_index] !=
+                callback_spec_id)
+          throw std::invalid_argument(
+              "checked functional callback stage fact is contradictory");
+      } else {
+        SemanticCallEdge edge;
+        edge.source = current_semantic_context_;
+        edge.target = "functional-callback:" + callback_source;
+        edge.line = line;
+        edge.source_file = current_source_file_;
+        edge.invocation_kind = "functional_callback";
+        edge.caller_spec_id = current_spec_id_;
+        edge.call_est_arena_index = arena_index;
+        edge.call_expression_occurrence_id = stage_expression;
+        edge.target_kind = SemanticCallTargetKind::Static;
+        edge.callee_spec_id = callback_spec_id;
+        edge.target_callable_identity = function.semantic_callable_id;
+        edge.target_module_identity = program_module_identity(
+            p_, function.defining_module);
+        const auto* stage_call = std::get_if<est::Call>(&arena->at(stage_expression));
+        edge.argument_callable_spec_ids.assign(stage_call->arguments.size(),
+                                               InvalidSpecId);
+        edge.argument_callable_spec_ids[callback_argument_index] =
+            callback_spec_id;
+        edge.callback_argument_index = callback_argument_index;
+        p_.semantic_call_edges.push_back(std::move(edge));
+      }
     }
     const string context = expression_fact_context();
     const auto* existing = arena->facts(callback_id, current_spec_id_);

@@ -18759,3 +18759,28 @@ untouched.
   matrix passed. Full Default/Shadow suites were not run; no overall Step 0 or
   Step 1 GO is claimed. Pending feedback validation, exact-SHA freeze, review,
   and scoped checkpoint push.
+## Phase 28 R7-011 Team A SpecId producer checkpoint — 2026-11-07
+
+- Team A API checkpoint `b2b59141559ca7c3905e6df9825597a21f54bee8` is pushed
+  to `phase28-r7-011-team-a-step0`. It removes Stmt context-keyed checker
+  metadata, uses SpecId for checker fact-map access and functional plan maps,
+  and carries exact EST root/stage/argument IDs into functional IR. It is an
+  API checkpoint only, not a frozen implementation candidate or GO.
+- Forced compilation of `semantic_checker.o`, `functional_optimizer.o`, and
+  `est/expression_tree.o` passed with existing aggregate-initializer warnings.
+  The SpecId import-remap harness passed under `-Werror`; feedback validation
+  and `git diff --check` passed. The full compiler build and domain-instance
+  harness have not passed yet because consumers still reference removed
+  context-keyed maps / string-keyed typed fact lookup.
+- A new uncommitted domain-handler harness checks two Echoer instances with
+  distinct int/string parameter and reply facts, per-instance fact drop and
+  contradiction, and duplicate exact call-edge detection. Its registered
+  `tests/run.sh` entry must not be treated as passing; current build is blocked
+  by Team B consumer migration. No per-instance end-to-end result is claimed.
+- Remaining producer work: audit/populate exact functional-stage call-edge
+  rows and callable argument SpecIds; complete imported/domain handler body ID
+  wire coordination; run drop/duplicate/contradict instance checks once the
+  combined build is green. Team B must remove remaining `specialization_context`
+  selectors in Native/Fast Debug and serialize the owning SpecId on existing
+  Section 2 callable body records. The prior field-grid result predates this
+  SpecId work and is stale.
