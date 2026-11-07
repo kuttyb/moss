@@ -35091,10 +35091,13 @@ class Checker {
       if (callback_index >= stage.arguments.size()) return false;
       const auto callback_name = tree_identifier_name(
           stage.arguments[callback_index]);
-      if (!callback_name || functions_.count(*callback_name)) return false;
+      if (!callback_name) return false;
       const auto binding = env.find(*callback_name);
-      return binding != env.end() &&
-          (callable_identity(binding->second) || open_generic(binding->second));
+      if (binding == env.end()) return false;
+      // `env` is the checker-resolved lexical environment for this pipeline.
+      // A local callable parameter can shadow a top-level function with the
+      // same spelling, so never use the global function table to classify it.
+      return callable_identity(binding->second) || open_generic(binding->second);
     };
     if (current_body_types_ && !checking_specialization_ &&
         !current_body_types_->active_expression_occurrences.empty()) {
