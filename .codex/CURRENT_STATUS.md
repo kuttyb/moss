@@ -18178,3 +18178,12 @@ run.py selftest 70/70, run.py gate --scenario-ids all PASS (80 fixtures, 68 Moss
 make check (exit=2): the 3 baseline failures by name plus check_phase25_4_performance_baseline, w2_spec_distinct_n016 memory
 25084 KiB vs limit 25000 under the 16-job run; the same gate passed 3/3 when rerun alone (src/ unchanged; treated as load noise,
 not established).
+
+Team 5 review round 1 (tag `bench-t5-done-r2`): fixed the BLOCKER (`.gitignore` negation so the 7 Rust fixture `.rs` files are tracked;
+verified from a fresh `git worktree`: validate-only exit 0, determinism ok, selftest 76/76, Rust gate PASS), L8 text now in the README
+gate bullet + gate commands, new gate-strength selftests (5 mutants caught by `probes/rust_gate_mutants.py`, none crash),
+headline ratios 12-33x by shape/layout with the 6x no-change floor ratio and a bare `moss check` number (375 ms DAG / 584 ms fan-in),
+reworded b/b2, "no answer within 20 s" (one variant also within 300 s), frozen `expect_code`, sampled Moss whole-tree RSS, fail-open line
++ `--require-rust`, results re-run from a clean commit (`results/team5-final`, git_sha 3dd88270, noise drift 0.5%; two noisier attempts
+discarded; `rust_fanin_single_b` still spread-flagged, stated in the README). make check: only the 3 baseline failures by name
+(check_phase25_conformance, check_phase27_accepts_rustc, shard_swarm_cases); the earlier perf-baseline flake did not recur.
