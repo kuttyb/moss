@@ -1,6 +1,7 @@
 #include "typed_semantic_api.hpp"
 
 #include <cassert>
+#include <cstdlib>
 
 using namespace moss;
 
@@ -122,6 +123,37 @@ int main() {
   assert(composite.semantic_call_edges.front().callee_spec_id == 3);
   assert(composite.semantic_call_edges.front().target_module_identity ==
          "module-v1:dependency");
+
+  const auto valid_call = select_exact_semantic_call_edge(
+      first, first.semantic_call_edges.front().caller_spec_id,
+      first.semantic_call_edges.front().call_est_arena_index,
+      first.semantic_call_edges.front().call_expression_occurrence_id);
+  assert(valid_call.kind == ExactSemanticCallEdgeLookup::Kind::Unique);
+  assert(valid_call.edge);
+#ifdef MOSS_TEST_BUILD
+  auto assert_call_hook = [&](const char* hook,
+                              ExactSemanticCallEdgeLookup::Kind expected) {
+    setenv(hook, "1", 1);
+    const auto injected = select_exact_semantic_call_edge(
+        first, first.semantic_call_edges.front().caller_spec_id,
+        first.semantic_call_edges.front().call_est_arena_index,
+        first.semantic_call_edges.front().call_expression_occurrence_id);
+    unsetenv(hook);
+    assert(injected.kind == expected);
+    assert(!injected.edge);
+  };
+  assert_call_hook("MOSS_TEST_CONSUMER_DROP_SEMANTIC_CALL_EDGE",
+                   ExactSemanticCallEdgeLookup::Kind::Missing);
+  assert_call_hook("MOSS_TEST_CONSUMER_STALE_SEMANTIC_CALL_EDGE",
+                   ExactSemanticCallEdgeLookup::Kind::Missing);
+  assert_call_hook("MOSS_TEST_CONSUMER_DUPLICATE_SEMANTIC_CALL_EDGE",
+                   ExactSemanticCallEdgeLookup::Kind::Duplicate);
+  assert_call_hook("MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_SPEC_ID",
+                   ExactSemanticCallEdgeLookup::Kind::Contradictory);
+  assert_call_hook(
+      "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_ARGUMENT_SPEC_ID",
+      ExactSemanticCallEdgeLookup::Kind::Contradictory);
+#endif
 
   auto duplicate = provider(0, "module-v1:duplicate");
   duplicate.specialization_table.push_back(duplicate.specialization_table.front());

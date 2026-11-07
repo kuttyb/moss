@@ -1042,13 +1042,26 @@ inline vector<const SemanticCallEdge*> exact_semantic_call_edges(
 }
 
 struct ExactSemanticCallEdgeLookup {
-  enum class Kind { Missing, Unique, Duplicate } kind = Kind::Missing;
+  enum class Kind { Missing, Unique, Duplicate, Contradictory }
+      kind = Kind::Missing;
   const SemanticCallEdge* edge = nullptr;
 };
 
 inline ExactSemanticCallEdgeLookup select_exact_semantic_call_edge(
     const Program& program, SpecId caller, std::uint32_t arena,
     est::ExprId expression) {
+#ifdef MOSS_TEST_BUILD
+  if (std::getenv("MOSS_TEST_CONSUMER_DROP_SEMANTIC_CALL_EDGE") ||
+      std::getenv("MOSS_TEST_CONSUMER_STALE_SEMANTIC_CALL_EDGE"))
+    return {};
+  if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_SEMANTIC_CALL_EDGE"))
+    return {ExactSemanticCallEdgeLookup::Kind::Duplicate, nullptr};
+  if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE") ||
+      std::getenv("MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_TARGET") ||
+      std::getenv("MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_SPEC_ID") ||
+      std::getenv("MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_ARGUMENT_SPEC_ID"))
+    return {ExactSemanticCallEdgeLookup::Kind::Contradictory, nullptr};
+#endif
   const auto matches = exact_semantic_call_edges(
       program, caller, arena, expression);
   if (matches.empty()) return {};
