@@ -1119,9 +1119,9 @@ diagnostic is `TYPE_AMBIGUOUS_OPEN_RESULT` on `main__root` ("unresolved result t
 cargo reports E0277 "cannot add `&str` to `i64`" at the expression.
 
 Measured (Moss: `edit` fails, counters absent; the compiler prints none for a failing check): the failing Moss check
-is cheaper than the passing one (DAG 321 ms against 432-456; fan-in 569 against 658-698), and the **`revert` after
-the failure costs 48 ms with 0 checker runs**, i.e. (inferred, not traced) margo answers it from the last good interface (same figure as the
-B4 no-change second, 46 ms); the Rust failing check is 26 ms, and the revert is a normal 20-31 ms recheck. For
+is cheaper than the passing one (DAG 326 ms against 424-460; fan-in 588 against 643-679), and the **`revert` after
+the failure costs 46 ms with 0 checker runs**, i.e. (inferred, not traced) margo answers it from the last good interface (same figure as the
+B4 no-change second, 44 ms); the Rust failing check is 25-26 ms, and the revert is a normal 19-30 ms recheck. For
 Rust in the workspace layout the failing `lib` unit stops the build, so the `app` unit is not attempted
 (1 unit rechecked, against 2 for a passing edit).
 
@@ -1130,70 +1130,78 @@ cone costs and, more importantly, must not depend on how deep the broken node is
 today must answer in the same order of time, with a diagnostic that names the broken node. The revert after the
 failure should stay at or below today's 48 ms. The gate must keep comparing the whole failing verdict.
 
-### Results (committed run `results/team5-final/`)
+### Results (committed run `results/team5-final/`, re-run from a clean commit)
 
-Run `20261106-165237`, moss-opt sha256 `e9a22cf0...fe4d36` (the pinned reference), 5 reps, one discarded warm-up
-sequence, loadavg 0.27 at start; calibration fixture 548.4 ms at start and 537.5 ms at the end (drift 2.0%, no
-warning). Rust spread guard (max/min wall over reps <= 1.3, at most 3 attempts, mid-run noise blocks): no step flagged,
-no block noisy; 8 rows needed a second or third attempt. The largest Moss step spread over its 5 reps is 1.19 (no
-Moss step exceeds 1.3; the Moss B3 sequences have no guard of their own, this was computed from the samples). Cells
-are wall ms / CPU ms / peak RSS MiB (`/usr/bin/time %M`, largest single process of the tree). **Moss rows read 24 MiB
-everywhere, consistent with margo's Python being the largest process; moss's own peak RSS is not shown (not
-established).** Rust %M is the largest single process, rustc, except where noted. The whole-tree sampled peaks (separate
-untimed passes) are in `LOCAL_REPORT.md`: Rust 74-117 MiB.
+Run `20261106-190454` from commit `3dd88270d656` with a **clean tree** (`git_dirty` false; the first committed run of this
+section was made from a dirty tree because the Rust fixture sources were not yet tracked, and was replaced), moss-opt sha256
+`e9a22cf0...fe4d36` (the pinned reference), 5 reps, one discarded warm-up sequence. Noise probe: loadavg 0.12 at start;
+calibration fixture 544.9 ms at start and 542.2 ms at the end (drift 0.5%, no warning); no mid-run block
+noisy after its retries. **Two attempts at this run before it were discarded as noisy** (another session was using the machine;
+12 and 8 Rust steps flagged), which is why this is the third; this one is **not flag-free**: the Rust spread guard (max/min wall
+over reps <= 1.3, at most 3 attempts) still flags the four steps of `rust_fanin_single_b` (spreads 1.17-1.32; its 7.5 ms
+`second` step is at 1.32 against the 1.3 limit) - those cells are marked and their medians agree with the unflagged sibling
+sequences (fan-in `b` edit 27.9 ms is the one visible outlier, 20-21 ms for `a`, `c`-`e`; treat it as noisy). The largest Moss step spread
+over 5 reps is 1.32 (`b3_dag_b2:revert`; 1.25 for `b3_dag_a:edit`); the Moss B3 sequences have no guard of their own, this was
+computed from the samples. Cells are wall ms / CPU ms / **peak RSS MiB of the whole process tree**, sampled every ~3 ms in
+separate untimed passes (median of 3 sequences) for both languages: margo + python + moss for Moss (about 40 MiB, 26 MiB for the
+no-op `second`), cargo + rustc for Rust (87-119 MiB). Both are real trees, so the Rust tree is about 2.5x the Moss tree here.
+`/usr/bin/time %M` (largest single process, in `results.csv` and the all-steps table of the report) reads 24 MiB for Moss on every
+row, which is probably margo's Python rather than the compiler (not established), and is therefore not used for the comparison.
 
 **D20 W4 K2, step after each edit**
 
-| Edit | Moss `margo --check build` | Rust single crate | Rust workspace (lib + app) |
-|---|---|---|---|
-| `a` | 455.7 / 454.9 / 24 | 21.5 / 18.2 / 79 | 32.5 / 26.3 / 77 |
-| `b` | 435.8 / 435.8 / 24 | 22.9 / 20.4 / 85 | 35.4 / 29.4 / 81 |
-| `c` | 448.2 / 447.7 / 24 | 21.6 / 19.1 / 79 | 31.6 / 27.4 / 77 |
-| `d` | 439.1 / 438.7 / 24 | 21.9 / 18.6 / 80 | 32.4 / 27.4 / 77 |
-| `e` | 447.1 / 446.6 / 24 | 22.5 / 19.3 / 78 | 33.7 / 27.6 / 81 |
-| `f` (fails) | 321.3 / 320.9 / 24 | 26.2 / 24.5 / 96 | 26.4 / 23.9 / 96 |
+| Edit | Moss `margo --check build` | Rust `cargo check` (single) | Rust `cargo check` (workspace) | Rust units rechecked / reused (single / workspace) |
+|---|---|---|---|---|
+| `a` | 460.1 / 459.8 / 41 | 22.4 / 18.7 / 98 | 31.2 / 25.9 / 92 | 1 / 0 / 2 / 0 |
+| `b` | 427.7 / 427.7 / 40 | 23.5 / 20.4 / 106 | 33.9 / 32.2 / 100 | 1 / 0 / 2 / 0 |
+| `c` | 436.3 / 435.9 / 41 | 21.1 / 17.8 / 93 | 30.7 / 25.3 / 93 | 1 / 0 / 2 / 0 |
+| `d` | 437.4 / 437.0 / 40 | 20.7 / 17.2 / 105 | 33.3 / 27.1 / 92 | 1 / 0 / 2 / 0 |
+| `e` | 424.1 / 423.8 / 40 | 21.6 / 18.9 / 102 | 34.9 / 29.2 / 97 | 1 / 0 / 2 / 0 |
+| `f` (fails) | 326.4 / 325.9 / 38 | 25.7 / 22.3 / 115 | 26.2 / 23.7 / 114 | 1 / 0 / 1 / 0 |
 
 **Fan-in D50 W4 K2, step after each edit**
 
-| Edit | Moss | Rust single crate |
-|---|---|---|
-| `a` | 698.1 / 697.5 / 24 | 20.6 / 17.4 / 79 |
-| `b` | 871.3 / 871.3 / 24 | 25.9 / 22.7 / 85 |
-| `c` | 700.0 / 699.8 / 24 | 21.8 / 18.1 / 79 |
-| `d` | 656.8 / 656.8 / 24 | 20.5 / 17.7 / 80 |
-| `e` | 655.8 / 655.4 / 24 | 21.4 / 17.8 / 77 |
-| `f` (fails) | 568.6 / 568.3 / 24 | 26.2 / 23.0 / 96 |
+| Edit | Moss `margo --check build` | Rust `cargo check` (single) | Rust units rechecked / reused (single) |
+|---|---|---|---|
+| `a` | 671.0 / 670.7 / 41 | 20.2 / 17.1 / 91 | 1 / 0 |
+| `b` | 678.7 / 678.4 / 41 | 27.9 / 24.1 / 103 **(spread flagged)** | 1 / 0 |
+| `c` | 642.7 / 642.7 / 41 | 21.1 / 16.9 / 102 | 1 / 0 |
+| `d` | 658.3 / 657.6 / 41 | 21.4 / 18.9 / 93 | 1 / 0 |
+| `e` | 668.4 / 668.2 / 41 | 21.0 / 17.9 / 91 | 1 / 0 |
+| `f` (fails) | 587.9 / 587.5 / 38 | 25.2 / 22.9 / 119 | 1 / 0 |
 
 **First, second (no change) and revert**
 
-| Project | Step | Moss | Rust single | Rust workspace |
-|---|---|---|---|---|
-| DAG | first | 451.6 / 451.1 / 24 | 39.4 / 34.1 / 82 | 50.7 / 42.2 / 80 |
-| DAG | second | 46.0 / 45.6 / 24 | 7.7 / 7.1 / 23 | 7.8 / 7.0 / 24 |
-| DAG | revert | 446.5 / 445.3 / 24 | 21.2 / 18.1 / 79 | 32.3 / 27.4 / 77 |
-| Fan-in | first | 670.9 / 670.6 / 24 | 38.2 / 33.4 / 82 | n/a |
-| Fan-in | second | not measured (no B4 fan-in sequence) | 7.5 / 6.9 / 23 | n/a |
-| Fan-in | revert | 691.9 / 691.6 / 24 | 20.5 / 17.0 / 79 | n/a |
+Rust `first` = empty target dir; `second` = identical tree; `revert` = after the byte-identical revert. Moss `first`/`revert` from the B3 `a` sequence, Moss `second` from the B4 sequence of the same package. `n/a` = not measured (no B4 fan-in sequence; fan-in not built as a workspace).
 
-Startup floor: Rust floor crate first 31.8 / 27.5 / 71, second 7.6, after a one-line edit 17.9 ms; Moss floor in the
-B4 table (46 ms through margo). Work done, from cargo's own bookkeeping: single crate `first` 1 unit checked;
-`second` 0 checked, 1 reused; every edit and every revert 1 checked, 0 reused; workspace: `first` 2 checked, `second`
-0 / 2 reused, every edit and revert 2 checked (editing `dag_lib` makes `dag_app` stale as well). Moss, same runs: every
-passing step 1 checker run, 81 (DAG) / 55 (fan-in) functions analyzed, 162 / 110 specialization keys, except `second`
-(0 runs, margo skipped the package). The Rust unit counters are `Checking` lines on stderr and `fresh` flags of
-`compiler-artifact` messages: they are cargo's freshness bookkeeping, not an amount of type-checking work, and no
-finer counter exists on stable.
+| Project | Step | Moss | Rust (single crate) | Rust (workspace) | Rust units rechecked / reused (single / ws) |
+|---|---|---|---|---|---|
+| DAG D20 W4 K2 | first | 440.8 / 440.8 / 40 | 39.5 / 35.6 / 105 | 51.6 / 44.6 / 100 | 1 / 0 ; 2 / 0 |
+| DAG D20 W4 K2 | second | 43.9 / 43.7 / 26 | 7.6 / 6.8 / 17 | 7.6 / 6.9 / 16 | 0 / 1 ; 0 / 2 |
+| DAG D20 W4 K2 | revert | 440.2 / 438.7 / 41 | 21.8 / 19.0 / 87 | 32.5 / 27.7 / 90 | 1 / 0 ; 2 / 0 |
+| Fan-in D50 W4 K2 | first | 668.5 / 669.0 / 41 | 37.9 / 33.0 / 105 | n/a | 1 / 0 |
+| Fan-in D50 W4 K2 | second | n/a | 7.5 / 6.8 / 17 | n/a | 0 / 1 |
+| Fan-in D50 W4 K2 | revert | 667.1 / 667.1 / 41 | 20.1 / 19.1 / 87 | n/a | 1 / 0 |
+
+Startup floor: Rust floor crate (a `main` that prints a literal) first 32.5 / 28.5 / 76, second 7.6 / 6.8 / 16, after a one-line
+edit 18.5 / 14.9 / 81; Moss floor in the B4 table (about 46 ms through margo). Work done, from cargo's own bookkeeping: single
+crate `first` 1 unit checked; `second` 0 checked, 1 reused; every edit and every revert 1 checked, 0 reused (the failing `f`
+step 1 checked); workspace: `first` 2 checked, `second` 0 / 2 reused, every edit and revert 2 checked (editing `dag_lib`
+makes `dag_app` stale as well), the failing `f` step 1 (the lib fails, the app is not attempted). Moss, same runs: every
+passing step 1 checker run, 81 (DAG) / 55 (fan-in) functions analyzed, 162 / 110 specialization keys, except `second` (0 runs,
+margo skipped the package). The Rust unit counters are `Checking` lines on stderr and `fresh` flags of `compiler-artifact`
+messages: cargo's freshness bookkeeping, not an amount of type-checking work; no finer counter exists on stable.
 
 *Reading the Rust numbers.* At this size `cargo check` is within ~2x of its own startup floor (floor crate edit step
-17.9 ms, D20 edit 21-23 ms, `first` 31.8 against 39 ms), so **differences between Rust edits are small and mostly
+18.5 ms, D20 edit 21-24 ms, `first` 32.5 against 39.5 ms), so **differences between Rust edits are small and mostly
 noise-sized; the only large Rust effects are "nothing to do" (about 7.5 ms) against "one unit rechecked" (20-35 ms)**.
 The number of user types K did not matter in a separate probe (`probes/rust_k_probe.txt`: K = 2 / 8 / 32 gives 39.7 /
-40.9 / 43.0 ms for the first check; run at load 1.5, so approximate). Moss, in the same units, is 0.45 s DAG / 0.67 s
+40.9 / 43.0 ms for the first check; run at load 1.5, so approximate). Moss, in the same units, is 0.42-0.46 s DAG / 0.64-0.68 s
 fan-in for every edit and `a`-`e` are indistinguishable (the whole package is rechecked every time, as in the Team 3 run).
 
 *What an improvement looks like (this comparison)*: not that Moss matches a Rust figure. The question this section
 answers is "what does an incremental checker with crate-level freshness do after these edits": it does no work after a
-no-change request (Rust 7.5 ms, Moss 46 ms through margo), pays one unit per edit regardless of the edit class, and has no
+no-change request (Rust 7.6 ms, Moss 44 ms through margo), pays one unit per edit regardless of the edit class, and has no
 content-based cutoff (below). A Moss with a fact store should make `a`, `c`, `d` and `e` cost about a lookup plus the
 leaf, `b` the cone, and the failing edit `f` no more than a passing one; the Moss column should move toward the Rust
 column on `d`/`e`/revert (cargo does not get those for free either) and beyond it where Rust has no answer: a content-keyed
@@ -1228,9 +1236,16 @@ store would make the `revert` and `d` steps cost a hit, which cargo's mtime fres
 - **NOT apples-to-apples.** Different languages, different checkers, different feature sets, different process models
   (cargo + rustc against margo's Python + moss), different workload (the Rust crates are the same *shape*, not the same
   program), 81 / 55 tiny functions. Moss rows include margo's Python startup (~45 ms, see B4); the Rust rows include cargo's.
-- **A reader may conclude:** at this shape and size, with the compilers installed here, `cargo check` is roughly 20-35x
-  faster than `margo --check build` after any of these edits (DAG `a`: 21.5 against 455.7 ms; fan-in `a`: 20.6 against
-  698.1 ms) and about 6x faster when nothing changed (`second`: 7.7 against 46.0 ms), does no work when nothing changed, reuses nothing finer than a crate, and does not depend on K.
+- **A reader may conclude:** at this shape and size, with the compilers installed here, a `cargo check` after an edit is
+  about **12-33x** faster than `margo --check build`, depending on shape and layout (edits `a`-`e`: DAG single crate 18-21x,
+  DAG workspace 12-15x, fan-in single crate 24-33x; the failing `f`: 12.5-23x), and about 6x faster when nothing changed (`second`:
+  7.6 ms against 43.9 ms). **The 6x is a floor ratio, not a checker comparison**: both sides do zero checking work there, so it
+  compares cargo's freshness test with margo's Python start-up plus hashing. The like-for-like compiler-only number (`probes/moss_check_bare_probe.txt`, quiet machine: loadavg 0.11, calibration
+drift 0.3%, 9 reps after a discarded run, single-source form of the B3 packages, `moss check <file> --json`, no margo and no
+Python) is **375 ms for the DAG and 584 ms for the fan-in** (spread 1.11 / 1.06), against 424-460 ms / 643-679 ms through
+`margo --check build`: margo adds roughly 50-90 ms per edit step here (not decomposed). Against the bare compiler, an edit
+step of `cargo check` is about 17x faster on the DAG (22.4 ms, edit `a`) and about 29x on the fan-in (20.2 ms). Cargo does no work when nothing changed,
+  reuses nothing finer than a crate, and does not depend on K.
   **A reader may not conclude:** that Rust's type checking is faster per function, that Moss's checker algorithm is
   inherently slower, anything for larger or non-generic programs, anything about code generation or whole-program
   edit-compile-test time, or any cause of the gap beyond the K structure and startup floor stated above (the cause of the
@@ -1253,7 +1268,7 @@ store would make the `revert` and `d` steps cost a hit, which cargo's mtime fres
   span file/line/column; paths normalized to `<FIXTURE>`) must be identical between reference and candidate, and the
   reference must meet the frozen step expectation (status and exit code). `rendered` text and cargo's fresh/dirty
   counts are information. A candidate whose rustc prints positions differently needs the same position mapping as
-  described for the Moss gate (L8 requirement above). Candidate command: `--rust-candidate-cmd` / `$ECT_RUST_CANDIDATE_CMD`
+  described for the Moss gate (the L8 requirement in the "Correctness gate" bullet of "What the outputs mean"). Candidate command: `--rust-candidate-cmd` / `$ECT_RUST_CANDIDATE_CMD`
   (`{cargo}` `{path}` `{root}` `{id}`).
 - `run.py selftest` (70/70) adds: Rust determinism and frozen manifest equality, a tampered sequence spec refused, a
   modified fixture tree detected, the `f` spec (fail + exit 1, revert pass) and exit-code strictness, verdict
@@ -1291,10 +1306,10 @@ with divergence, not with N), B6 ("What an IMPROVEMENT looks like" in the B6 res
 
 ### Limits (Team 5)
 
-- One toolchain (cargo/rustc 1.98.1), one machine, one run of 5 reps (some rows 3 attempts under the guard); noise probe clean.
+- One toolchain (cargo/rustc 1.98.1), one machine, one 5-rep run (the third attempt; two noisier ones were discarded); the noise probe is clean but the Rust spread guard still flags `rust_fanin_single_b` (see Results).
 - Rust times are 20-50 ms: near the process-startup floor and the resolution where `/usr/bin/time` and the runner's polling
   matter; differences below ~2 ms are not meaningful.
-- Moss RSS is margo's Python (probably); Moss counters are absent for failing checks; the Rust "units" are bookkeeping.
+- The comparison RSS is the sampled whole-tree peak (3 untimed passes); `%M` for Moss is margo's Python (probably, not established). Moss counters are absent for failing checks; the Rust "units" are cargo's freshness bookkeeping.
 - The Rust edit `b` is a different-sized edit than the Moss one (by language design); `b2` has no Rust counterpart.
 - Edit `f` is at the top node because leaf breaks gave no answer within 20 s on Moss; error-path conclusions about leaf errors are not
   available for Moss.
