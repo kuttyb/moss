@@ -18773,3 +18773,52 @@ untouched.
   `check_phase28_local_ownership.py` passes its drop/perturb and ownership matrix.
   Full Default/Shadow suites were not run on this follow-up. No production merge
   was performed.
+
+## P28-R7-011 combined Step 0 checkpoint (2026-11-07, source SHA 83e42ee)
+
+- Combined isolated branch `phase28-r7-011-integration` is frozen at
+  `83e42eece65663b3de46e09a14227f9e17633513` and pushed to origin. The build
+  used the prescribed `make --jobs=2 MOSS_LDFLAGS= && make moss-opt` command.
+  Binary hashes: `moss-dev` `1e83d1874b9cd22ce714ffca0bdfb824342a2fbddcd2ba94e9f73119894ad362`;
+  `moss-opt` `e715f529537fbbbb67ad1fc31b5713ec0e03a5c8ce1b9da3b58363f57d58e303`.
+- Field-control gate runs all fixtures and remains RED only on
+  `swarm_030_string_comparison_borrowed`, which fails in both engines due to
+  missing nonescaping Map CollectionView authority. The five requested READ
+  programs pass in Fast Debug/Native with outputs `3`, `3`, `3`, `1\n3`, `3`;
+  `field_consume` rejects at line 9 with unchanged diagnostic. `swarm_027`
+  executes in both engines and remains recorded as the expected Step 2 failure;
+  `swarm_028` passes with `100`. Team C independently reviewed this SHA and
+  returned NO-GO solely for the unresolved `swarm_030` CollectionView error.
+- Exact full Default and Shadow runs on this SHA: each 115/169 pass, 54 fail,
+  0 skipped. Run logs are `tmp/suite-step0-general-default-final.log` and the
+  initial Shadow runner output is preserved in the session tool transcript;
+  output artifacts are under `tmp/suite-step0-general-{default,shadow}/`.
+  Against the 45b586c2 112/168 baseline, 3 previous failures recover:
+  `check_phase26_1_c1_scope`, `shard_phase46_opt`, `shard_phase4_diff`.
+  Newly failing relative to that baseline: `check_phase28_l8_field_controls`
+  (new job, red on swarm_030) and `shard_phase5_tooling`. Compared with the
+  pre-general Step 0 SHA `37f00e4b`, the same 115 jobs pass and the new field
+  gate adds one failing job; no previously red job recovered or regressed.
+- Agent 2 adversarial review returned NO-GO. It found that
+  `has_dynamic_callback` at `semantic_checker.cpp:35094` checks global
+  `functions_.count(callback_name)` before lexical binding resolution. A local
+  callable parameter shadowing a top-level function is accepted by checker and
+  Native but Fast Debug fails with `static callback fact contradicts its
+  checked value`. Minimal probe is preserved at `tmp/agent2-shadow-callback.moss`.
+  Agent 2 also found the callback fact drop/perturb tests live only in the
+  unregistered all-identity repro script; they need a narrow registered gate.
+  Team A is assigned both scoped 0a repairs on its existing branch.
+- Oracle owner ran the corrected 62-row draft against this exact compiler.
+  Result: 19/62 all-applicable PASS, 0 semantic mismatches, 43 provenance-only
+  failures, 0 invalid/missing-provenance blocks, 264 unverified clone
+  occurrences. ORACLE-15/15B/15C match their expected semantic behavior; the
+  15B/15C output expectation representation was corrected from `3\\n` to `3`
+  in draft commit `ff306c27f58738bd7eb9c79b00eb165cead01209`, pushed to
+  `phase28-r7-011-oracle-15-current`. Independent holdouts received scoped GO;
+  certification metadata remains DRAFT/PENDING and no clone provenance is
+  authorized.
+- No Phase 28 production branch was touched. Next: land and review the Team A
+  callback lexical-resolution and registered mutation-gate fix; resolve the
+  `swarm_030` CollectionView failure without masking it; then rerun complete
+  Default/Shadow suites and update this checkpoint. Step 1, Step 2, and clone
+  authorization remain out of scope; all runtime clone sites stay pending.
