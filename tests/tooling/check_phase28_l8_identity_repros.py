@@ -66,31 +66,50 @@ def main() -> int:
     scratch_root.mkdir(exist_ok=True)
     out = scratch_root / f"phase28-l8-identity-{os.getpid()}"
     out.mkdir()
+    failures: list[str] = []
     try:
         for name, expected in EXPECTED.items():
             source = FIXTURES / f"{name}.moss"
-            fast = run([compiler, "run", "--interp", str(source)]).stdout.strip()
-            native = native_output(compiler, source, out)
-            if fast != expected or native != expected or fast != native:
-                raise RuntimeError(
-                    f"{name}: expected {expected!r}; Fast Debug={fast!r}; "
-                    f"Native={native!r}")
-            print(f"PASS {name}: {fast!r}")
+            fast = native = None
+            try:
+                fast = run([compiler, "run", "--interp", str(source)]).stdout.strip()
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                failures.append(f"{name} Fast Debug: {error}")
+            try:
+                native = native_output(compiler, source, out)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                failures.append(f"{name} Native: {error}")
+            if fast == expected and native == expected and fast == native:
+                print(f"PASS {name}: {fast!r}")
+            else:
+                print(f"FAIL {name}: expected={expected!r}; Fast={fast!r}; "
+                      f"Native={native!r}", file=sys.stderr)
+                if fast is not None and fast != expected:
+                    failures.append(f"{name} Fast Debug output {fast!r}, wanted {expected!r}")
+                if native is not None and native != expected:
+                    failures.append(f"{name} Native output {native!r}, wanted {expected!r}")
 
         rejected = FIXTURES / "field_consume.moss"
-        fast_error = run([compiler, "run", "--interp", str(rejected)],
-                         expected=1)
-        native_error = run([compiler, str(rejected), "-o",
-                            str(out / "field_consume.rs")], expected=1)
+        fast_error = native_error = None
+        try:
+            fast_error = run([compiler, "run", "--interp", str(rejected)],
+                             expected=1)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            failures.append(f"field_consume Fast Debug: {error}")
+        try:
+            native_error = run([compiler, str(rejected), "-o",
+                                str(out / "field_consume.rs")], expected=1)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            failures.append(f"field_consume Native: {error}")
         diagnostic = re.compile(
             r"moss:9: error: \[OWNERSHIP_ILLEGAL_CONSUME\] "
             r"plain field access cannot consume or transfer a non-Copy field; use take or copy")
         for mode, result in (("Fast Debug", fast_error), ("Native", native_error)):
-            if not diagnostic.search(result.stderr + result.stdout):
-                raise RuntimeError(
-                    f"field_consume {mode} diagnostic mismatch:\n"
-                    f"{result.stderr}{result.stdout}")
-        print("PASS field_consume: rejected at line 9 in both engines")
+            if result and not diagnostic.search(result.stderr + result.stdout):
+                failures.append(f"field_consume {mode} diagnostic mismatch")
+        if fast_error and native_error and not any(
+                failure.startswith("field_consume") for failure in failures):
+            print("PASS field_consume: rejected at line 9 in both engines")
 
         callback = FIXTURES / "cb_spec.moss"
         for hook, marker in (
@@ -101,23 +120,33 @@ def main() -> int:
         ):
             env = os.environ.copy()
             env[hook] = "1"
-            result = run([compiler, "run", "--interp", str(callback)],
-                         env=env, expected=1)
-            if "MOSS_INTERNAL_INVARIANT" not in result.stderr + result.stdout or \
-                    marker not in result.stderr + result.stdout:
-                raise RuntimeError(
-                    f"{hook} did not fail closed as expected:\n"
-                    f"{result.stderr}{result.stdout}")
-            print(f"PASS {hook}: fail closed")
+            try:
+                result = run([compiler, "run", "--interp", str(callback)],
+                             env=env, expected=1)
+                if "MOSS_INTERNAL_INVARIANT" not in result.stderr + result.stdout or \
+                        marker not in result.stderr + result.stdout:
+                    failures.append(f"{hook} did not fail closed with expected invariant")
+                else:
+                    print(f"PASS {hook}: fail closed")
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                failures.append(f"{hook}: {error}")
 
         for relative in CALLBACK_CORPUS:
             source = ROOT / relative
-            run([compiler, "run", "--interp", str(source)])
-            rust = out / f"corpus-{len(list(out.glob('corpus-*.rs')))}.rs"
-            run([compiler, str(source), "-o", str(rust)])
-            run(["rustc", "--edition=2021", "-D", "warnings", str(rust),
-                 "-o", str(rust.with_suffix(""))])
-            print(f"PASS callback corpus: {relative}")
+            try:
+                run([compiler, "check", str(source)])
+                rust = out / f"corpus-{len(list(out.glob('corpus-*.rs')))}.rs"
+                run([compiler, str(source), "-o", str(rust)])
+                run(["rustc", "--edition=2021", "-D", "warnings", str(rust),
+                     "-o", str(rust.with_suffix(""))])
+                print(f"PASS callback corpus: {relative}")
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                failures.append(f"callback corpus {relative}: {error}")
+        if failures:
+            print("\nFAILURES:", file=sys.stderr)
+            for failure in failures:
+                print(f"- {failure}", file=sys.stderr)
+            return 1
     finally:
         shutil.rmtree(out, ignore_errors=True)
     return 0

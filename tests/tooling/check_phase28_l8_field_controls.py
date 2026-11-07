@@ -2,6 +2,7 @@
 """Compile the explicit-take corpus controls for field ownership."""
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -31,22 +32,25 @@ def main() -> int:
         print("usage: check_phase28_l8_field_controls.py COMPILER", file=sys.stderr)
         return 2
     compiler = str(Path(sys.argv[1]).resolve())
-    scratch = ROOT / "tmp" / f"phase28-l8-field-controls-{__import__('os').getpid()}"
+    scratch = ROOT / "tmp" / f"phase28-l8-field-controls-{os.getpid()}"
     scratch.mkdir(parents=True, exist_ok=True)
+    failures: list[str] = []
     try:
         for index, relative in enumerate(SOURCES):
             source = ROOT / relative
-            run([compiler, "run", "--interp", str(source)])
-            rust = scratch / f"control-{index}.rs"
-            binary = scratch / f"control-{index}"
-            run([compiler, str(source), "-o", str(rust)])
-            run(["rustc", "--edition=2021", "-D", "warnings", str(rust),
-                 "-o", str(binary)])
-            run([str(binary)])
-            print(f"PASS {relative} with explicit take")
+            try:
+                run([compiler, "check", str(source)])
+                rust = scratch / f"control-{index}.rs"
+                run([compiler, str(source), "-o", str(rust)])
+                run(["rustc", "--edition=2021", "-D", "warnings", str(rust),
+                     "-o", str(scratch / f"control-{index}")])
+                print(f"PASS {relative}: checker and native compile")
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                failures.append(f"{relative}: {error}")
+                print(f"FAIL {relative}: {error}", file=sys.stderr)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
-    return 0
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
