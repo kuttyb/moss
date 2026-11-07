@@ -265,6 +265,7 @@ class CloneProvenanceTests(unittest.TestCase):
                 "facts": sorted(facts_by_copy[span["copy_id"]],
                                 key=harness.typed_copy_fact_identity)} for span in copies],
             "root_ingress_domain_captures": [],
+            "runtime_clone_site_observations": [],
             "occurrences": occurrences}
 
     def fact(self):

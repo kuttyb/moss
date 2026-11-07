@@ -34,6 +34,20 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def normalized_marker_stripped_digest(rust_bytes: bytes) -> str:
+    stripped = re.sub(
+        rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
+    helper_ids = re.findall(rb"__moss_copy_value_([0-9a-f]{16})", stripped)
+    fact_ids = re.findall(rb"typed-copy-fact-v1:([0-9a-f]{64})", stripped)
+    assert len(set(helper_ids)) == len(fact_ids) == 1 and set(helper_ids) == {fact_ids[0][:16]}, (
+        helper_ids, fact_ids)
+    normalized = re.sub(rb"__moss_copy_value_[0-9a-f]{16}",
+                        b"__moss_copy_value_<stable-id>", stripped)
+    normalized = re.sub(rb"typed-copy-fact-v1:[0-9a-f]{64}",
+                        b"typed-copy-fact-v1:<stable-id>", normalized)
+    return hashlib.sha256(normalized).hexdigest()
+
+
 def git_blob_sha(commit: str, path: str) -> str:
     content = subprocess.run(["git", "show", f"{commit}:{path}"], cwd=ROOT,
                              check=True, capture_output=True).stdout
@@ -188,26 +202,11 @@ def audit_runtime_sidecar(rows: list[dict], rust: str) -> None:
         lambda values: [{**values[0], "operator_kind": "direct_method"}, *values[1:]],
     ):
         try:
-            audit_runtime_sidecar_once(mutate(rows), expected, len(rust))
-        except (AssertionError, KeyError):
+            harness.validate_runtime_clone_site_observations(mutate(rows), rust)
+        except ValueError:
             pass
         else:
             raise AssertionError("runtime sidecar mutation was accepted")
-
-
-def audit_runtime_sidecar_once(rows: list[dict], expected: dict, rust_size: int) -> None:
-    observed = {(row["site_id"], row["generated_occurrence"]): row for row in rows}
-    assert len(observed) == len(rows)
-    required = {site_id for site_id in expected if site_id.startswith("r7-010-runtime-")}
-    observed_ids = {site_id for site_id, _ in observed}
-    assert required <= observed_ids
-    for (site_id, _), row in observed.items():
-        spec = expected[site_id]
-        assert row["source_sha256"] == spec["source_sha256"]
-        assert row["source_span"] == spec["source_span"]
-        assert row["semantic_type"] == spec["semantic_type"]
-        assert row["operator_kind"] == spec["operator_kind"]
-        assert 0 <= row["rust_span"]["source_begin"] < row["rust_span"]["source_end"] <= rust_size
 
 
 def main() -> None:
@@ -309,11 +308,12 @@ def main() -> None:
         else:
             raise AssertionError("runtime marker relocation was accepted")
 
-        marker_stripped = re.sub(
-            rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
-        # Updated after removing the redundant worker-context Arc increment.
-        assert hashlib.sha256(marker_stripped).hexdigest() == (
-            "b1b19c7805e227e48b155b6c5abbb8cc002cb2e6da3e87082e616a9e9d52460f")
+        # Copy-helper identities include the absolute Moss source path, so a
+        # raw artifact digest changes across isolated checkout paths. Keep
+        # exact helper/fact identity matching and normalize only those tokens.
+        normalized_digest = normalized_marker_stripped_digest(rust_bytes)
+        assert normalized_digest == (
+            "cf0bd5e74c782d1e860d77345d1908e3a0cf6eb881d16f27139a81bdddd34329")
 
         # Generated runtime lines remain byte-identical to the reviewed
         # implementation after removing marker comments; markers are locators,
@@ -330,6 +330,39 @@ def main() -> None:
                                                authority, ingress_authority)
         assert (audit.get("status"), audit.get("authorized"), audit.get("unauthorized"),
                 audit.get("unclassified")) == ("UNAUTHORIZED", 1, 3, 3), audit
+
+        # Rebuild identical Moss bytes under another checkout-like source path.
+        # The generated authority identities may differ because the canonical
+        # source path differs, but each artifact must still audit against its
+        # exact facts, and the structural hash must remain the same.
+        alternate_source = Path(tmp) / "alternate-checkout/tests/phase28/oracle_r7_005_1/fixtures/oracle_10a_explicit_copy_only.moss"
+        alternate_source.parent.mkdir(parents=True)
+        alternate_source.write_bytes(source_path.read_bytes())
+        alternate_rust_path = Path(tmp) / "alternate-checkout/oracle-10a.rs"
+        alternate_build = subprocess.run([str(compiler), str(alternate_source), "-o",
+                                          str(alternate_rust_path)], capture_output=True,
+                                         text=True, timeout=120)
+        assert alternate_build.returncode == 0, (alternate_build.stdout, alternate_build.stderr)
+        alternate_rust_bytes = alternate_rust_path.read_bytes()
+        assert normalized_marker_stripped_digest(alternate_rust_bytes) == normalized_digest
+        raw_runtime_stripped = re.sub(
+            rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", rust_bytes)
+        raw_alternate_stripped = re.sub(
+            rb"/\* MOSS_RUNTIME_CLONE_SITE:r7-010-runtime-\d{2} \*/\s*", b"", alternate_rust_bytes)
+        assert raw_runtime_stripped != raw_alternate_stripped, (
+            "alternate source path should exercise path-derived helper/fact identities")
+        assert re.findall(rb"typed-copy-fact-v1:([0-9a-f]{64})", raw_runtime_stripped) != \
+            re.findall(rb"typed-copy-fact-v1:([0-9a-f]{64})", raw_alternate_stripped)
+        alternate_copy_authority = harness.query_copy_authority(compiler, alternate_source)
+        alternate_ingress_authority = harness.query_root_ingress_capture_authority(
+            compiler, alternate_source)
+        alternate_audit = harness.audit_clone_provenance(
+            alternate_rust_path, alternate_source, "debug", 1,
+            alternate_copy_authority, alternate_ingress_authority)
+        assert (alternate_audit.get("status"), alternate_audit.get("authorized"),
+                alternate_audit.get("unauthorized"), alternate_audit.get("unclassified")) == (
+                    audit.get("status"), audit.get("authorized"), audit.get("unauthorized"),
+                    audit.get("unclassified")), alternate_audit
         sidecar = json.loads(Path(str(rust_path) + ".mossclone.json").read_text())
         audit_runtime_sidecar(sidecar["runtime_clone_site_observations"], rust)
         assert [row["origin_kind"] for row in sidecar["occurrences"]].count("explicit_copy") == 1
@@ -365,8 +398,8 @@ def main() -> None:
             [row for row in chunk_rows if row["site_id"] != "file-chunk-01"],
         ):
             try:
-                audit_runtime_sidecar(changed, chunk_rust)
-            except (AssertionError, KeyError):
+                harness.validate_runtime_clone_site_observations(changed, chunk_rust)
+            except ValueError:
                 pass
             else:
                 raise AssertionError("FileChunk sidecar context/coverage corruption was accepted")
@@ -375,8 +408,8 @@ def main() -> None:
         relocated_chunk_rust = chunk_rust.replace(chunk_marker, "", 1).replace(
             fileio_call, chunk_marker + " " + fileio_call, 1)
         try:
-            audit_runtime_sidecar(chunk_rows, relocated_chunk_rust)
-        except (AssertionError, KeyError):
+            harness.validate_runtime_clone_site_observations(chunk_rows, relocated_chunk_rust)
+        except ValueError:
             pass
         else:
             raise AssertionError("FileChunk marker relocation to another Arc call was accepted")
@@ -394,10 +427,11 @@ def main() -> None:
                                   if row["site_id"] == "file-chunk-01")
         assert multi_expansions == [0, 1], multi_expansions
         try:
-            audit_runtime_sidecar([row for row in multi_rows
-                                   if not (row["site_id"] == "file-chunk-01" and
-                                           row["generated_occurrence"] == 1)], multi_rust)
-        except (AssertionError, KeyError):
+            harness.validate_runtime_clone_site_observations(
+                [row for row in multi_rows
+                 if not (row["site_id"] == "file-chunk-01" and
+                         row["generated_occurrence"] == 1)], multi_rust)
+        except ValueError:
             pass
         else:
             raise AssertionError("dropping one repeated FileChunk expansion was accepted")
