@@ -18161,3 +18161,19 @@ Team 4 review fixes (tag `bench-t4-done-r2`, suite 0.4.1): bench/fixture files a
 breakdown (4 informative edits), README limits/disclosures. Final run `results/b6-final` (drift 4.8%, 3 blocks and 2 steps
 re-measured). selftest 60/60, validate-only, determinism, gate all, replay-check --with-churn pass; make check: only the
 3 baseline failures. No src/ change.
+
+## Phase 28.5 Team 5 (Rust comparison, B3 error-path edit `f`) - on `phase28-5-bench`
+
+Suite 0.5.0 (`benchmarks/ect_check`, one re-freeze): rust_generators.py / rust_cmp.py / report_rust.py; 4 Rust fixtures
+(manifest key `rust_fixtures`, std-only, offline `cargo check`), 19 `rust_edit_sequence` scenarios (edits a-f, D20 single and
+workspace, fan-in single, floor); Moss edit `f` as `b3_dag_f`/`b3_fanin_f` (family `b3_error`, step `expect_exit`), break at
+the top node because leaf breaks did not answer in 20 s (probes/f_edit_probe.txt). Committed quiet run
+`results/team5-final/` (loadavg 0.27, drift 2.0%, 5 reps, no spread flags). README "Team 5" section holds the table,
+differences, the L8 position-mapping requirement for Phase 28.6, and limits. Existing fixtures/scenario rows byte-identical;
+src/, Makefile, tests, compiler_torture unchanged. Validation recorded in the final commit message / README.
+Not done: Rust B1/B2 sweeps, diamond, torture, workspace fan-in; causes of Moss leaf-break non-termination not investigated.
+Team 5 validation (after the last code edit): generate.py --validate-only (80 + 4 Rust fixtures, 89 scenarios), --verify-determinism,
+run.py selftest 70/70, run.py gate --scenario-ids all PASS (80 fixtures, 68 Moss + 19 Rust sequences), check_agent_feedback PASS.
+make check (exit=2): the 3 baseline failures by name plus check_phase25_4_performance_baseline, w2_spec_distinct_n016 memory
+25084 KiB vs limit 25000 under the 16-job run; the same gate passed 3/3 when rerun alone (src/ unchanged; treated as load noise,
+not established).

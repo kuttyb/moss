@@ -174,6 +174,7 @@ def run(moss: Path, margo: Path) -> int:
     scenario_tests(R, tc, manifest, scratch, results)
     replay_tests(R, tc, manifest, scratch, results)
     guard_tests(R, tc, manifest, scratch, results)
+    rust_tests(R, tc, manifest, scratch, results)
     shutil.rmtree(scratch / "work", ignore_errors=True)
     print(f"selftest: {sum(results)}/{len(results)} passed")
     return 0 if all(results) else 1
@@ -574,3 +575,121 @@ def guard_tests(R, tc, manifest, scratch, results) -> None:
     check("bench-file entry point detects an injected type error that margo --check does not see",
           clean["ok"] and not bad["ok"] and "zz_inject" in json.dumps(bad["diagnostics"]), str(RP.diag_of(bad))[:80], results)
     shutil.rmtree(work, ignore_errors=True)
+
+
+MUTATE_CARGO = '''\
+import os, shutil, sys, tempfile
+cargo, path = sys.argv[1], sys.argv[2]
+copy = os.path.join(tempfile.mkdtemp(), "c")           # inject a type error into a COPY (the staged tree stays intact)
+shutil.copytree(path, copy)
+f = os.path.join(copy, "src", "main.rs")
+open(f, "a").write("\\nfn injected() -> i64 {\\n    \\"x\\"\\n}\\n")
+os.execv(cargo, [cargo, "check", "--offline", "--locked", "--message-format=json",
+                 "--manifest-path", os.path.join(copy, "Cargo.toml")])
+'''
+
+
+def rust_tests(R, tc, manifest, scratch, results) -> None:
+    """Team 5: Rust fixtures/sequences, the cargo verdict gate, missing-cargo guard."""
+    import os
+    import random
+    import rust_cmp as RC
+    import rust_generators as RG
+    import scenarios as S
+
+    # --- determinism and frozen hashes (no cargo needed) ---------------------------
+    outs = []
+    for i in (1, 2):
+        out = scratch / f"rustgen{i}"
+        shutil.rmtree(out, ignore_errors=True)
+        g = RG.RustDagGenerator()
+        rows = g.generate(random.Random(f"{C.SUITE_SEED}:{g.name}"), out)
+        outs.append(({r["id"]: C.tree_sha256(out / r["path"]) for r in rows}, g.scenarios))
+        shutil.rmtree(out, ignore_errors=True)
+    frozen = {f["id"]: f["sha256"] for f in manifest["rust_fixtures"]}
+    frozen_sc = {s["id"]: s for s in manifest["scenarios"] if s["kind"] == RC.SEQ_KIND}
+    check("rust determinism: two generations are byte-identical and equal the frozen manifest",
+          outs[0] == outs[1] and outs[0][0] == frozen and {s["id"]: s for s in outs[0][1]} == frozen_sc,
+          f"{len(frozen)} fixtures, {len(frozen_sc)} sequences", results)
+    sc = frozen_sc["rust_dag_single_a"]
+    tampered = {**sc, "description": sc["description"] + " x"}
+    try:
+        RC.verify_frozen(manifest, [tampered])
+        check("rust frozen hash: a tampered sequence spec is refused", False, "no error", results)
+    except C.ToolError as exc:
+        check("rust frozen hash: a tampered sequence spec is refused", "frozen SHA-256" in str(exc), str(exc)[:80], results)
+    fx = RC.fixture_by_id(manifest, sc["fixture"])
+    work = scratch / "rustfz"
+    C.stage_fixture(fx, work)
+    (work / "crate" / "src" / "dag.rs").write_text((work / "crate" / "src" / "dag.rs").read_text() + "\n// x\n")
+    check("rust frozen hash: a modified fixture tree no longer matches its SHA-256",
+          C.tree_sha256(work) != fx["sha256"], "tree hash", results)
+    shutil.rmtree(work, ignore_errors=True)
+
+    # --- frozen step expectations include the exit code ------------------------------
+    sc_f = next(s for s in manifest["scenarios"] if s["id"] == "b3_dag_f")
+    edit = next(s for s in sc_f["steps"] if s.get("label") == "edit")
+    check("B3 edit f spec: edit step expects fail + exit 1, revert expects pass",
+          edit["expect"] == "fail" and edit["expect_exit"] == 1 and
+          next(s for s in sc_f["steps"] if s.get("label") == "revert")["expect"] == "pass", str(edit), results)
+    check("step expectation is exit-code strict: fail with the wrong exit code does not satisfy it",
+          S._expect("fail", {"ok": False, "exit_code": 1}, 1) and not S._expect("fail", {"ok": False, "exit_code": 139}, 1),
+          "exit 1 vs 139", results)
+
+    # --- verdict normalization (pure) ---------------------------------------------------
+    def run_of(code, path, fresh, rendered="r"):
+        line = {"reason": "compiler-message", "message": {"level": "error", "code": {"code": code},
+                "message": "boom", "rendered": rendered + path,
+                "spans": [{"file_name": path + "/src/x.rs", "line_start": 3, "column_start": 5, "is_primary": True}]}}
+        art = {"reason": "compiler-artifact", "fresh": fresh}
+        return {"rc": 101, "timed_out": False, "stderr": "   Checking c v0.1.0 (/p)\n" if not fresh else "",
+                "stdout": "\n".join(json.dumps(x) for x in (line, art, {"reason": "build-finished", "success": False}))}
+    a = RC.extract_verdict(run_of("E0277", "/A/work", False), [("/A/work", "<F>")])
+    b = RC.extract_verdict(run_of("E0277", "/B/other", True, "different render "), [("/B/other", "<F>")])
+    c = RC.extract_verdict(run_of("E0308", "/A/work", False), [("/A/work", "<F>")])
+    check("rust verdict: paths, rendered text and fresh/dirty bookkeeping are normalized away; a changed error code is not",
+          RC.gate_view(a) == RC.gate_view(b) and RC.gate_view(a) != RC.gate_view(c) and
+          a["bookkeeping"]["units_checked"] == 1 and b["bookkeeping"]["units_fresh"] == 1, "gate_view", results)
+
+    # --- missing cargo: one clear line, skip, no crash -----------------------------------
+    saved = os.environ.get("PATH")
+    os.environ["PATH"] = str(scratch / "no-such-bin")
+    try:
+        try:
+            RC.find_rust()
+            msg = None
+        except RC.RustUnavailable as exc:
+            msg = str(exc)
+        ref, cand = R.rust_toolchains(None, [{"id": "x"}])
+    finally:
+        os.environ["PATH"] = saved
+    check("missing cargo: find_rust raises RustUnavailable with a clear one-line message and the runner skips",
+          msg is not None and "\n" not in msg and "skipped" in msg and ref is None and cand is None, str(msg)[:90], results)
+
+    try:
+        rust = RC.find_rust()
+    except RC.RustUnavailable as exc:
+        print(f"SKIP rust selftests needing cargo: {exc}")
+        return
+
+    # --- the gate: identity passes, a mutating cargo client fails, an injected error is a real failure
+    scs = [s for s in frozen_sc.values() if s["id"] in ("rust_floor_edit", "rust_dag_single_f")]
+    run_dir = scratch / "rustgate"
+    ident = [RC.gate_scenario(s, RC.fixture_by_id(manifest, s["fixture"]), rust, rust, None, run_dir) for s in scs]
+    wrapper = scratch / "mutate_cargo.py"
+    wrapper.write_text(MUTATE_CARGO)
+    tmpl = f"python3 {wrapper} {{cargo}} {{path}}"
+    mut = [RC.gate_scenario(s, RC.fixture_by_id(manifest, s["fixture"]), rust, rust, tmpl, run_dir) for s in scs]
+    check("rust gate: identity candidate passes (incl. the failing edit f with its diagnostic)",
+          all(g["passed"] for g in ident), str([g["passed"] for g in ident]), results)
+    floor_mut = mut[[s["id"] for s in scs].index("rust_floor_edit")]
+    check("rust gate: a candidate that injects a type error is caught (steps differ from the reference)",
+          not floor_mut["passed"] and not any(x["candidate_matches_expected"] for x in floor_mut["steps"][:1]),
+          str([x["identical"] for x in floor_mut["steps"]]), results)
+    f_steps = ident[[s["id"] for s in scs].index("rust_dag_single_f")]["steps"]
+    edit_step = next(x for x in f_steps if x["step"] == "edit")
+    check("rust error path: reference edit step fails with exit 101, code E0277, and revert passes again",
+          edit_step["reference"]["exit_code"] == 101 and not edit_step["reference"]["ok"] and
+          edit_step["reference"]["document"]["diagnostics"][0]["code"] == "E0277" and
+          next(x for x in f_steps if x["step"] == "revert")["reference"]["ok"], "E0277", results)
+    shutil.rmtree(run_dir, ignore_errors=True)

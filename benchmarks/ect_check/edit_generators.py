@@ -164,6 +164,52 @@ class B3EditsGenerator(Generator):
         return rows
 
 
+class B3ErrorGenerator(Generator):
+    """Team 5: edit `f` of B3, the error path. Scenarios only (no fixtures of its
+    own): the frozen B3 fixtures are the base trees; the frozen B3 scenarios are not
+    touched (this is a separate generator so their rows stay byte-identical).
+
+    The break is a type error in the TOP node of the edited chain (DAG `n000_0`,
+    fan-in `e0`): `child(x) + 1` -> `child(x) + "one"`. A break at the leaf, where
+    the other B3 edits are, was probed first and is ruled out: the Moss check
+    did not answer within 20 s for six different leaf breaks on both shapes
+    (probes/f_edit_probe.txt). Step expectations: `edit` fails with exit code 1
+    (margo), `revert` passes."""
+    name = "b3_error"
+    version = "1.0.0"
+    category = "b3_error"
+
+    BREAKS = (("dag", "b3_dag_d20_w4_k02", "n000_0", "fn n000_0(x):\n  return n001_0(x) + 1\n"),
+              ("fanin", "b3_fanin_d50_w4_k02", "e0", "fn e0(x):\n  return c000(x) + 0\n"))
+
+    def __init__(self):
+        self.scenarios: list[dict] = []
+
+    def generate(self, rng: random.Random, out_dir: Path) -> list[dict]:
+        import shutil
+        self.scenarios = []
+        ref = out_dir / "_b3_error_ref"
+        B3EditsGenerator().generate(random.Random(f"{C.SUITE_SEED}:b3_edits"), ref)
+        for shape, fid, node, old in self.BREAKS:
+            new = old.replace("+ 1\n", '+ "one"\n').replace("+ 0\n", '+ "one"\n')
+            assert new != old
+            patch = C.make_patch("f", ref / "b3_edits" / fid, [{"file": "pkg/src/main.moss", "old": old, "new": new}])
+            self.scenarios.append(scenario_row({
+                "id": f"b3_{shape}_f", "family": "b3_error", "fixture": fid, "kind": "edit_sequence",
+                "description": f"error path: type error (`+ \"one\"`) in the top node {node} of the "
+                               f"{'spine DAG' if shape == 'dag' else 'fan-in'}",
+                "edited_function": node, "classification": "error",
+                "patches": {"f": patch},
+                "steps": [
+                    {"op": "check", "label": "base", "expect": "pass"},
+                    {"op": "apply", "patch": "f"},
+                    {"op": "check", "label": "edit", "expect": "fail", "expect_exit": 1},
+                    {"op": "revert", "patch": "f"},
+                    {"op": "check", "label": "revert", "expect": "pass"}]}))
+        shutil.rmtree(ref, ignore_errors=True)
+        return []
+
+
 class B4ColdWarmGenerator(Generator):
     name = "b4_cold_warm"
     version = "1.0.0"
@@ -301,4 +347,4 @@ class B5WorktreesGenerator(Generator):
         return []
 
 
-EDIT_GENERATORS = [B3EditsGenerator(), B4ColdWarmGenerator(), B5WorktreesGenerator()]
+EDIT_GENERATORS = [B3EditsGenerator(), B4ColdWarmGenerator(), B5WorktreesGenerator(), B3ErrorGenerator()]

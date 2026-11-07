@@ -144,7 +144,9 @@ class TrivialGenerator(Generator):
 from dag_generators import DAG_GENERATORS  # noqa: E402
 from edit_generators import EDIT_GENERATORS  # noqa: E402
 from replay_generators import REPLAY_GENERATORS  # noqa: E402
-GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS, *EDIT_GENERATORS, *REPLAY_GENERATORS]
+from rust_generators import RUST_GENERATORS  # noqa: E402
+GENERATORS: list[Generator] = [TrivialGenerator(), *DAG_GENERATORS, *EDIT_GENERATORS, *REPLAY_GENERATORS,
+                               *RUST_GENERATORS]
 
 
 def reject_reserved_names(root: Path) -> None:
@@ -172,7 +174,7 @@ def check_scenarios(out_dir: Path, rows: list[dict], scenarios: list[dict]) -> N
         fx = by_id.get(sc["fixture"])
         if fx is None:
             raise SystemExit(f"scenario {sc['id']}: unknown fixture {sc['fixture']}")
-        if sc["kind"] != "edit_sequence":
+        if sc["kind"] not in ("edit_sequence", "rust_edit_sequence"):
             continue
         if scratch.exists():
             shutil.rmtree(scratch)
@@ -207,10 +209,15 @@ def build_all(out_dir: Path) -> tuple[list[dict], list[dict]]:
 def write_manifest(rows: list[dict], scenarios: list[dict]) -> None:
     ids = [r["id"] for r in rows]
     assert len(ids) == len(set(ids)), "duplicate fixture ids"
+    # Team 5: Rust (cargo) fixtures live under their own key so every Moss loop
+    # (bench, gate, validate, selected-fixture lookup) is unaffected by them.
+    moss_rows = [r for r in rows if r["kind"] != "cargo"]
+    rust_rows = [r for r in rows if r["kind"] == "cargo"]
     manifest = {"suite_name": C.SUITE_NAME, "version": C.SUITE_VERSION,
-                "seed": C.SUITE_SEED, "total_fixtures": len(rows),
+                "seed": C.SUITE_SEED, "total_fixtures": len(moss_rows),
+                "total_rust_fixtures": len(rust_rows),
                 "generators": {g.name: g.version for g in GENERATORS},
-                "fixtures": rows, "scenarios": scenarios}
+                "fixtures": moss_rows, "rust_fixtures": rust_rows, "scenarios": scenarios}
     if any(sc["kind"] == "replay_step" for sc in scenarios):
         import replay
         manifest["replay"] = replay.replay_range(scenarios)
@@ -238,7 +245,7 @@ def cmd_verify_determinism() -> int:
     scratch.mkdir(parents=True)
     rows, scenarios = build_all(scratch)
     manifest = C.load_manifest()
-    frozen = {f["id"]: f["sha256"] for f in manifest["fixtures"]}
+    frozen = {f["id"]: f["sha256"] for f in manifest["fixtures"] + manifest.get("rust_fixtures", [])}
     bad = [r["id"] for r in rows if frozen.get(r["id"]) != r["sha256"]]
     for fid in sorted(set(frozen) - {r["id"] for r in rows}):
         bad.append(fid)
@@ -280,6 +287,24 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
                                 f"timed_out={verdict.get('timed_out')} does not satisfy the manifest")
             line += f", status {status} (expected {fx['expected_status']})"
         print(line)
+    rust = None
+    rust_dir = C.TMP_ROOT / "validate"
+    if manifest.get("rust_fixtures"):
+        import rust_cmp as RC
+        try:
+            rust = RC.find_rust() if compile_check else None
+        except RC.RustUnavailable as exc:
+            print(f"SKIP Rust fixtures/scenarios (cargo checks): {exc}")
+        for fx in manifest["rust_fixtures"]:
+            actual = C.tree_sha256(C.FIXTURES_DIR / fx["path"])
+            line = f"{fx['id']}: sha256 {'ok' if actual == fx['sha256'] else 'MISMATCH'}"
+            if actual != fx["sha256"]:
+                failures.append(f"{fx['id']}: sha256 mismatch")
+            if rust is not None:
+                found = RC.validate_fixture(fx, rust, rust_dir)
+                failures += found
+                line += ", cargo check ok" if not found else ", FAILED"
+            print(line)
     scenarios = manifest.get("scenarios", [])
     if scenarios:
         import scenarios as S
@@ -289,7 +314,7 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
             print("replay range: sha256 ok")
         except C.ToolError as exc:
             failures.append(str(exc))
-        by_id = {f["id"]: f for f in manifest["fixtures"]}
+        by_id = {f["id"]: f for f in manifest["fixtures"] + manifest.get("rust_fixtures", [])}
         for sc in scenarios:
             body = {k: v for k, v in sc.items() if k != "sha256"}
             ok = C.text_sha256(C.canonical_json(body)) == sc["sha256"]
@@ -306,6 +331,11 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
                         found = [str(exc)]
                 failures += found
                 line += ", replay ok" if not found else ", FAILED"
+            elif sc["kind"] == "rust_edit_sequence":
+                if rust is not None:
+                    found = RC.validate_scenario(sc, by_id[sc["fixture"]], rust, rust_dir)
+                    failures += found
+                    line += ", steps ok" if not found else ", FAILED"
             elif compile_check:
                 fx = by_id[sc["fixture"]]
                 found = (S.validate_scenario(sc, fx, tc, C.TMP_ROOT / "validate")
@@ -317,7 +347,8 @@ def cmd_validate(moss: Path, margo: Path, compile_check: bool) -> int:
     if failures:
         print("VALIDATION FAILED:\n  " + "\n  ".join(failures), file=sys.stderr)
         return 1
-    print(f"validated {len(manifest['fixtures'])} fixtures and {len(scenarios)} scenarios")
+    print(f"validated {len(manifest['fixtures'])} fixtures + {len(manifest.get('rust_fixtures', []))} "
+          f"Rust fixtures and {len(scenarios)} scenarios")
     return 0
 
 

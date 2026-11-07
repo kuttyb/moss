@@ -29,7 +29,9 @@ import ect_common as C  # noqa: E402
 import edit_evidence  # noqa: E402
 import report_dag  # noqa: E402
 import report_replay  # noqa: E402
+import report_rust  # noqa: E402
 import report_scenarios  # noqa: E402
+import rust_cmp as RC  # noqa: E402
 import replay as RP  # noqa: E402
 import churn as CH  # noqa: E402
 import scenarios as S  # noqa: E402
@@ -341,7 +343,9 @@ def pct(share):
 CSV_FIELDS = ["compiler_path", "compiler_sha256", "compiler_flavor", "fixture", "scenario", "step",
               "base_fixture", "kind", "mode", "reps", "expected_status", "status",
               "status_ok", "wall_ms_median", "wall_ms_min", "wall_ms_max", "wall_ms_first",
-              "cpu_ms_median", "rss_kib_median", "checker_runs",
+              "cpu_ms_median", "rss_kib_median", "tree_rss_peak_kib_median", "checker_runs",
+              "units_checked", "units_fresh", "spread", "attempts", "spread_flagged", "block_attempts",
+              "block_noisy", "diagnostic",
               "exit_code", "timed_out", "provider_wall_ms_median", "provider_cpu_ms_median",
               "provider_rss_kib_median", "provider_functions_analyzed", "provider_checker_runs",
               *[name for name, _ in C.WORK_COUNTERS]]
@@ -358,7 +362,7 @@ WT_CSV_FIELDS = ["compiler_flavor", "scenario", "base_fixture", "mode", "n", "sc
 def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
                   metrics: dict | None, scenarios: list[dict] | None = None,
                   evidence: list[dict] | None = None, wt_rows: list[dict] | None = None,
-                  churn_records: list[dict] | None = None) -> None:
+                  churn_records: list[dict] | None = None, rust_scs: list[dict] | None = None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     scenarios = scenarios or []
     wt_rows = wt_rows or []
@@ -376,7 +380,7 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
         writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
-    replay_stats = report_replay.analysis(rows, scenarios, churn_records)
+    replay_stats = report_replay.analysis([r for r in rows if r.get("kind") != "cargo"], scenarios, churn_records)
     if replay_stats:
         report_replay.write_csv(out / "results_replay.csv", replay_stats)
     (out / "results.json").write_text(json.dumps(
@@ -444,8 +448,9 @@ def write_outputs(out: Path, meta: dict, rows: list[dict], gate: dict | None,
               "hits are intra-run reuse only).", ""]
 
     lines += report_dag.sections([r for r in rows if not r.get("scenario")])
-    lines += report_scenarios.sections(rows, scenarios, evidence, wt_rows, meta)
+    lines += report_scenarios.sections([r for r in rows if r.get("kind") != "cargo"], scenarios, evidence, wt_rows, meta)
     lines += report_replay.sections(replay_stats, meta)
+    lines += report_rust.sections(rows, scenarios or [], rust_scs or [], gate, meta)
 
     lines += ["## 2. Correctness gate (reference vs candidate)", ""]
     if gate is None:
@@ -579,6 +584,10 @@ def add_common(ap):
 def add_gate_args(ap):
     ap.add_argument("--reference-moss", help="reference compiler (default --moss)")
     ap.add_argument("--candidate-moss", help="candidate compiler (default --moss)")
+    ap.add_argument("--rust-candidate-cmd", default=os.environ.get(RC.CANDIDATE_ENV),
+                    help="candidate command template for the Rust (cargo) sequences; placeholders "
+                         "{cargo} {path} {root} {id}; must print cargo --message-format=json. "
+                         f"Env: {RC.CANDIDATE_ENV}. Default: the built-in cargo check command.")
     ap.add_argument("--candidate-cmd", default=os.environ.get(CANDIDATE_ENV),
                     help="candidate command template; placeholders {moss} {margo} "
                          "{path} {root} {id}. Must print moss-agent-1 or margo-1 JSON. "
@@ -683,12 +692,33 @@ def startup_decomposition(tc: C.Toolchain, manifest: dict, run_dir: Path, reps: 
 
 
 def pick_scenarios(manifest: dict, args) -> list[dict]:
+    """Moss scenarios (the Team 5 Rust sequences are picked by rust_cmp.pick)."""
     ids = getattr(args, "scenario_ids", None)
     if ids:
-        return S.select_scenarios(manifest, None if ids == ["all"] else ids)
-    if getattr(args, "ids", None):
+        chosen = S.select_scenarios(manifest, None if ids == ["all"] else ids)
+    elif getattr(args, "ids", None):
         return []
-    return manifest.get("scenarios", [])
+    else:
+        chosen = manifest.get("scenarios", [])
+    return [sc for sc in chosen if sc["kind"] != RC.SEQ_KIND]
+
+
+def rust_toolchains(args, scs: list[dict]):
+    """(reference, candidate) cargo toolchains, or (None, None) with a one-line
+    SKIP message when cargo is not usable (never a crash)."""
+    if not scs:
+        return None, None
+    try:
+        ref = RC.find_rust()
+    except RC.RustUnavailable as exc:
+        print(f"SKIP Rust comparison: {exc}", file=sys.stderr)
+        return None, None
+    return ref, ref
+
+
+def run_rust_gate(scs: list[dict], manifest: dict, ref, cand, template: str | None, run_dir: Path) -> list[dict]:
+    return [RC.gate_scenario(sc, RC.fixture_by_id(manifest, sc["fixture"]), ref, cand, template, run_dir)
+            for sc in scs]
 
 
 def gate_toolchains(args):
@@ -804,12 +834,20 @@ def main() -> int:
         ref, cand = gate_toolchains(args)
         gate = run_gate(fixtures, ref, cand, args.candidate_cmd, run_dir,
                         pick_scenarios(manifest, args))
+        rust_scs = RC.pick(manifest, args)
+        rref, rcand = rust_toolchains(args, rust_scs)
+        if rref is not None:
+            RC.verify_frozen(manifest, rust_scs)
+            gate["rust"] = run_rust_gate(rust_scs, manifest, rref, rcand, args.rust_candidate_cmd, run_dir)
+            gate["passed"] = gate["passed"] and all(r["passed"] for r in gate["rust"])
         (run_dir / "gate.json").write_text(json.dumps(gate, indent=2) + "\n")
         for sg in gate["scenarios"]:
             if sg.get("reference_note"):
                 print(f"NOTE {sg['scenario']}: {sg['reference_note']}")
                 break
-        print(f"gate: {'PASS' if gate['passed'] else 'FAIL'} ({gate['fixtures']} fixtures); {run_dir / 'gate.json'}")
+        print(f"gate: {'PASS' if gate['passed'] else 'FAIL'} ({gate['fixtures']} fixtures, "
+              f"{len(gate['scenarios'])} Moss sequences, {len(gate.get('rust', []))} Rust sequences); "
+              f"{run_dir / 'gate.json'}")
         return 0 if gate["passed"] else 1
 
     if cmd == "evidence":
@@ -897,6 +935,27 @@ def main() -> int:
                 print(f"{mode:4} {sc['id']}: " + ", ".join(
                     f"N={r['n']} {r['schedule'][:4]} {r['group_wall_ms_median']:.0f} ms"
                     for r in new), flush=True)
+    rust_scs = RC.pick(manifest, args)
+    rref, rcand = rust_toolchains(args, rust_scs)
+    rust_scs = rust_scs if rref is not None else []
+    if rust_scs:
+        RC.verify_frozen(manifest, rust_scs)
+        rbase = C.median([block_probe(tc, manifest_all, run_dir) for _ in range(3)])
+
+        def log_rprobe(p):
+            print(f"  probe rust block@{p['first_step']} try {p['attempt']}: drift {p['drift_pct']}%"
+                  f"{' NOISY: block re-measured' if p['noisy'] else ''}", flush=True)
+        rrows, rprobes = RP.run_blocks(
+            rust_scs,
+            lambda sc: RC.measure_scenario(sc, RC.fixture_by_id(manifest, sc["fixture"]), rref, args.reps,
+                                           run_dir, not args.no_warmup),
+            lambda: block_probe(tc, manifest_all, run_dir), rbase, log=log_rprobe)
+        block_probes += [{**p, "mode": "rust", "baseline_probe_ms": rbase} for p in rprobes]
+        for sc, new in zip(rust_scs, rrows):
+            rows.extend(new)
+            print(f"rust {sc['id']}: " + ", ".join(
+                f"{r['step']} {r['wall_ms_median']:.1f} ms ({r['status']}, spread {f_(r['spread'])}, "
+                f"attempts {r['attempts']})" for r in new), flush=True)
     startup = startup_decomposition(tc, manifest_all, run_dir) \
         if any(sc["family"] == "b4_cold_warm" for sc in chosen_scenarios) else None
     noise = noise_summary(noise_start, noise_probe(tc, manifest_all, run_dir, "end")) \
@@ -919,6 +978,9 @@ def main() -> int:
         ref, cand = gate_toolchains(args)
         gate = run_gate(fixtures, ref, cand, args.candidate_cmd or args.warm_client_cmd, run_dir,
                         chosen_scenarios)
+        if rust_scs:
+            gate["rust"] = run_rust_gate(rust_scs, manifest, rref, rcand, args.rust_candidate_cmd, run_dir)
+            gate["passed"] = gate["passed"] and all(r["passed"] for r in gate["rust"])
     metrics = None if args.no_metrics else {
         m: run_metrics(tc, run_dir, m) for m in args.metrics_modes.split(",")}
     meta = {"suite": manifest["suite_name"], "suite_version": manifest["version"],
@@ -930,9 +992,14 @@ def main() -> int:
             "git_dirty": bool(git("status", "--porcelain")),
             "platform": platform.platform(), "cpus": os.cpu_count(),
             "reps": args.reps, "warm_client": args.warm_client_cmd, "noise": noise,
-            "block_probes": block_probes, "reference_pin": RP.reference_pin(tc) if b6_steps else None,
+            "block_probes": block_probes, "rust": ({k: v for k, v in rref.versions.items()
+                                                    if k != "rustc_verbose"} if rust_scs else None),
+            "rust_env": ("CARGO_INCREMENTAL unset (default); CARGO_HOME and CARGO_TARGET_DIR under tmp/; "
+                         "--offline --locked; std only") if rust_scs else None,
+            "reference_pin": RP.reference_pin(tc) if b6_steps else None,
             "startup": startup}
-    write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows, churn_records)
+    write_outputs(run_dir, meta, rows, gate, metrics, chosen_scenarios, evidence, wt_rows, churn_records,
+                  rust_scs)
     # Cold rows are the reference compiler: manifest mismatch is a hard failure.
     # Warm rows (a candidate client) only produce IMPROVED/REGRESSED notes.
     ok = all(r["status_ok"] for r in rows if r["mode"] == "cold") and \

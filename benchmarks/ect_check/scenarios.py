@@ -93,8 +93,25 @@ def run_sequence(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, work
     return results
 
 
-def _expect(step_expect: str, verdict: dict) -> bool:
-    return C.fixture_ok({"expected_status": step_expect}, verdict)
+def _expect(step_expect: str, verdict: dict, exit_code: int | None = None) -> bool:
+    """Does a step's verdict satisfy the frozen expectation? `exit_code` is the
+    step's optional frozen `expect_exit` (None for every pre-Team-5 step)."""
+    return C.fixture_ok({"expected_status": step_expect, "expected_exit_code": exit_code}, verdict)
+
+
+def expect_exits(sc: dict) -> dict[str, int | None]:
+    return {s["label"]: s.get("expect_exit") for s in sc["steps"] if s["op"] == "check"}
+
+
+def diag_summary(verdict: dict) -> str | None:
+    """`code: message` of the first diagnostic of a failing verdict (reports)."""
+    if verdict.get("ok"):
+        return None
+    diags = verdict.get("diagnostics") or []
+    d = diags[0] if diags else None
+    if isinstance(d, dict):
+        return f"{d.get('code', '?')}: {str(d.get('message', ''))[:160]}"
+    return str(d if d is not None else verdict.get("raw", ""))[:160] or None
 
 
 def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, mode: str,
@@ -112,6 +129,7 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
     work = run_dir / "work" / f"{mode}-{sc['id']}"
     repl = C.path_replacements(work, tc)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
+    exits = expect_exits(sc)
     samples: dict[str, list[dict]] = {label: [] for label in expects}
     if mode == "warm":
         C.stage_fixture(fx, work)
@@ -137,7 +155,8 @@ def measure_scenario(sc: dict, fx: dict, tc: C.Toolchain, template: str | None, 
             "fixture": f"{sc['id']}:{label}", "scenario": sc["id"], "step": label,
             "base_fixture": fx["id"], "kind": fx["kind"], "mode": mode, "reps": reps,
             "expected_status": expects[label], "status": C.status_of(verdicts[-1]),
-            "status_ok": len(good) == len(runs) and all(_expect(expects[label], v) for v in verdicts),
+            "status_ok": len(good) == len(runs) and all(_expect(expects[label], v, exits[label]) for v in verdicts),
+            "expected_exit_code": exits[label], "diagnostic": diag_summary(verdicts[-1]),
             "timed_out_reps": len(runs) - len(good), "timed_out": len(good) != len(runs),
             "wall_ms_median": C.median([r["wall_ms"] for r in good]),
             "wall_ms_min": min((r["wall_ms"] for r in good), default=None),
@@ -214,14 +233,15 @@ def gate_scenario(sc: dict, fx: dict, reference: C.Toolchain, candidate: C.Toolc
         verdicts[side] = {label: C.extract_verdict(r, repl) for label, r in res.items()}
         shutil.rmtree(work, ignore_errors=True)
     expects = {s["label"]: s["expect"] for s in sc["steps"] if s["op"] == "check"}
+    exits = expect_exits(sc)
     steps = []
     for label, exp in expects.items():
         ref, cand = verdicts["reference"][label], verdicts["candidate"][label]
         steps.append({"step": label, "identical": gate_view(ref) == gate_view(cand),
                       "bookkeeping_reference": bookkeeping(ref),
                       "bookkeeping_candidate": bookkeeping(cand),
-                      "reference_matches_expected": _expect(exp, ref),
-                      "candidate_matches_expected": _expect(exp, cand),
+                      "reference_matches_expected": _expect(exp, ref, exits[label]),
+                      "candidate_matches_expected": _expect(exp, cand, exits[label]),
                       "status": C.status_of(ref), "reference": ref, "candidate": cand})
     return {"scenario": sc["id"], "fixture": fx["id"], "steps": steps,
             "passed": all(s["identical"] and s["reference_matches_expected"] for s in steps)}
@@ -241,7 +261,7 @@ def validate_scenario(sc: dict, fx: dict, tc: C.Toolchain, run_dir: Path) -> lis
     for step in sc["steps"]:
         if step["op"] == "check":
             verdict = C.extract_verdict(res[step["label"]], repl)
-            if not _expect(step["expect"], verdict):
+            if not _expect(step["expect"], verdict, step.get("expect_exit")):
                 failures.append(f"{sc['id']}:{step['label']}: status {C.status_of(verdict)} "
                                 f"(exit {verdict.get('exit_code')}) != expected {step['expect']}")
     shutil.rmtree(work, ignore_errors=True)

@@ -1,8 +1,9 @@
 {
   "suite_name": "moss_ect_check",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "seed": 20261105,
   "total_fixtures": 80,
+  "total_rust_fixtures": 4,
   "generators": {
     "trivial": "1.0.0",
     "b1_leak": "1.0.0",
@@ -13,7 +14,9 @@
     "b3_edits": "1.0.0",
     "b4_cold_warm": "1.0.0",
     "b5_worktrees": "1.0.0",
-    "b6_replay": "1.0.0"
+    "b3_error": "1.0.0",
+    "b6_replay": "1.0.0",
+    "rust_dag": "1.0.0"
   },
   "fixtures": [
     {
@@ -1874,6 +1877,103 @@
       "sha256": "4ff8eb5f4304c9dc89d915a053f720ccbe40a9fa6ad82c6250e4ea0e279d0dbb"
     }
   ],
+  "rust_fixtures": [
+    {
+      "id": "rust_dag_single_d20_w4_k02",
+      "path": "rust_dag/rust_dag_single_d20_w4_k02",
+      "kind": "cargo",
+      "entry": "crate",
+      "timeout_s": 300,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "rust_dag",
+        "layout": "single",
+        "shape": "dag",
+        "depth": 20,
+        "width": 4,
+        "types": 2,
+        "nodes": 81,
+        "packages": 1,
+        "edit_leaf": "n019_0",
+        "moss_counterpart": "b3_dag_d20_w4_k02"
+      },
+      "category": "rust_dag",
+      "generator": "rust_dag",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "ef3722959152a6596fa1fa7bd324b4de368466ce3ca5dd2a1e2b4051531e7871"
+    },
+    {
+      "id": "rust_dag_ws_d20_w4_k02",
+      "path": "rust_dag/rust_dag_ws_d20_w4_k02",
+      "kind": "cargo",
+      "entry": "ws",
+      "timeout_s": 300,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "rust_dag",
+        "layout": "workspace",
+        "shape": "dag",
+        "depth": 20,
+        "width": 4,
+        "types": 2,
+        "nodes": 81,
+        "packages": 2,
+        "edit_leaf": "n019_0",
+        "moss_counterpart": "b3_dag_d20_w4_k02"
+      },
+      "category": "rust_dag",
+      "generator": "rust_dag",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "6b22803907ba6f493b7406f72c10def881a1e35a902932d87020852c43017257"
+    },
+    {
+      "id": "rust_fanin_single_d50_w4_k02",
+      "path": "rust_dag/rust_fanin_single_d50_w4_k02",
+      "kind": "cargo",
+      "entry": "crate",
+      "timeout_s": 300,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "rust_dag",
+        "layout": "single",
+        "shape": "fanin",
+        "depth": 50,
+        "width": 4,
+        "types": 2,
+        "nodes": 55,
+        "packages": 1,
+        "edit_leaf": "c049",
+        "moss_counterpart": "b3_fanin_d50_w4_k02"
+      },
+      "category": "rust_dag",
+      "generator": "rust_dag",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "3eea79578d9895bee2b773241e80b8440d3737da1b6fe36fbe44c835fde5ef4d"
+    },
+    {
+      "id": "rust_floor_single",
+      "path": "rust_dag/rust_floor_single",
+      "kind": "cargo",
+      "entry": "crate",
+      "timeout_s": 300,
+      "expected_status": "pass",
+      "metadata": {
+        "family": "rust_floor",
+        "layout": "single",
+        "nodes": 0,
+        "packages": 1,
+        "note": "startup floor: a main that only prints a literal"
+      },
+      "category": "rust_dag",
+      "generator": "rust_dag",
+      "generator_version": "1.0.0",
+      "generator_seed": 20261105,
+      "sha256": "66d65787243901b917323dd487879bef0e9dbaaf6141e281727db7817fcbf4f5"
+    }
+  ],
   "scenarios": [
     {
       "id": "b3_dag_a",
@@ -2956,6 +3056,114 @@
         "message": "ect-check base"
       },
       "sha256": "14c12090eed46a8bc3df3615a4b07b3ebf5586a1e2e67dee319bcc0180d6490b"
+    },
+    {
+      "id": "b3_dag_f",
+      "family": "b3_error",
+      "fixture": "b3_dag_d20_w4_k02",
+      "kind": "edit_sequence",
+      "description": "error path: type error (`+ \"one\"`) in the top node n000_0 of the spine DAG",
+      "edited_function": "n000_0",
+      "classification": "error",
+      "patches": {
+        "f": {
+          "id": "f",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn n000_0(x):\n  return n001_0(x) + 1\n",
+              "new": "fn n000_0(x):\n  return n001_0(x) + \"one\"\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "60fb3e378f6dfb8c9b93119c3996d13f04eb5b8b7c05209ddf8802adf80597e9"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "5f2e7b85b799f17c5c5cd35a76ff41350fa7603a0cadb5e7e8f1c2d700fe6c2c"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "fail",
+          "expect_exit": 1
+        },
+        {
+          "op": "revert",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "07e16cc33b9b1a5352ac4ec0b9e63688900e408728cf3fcf39dcc25d79178739"
+    },
+    {
+      "id": "b3_fanin_f",
+      "family": "b3_error",
+      "fixture": "b3_fanin_d50_w4_k02",
+      "kind": "edit_sequence",
+      "description": "error path: type error (`+ \"one\"`) in the top node e0 of the fan-in",
+      "edited_function": "e0",
+      "classification": "error",
+      "patches": {
+        "f": {
+          "id": "f",
+          "edits": [
+            {
+              "file": "pkg/src/main.moss",
+              "old": "fn e0(x):\n  return c000(x) + 0\n",
+              "new": "fn e0(x):\n  return c000(x) + \"one\"\n"
+            }
+          ],
+          "before_sha256": {
+            "pkg/src/main.moss": "4b3c7f2c47a12c63390f625ab5502fe514366198a6483304b3472f8937676546"
+          },
+          "after_sha256": {
+            "pkg/src/main.moss": "f09c22e50416332b5a92dcab64d9c6af026b9f104da1692bec5b828f0a3fcba0"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "base",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "fail",
+          "expect_exit": 1
+        },
+        {
+          "op": "revert",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "3c2a4b8fc577d81af6833beefc6752f0e5f64326a4c6490700f63ae1e2358383"
     },
     {
       "id": "b6_01_a25a6fe1",
@@ -7687,6 +7895,1600 @@
       "touches_source": false,
       "touches_manifest": false,
       "sha256": "4373fffb1f3e5901abea7881b4cab029979567e389186b0973aa4d8e5084e097"
+    },
+    {
+      "id": "rust_dag_single_a",
+      "family": "rust_edits",
+      "fixture": "rust_dag_single_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "summary-unchanged body edit at leaf n019_0 of the dag (single layout)",
+      "edited_function": "n019_0",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "a": {
+          "id": "a",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 2;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "66f78895b0f48771d6cb972007177fa43ee395c356d39d0cc8e71d293def0e44"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "0e120552d37326a2b9a8461fbe3dc64d5ed919a5793ec4e14e309c66bf9404bf"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "b7f2652045298cb8929847b8fb238d0c8d5290ed12eee5646bf2fcbb6534badf"
+    },
+    {
+      "id": "rust_dag_single_b",
+      "family": "rust_edits",
+      "fixture": "rust_dag_single_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "return type i64 -> f64 through the call cone at leaf n019_0 of the dag (single layout)",
+      "edited_function": "n019_0",
+      "classification": "cone",
+      "edit_count": 21,
+      "patches": {
+        "b": {
+          "id": "b",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> f64 {\n    // leaf body\n    let k = 0.5;\n    let r = x.score();\n    r as f64 + k\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n018_0<T: Score>(x: &T) -> i64 {\n    n019_0(x) + 1\n}\n",
+              "new": "pub fn n018_0<T: Score>(x: &T) -> f64 {\n    n019_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n017_0<T: Score>(x: &T) -> i64 {\n    n018_0(x) + 1\n}\n",
+              "new": "pub fn n017_0<T: Score>(x: &T) -> f64 {\n    n018_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n016_0<T: Score>(x: &T) -> i64 {\n    n017_0(x) + 1\n}\n",
+              "new": "pub fn n016_0<T: Score>(x: &T) -> f64 {\n    n017_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n015_0<T: Score>(x: &T) -> i64 {\n    n016_0(x) + 1\n}\n",
+              "new": "pub fn n015_0<T: Score>(x: &T) -> f64 {\n    n016_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n014_0<T: Score>(x: &T) -> i64 {\n    n015_0(x) + 1\n}\n",
+              "new": "pub fn n014_0<T: Score>(x: &T) -> f64 {\n    n015_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n013_0<T: Score>(x: &T) -> i64 {\n    n014_0(x) + 1\n}\n",
+              "new": "pub fn n013_0<T: Score>(x: &T) -> f64 {\n    n014_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n012_0<T: Score>(x: &T) -> i64 {\n    n013_0(x) + 1\n}\n",
+              "new": "pub fn n012_0<T: Score>(x: &T) -> f64 {\n    n013_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n011_0<T: Score>(x: &T) -> i64 {\n    n012_0(x) + 1\n}\n",
+              "new": "pub fn n011_0<T: Score>(x: &T) -> f64 {\n    n012_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n010_0<T: Score>(x: &T) -> i64 {\n    n011_0(x) + 1\n}\n",
+              "new": "pub fn n010_0<T: Score>(x: &T) -> f64 {\n    n011_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n009_0<T: Score>(x: &T) -> i64 {\n    n010_0(x) + 1\n}\n",
+              "new": "pub fn n009_0<T: Score>(x: &T) -> f64 {\n    n010_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n008_0<T: Score>(x: &T) -> i64 {\n    n009_0(x) + 1\n}\n",
+              "new": "pub fn n008_0<T: Score>(x: &T) -> f64 {\n    n009_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n007_0<T: Score>(x: &T) -> i64 {\n    n008_0(x) + 1\n}\n",
+              "new": "pub fn n007_0<T: Score>(x: &T) -> f64 {\n    n008_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n006_0<T: Score>(x: &T) -> i64 {\n    n007_0(x) + 1\n}\n",
+              "new": "pub fn n006_0<T: Score>(x: &T) -> f64 {\n    n007_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n005_0<T: Score>(x: &T) -> i64 {\n    n006_0(x) + 1\n}\n",
+              "new": "pub fn n005_0<T: Score>(x: &T) -> f64 {\n    n006_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n004_0<T: Score>(x: &T) -> i64 {\n    n005_0(x) + 1\n}\n",
+              "new": "pub fn n004_0<T: Score>(x: &T) -> f64 {\n    n005_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n003_0<T: Score>(x: &T) -> i64 {\n    n004_0(x) + 1\n}\n",
+              "new": "pub fn n003_0<T: Score>(x: &T) -> f64 {\n    n004_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n002_0<T: Score>(x: &T) -> i64 {\n    n003_0(x) + 1\n}\n",
+              "new": "pub fn n002_0<T: Score>(x: &T) -> f64 {\n    n003_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n001_0<T: Score>(x: &T) -> i64 {\n    n002_0(x) + 1\n}\n",
+              "new": "pub fn n001_0<T: Score>(x: &T) -> f64 {\n    n002_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n000_0<T: Score>(x: &T) -> i64 {\n    n001_0(x) + 1\n}\n",
+              "new": "pub fn n000_0<T: Score>(x: &T) -> f64 {\n    n001_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn root<T: Score>(x: &T) -> i64 {\n    n000_0(x) + n000_1(x) + n000_2(x) + n000_3(x)\n}\n",
+              "new": "pub fn root<T: Score>(x: &T) -> f64 {\n    n000_0(x) + n000_1(x) as f64 + n000_2(x) as f64 + n000_3(x) as f64\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "66f78895b0f48771d6cb972007177fa43ee395c356d39d0cc8e71d293def0e44"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "0eb66ff7b4fabd2aa1fdc10e02b9af02195af31b825df030451584a1b139c431"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "3c35e299e104c43829e3c53d083504cee16ac7ce7ff2104a4e964cd62593e2b2"
+    },
+    {
+      "id": "rust_dag_single_c",
+      "family": "rust_edits",
+      "fixture": "rust_dag_single_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "two first statements swapped at leaf n019_0 of the dag (single layout)",
+      "edited_function": "n019_0",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "c": {
+          "id": "c",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let r = x.score();\n    let k = 1;\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "66f78895b0f48771d6cb972007177fa43ee395c356d39d0cc8e71d293def0e44"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "51a4b66b6c9c5862eaef8f6e957fe5a0f15da528f82eafed745fab9ed1c23e09"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "c98acc914157dc6e242d78cd29a313a2302418309fbbe09651b713608130788b"
+    },
+    {
+      "id": "rust_dag_single_d",
+      "family": "rust_edits",
+      "fixture": "rust_dag_single_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "comment-only at leaf n019_0 of the dag (single layout)",
+      "edited_function": "n019_0",
+      "classification": "none",
+      "edit_count": 1,
+      "patches": {
+        "d": {
+          "id": "d",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body (reworded)\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "66f78895b0f48771d6cb972007177fa43ee395c356d39d0cc8e71d293def0e44"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "b5dde54f16fb6101087c43e3e3a6b4c937faf46a6ecf24274612a96234f808b0"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "ee566a1f127034c82ad13323951af674cc8c2b6c52b207e7ddb2000e299b0301"
+    },
+    {
+      "id": "rust_dag_single_e",
+      "family": "rust_edits",
+      "fixture": "rust_dag_single_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "one comment line inserted above the leaf (line shift) at leaf n019_0 of the dag (single layout)",
+      "edited_function": "n019_0",
+      "classification": "identity",
+      "edit_count": 1,
+      "patches": {
+        "e": {
+          "id": "e",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "// inserted above the leaf\npub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "66f78895b0f48771d6cb972007177fa43ee395c356d39d0cc8e71d293def0e44"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "099b0c7261a1c026077c870100ed2b6c81c880a8002a0acca1e91a4fd3bd267f"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "126dfaa7a3f49a4b67341ffd595d42f1e487d49f5dab4146e5b45ad157da83d6"
+    },
+    {
+      "id": "rust_dag_single_f",
+      "family": "rust_edits",
+      "fixture": "rust_dag_single_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "error path: `+ 1` -> `+ \"one\"` in the top node (i64 + &str) at leaf n019_0 of the dag (single layout)",
+      "edited_function": "n019_0",
+      "classification": "error",
+      "edit_count": 1,
+      "patches": {
+        "f": {
+          "id": "f",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn n000_0<T: Score>(x: &T) -> i64 {\n    n001_0(x) + 1\n}\n",
+              "new": "pub fn n000_0<T: Score>(x: &T) -> i64 {\n    n001_0(x) + \"one\"\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "66f78895b0f48771d6cb972007177fa43ee395c356d39d0cc8e71d293def0e44"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "67c8ff5255ae8606c0bd7f43ba152fc4787385e8d6f306999b51d9e05ad1b2eb"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "fail",
+          "expect_exit": 101
+        },
+        {
+          "op": "revert",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "9801b7dcfff308db743d2ec55f1716ca9a834696e1131f2c3e6cfa84dbf322e8"
+    },
+    {
+      "id": "rust_dag_workspace_a",
+      "family": "rust_edits",
+      "fixture": "rust_dag_ws_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "summary-unchanged body edit at leaf n019_0 of the dag (workspace layout)",
+      "edited_function": "n019_0",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "a": {
+          "id": "a",
+          "edits": [
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 2;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "ws/lib/src/lib.rs": "1c8740f8359b43c09fb11123df9ba4c5d0e301cb066cbda1f2db7649edcbc963"
+          },
+          "after_sha256": {
+            "ws/lib/src/lib.rs": "08c6fc3da1bb3031613268554f2fc378569055fa75f3bb8f6d774b1343581bb0"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "1cb6f496e9eb2ffad5c1e6039c6d2731013a0bf9af31a17c81e6ed69c9fb0ebb"
+    },
+    {
+      "id": "rust_dag_workspace_b",
+      "family": "rust_edits",
+      "fixture": "rust_dag_ws_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "return type i64 -> f64 through the call cone at leaf n019_0 of the dag (workspace layout)",
+      "edited_function": "n019_0",
+      "classification": "cone",
+      "edit_count": 21,
+      "patches": {
+        "b": {
+          "id": "b",
+          "edits": [
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> f64 {\n    // leaf body\n    let k = 0.5;\n    let r = x.score();\n    r as f64 + k\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n018_0<T: Score>(x: &T) -> i64 {\n    n019_0(x) + 1\n}\n",
+              "new": "pub fn n018_0<T: Score>(x: &T) -> f64 {\n    n019_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n017_0<T: Score>(x: &T) -> i64 {\n    n018_0(x) + 1\n}\n",
+              "new": "pub fn n017_0<T: Score>(x: &T) -> f64 {\n    n018_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n016_0<T: Score>(x: &T) -> i64 {\n    n017_0(x) + 1\n}\n",
+              "new": "pub fn n016_0<T: Score>(x: &T) -> f64 {\n    n017_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n015_0<T: Score>(x: &T) -> i64 {\n    n016_0(x) + 1\n}\n",
+              "new": "pub fn n015_0<T: Score>(x: &T) -> f64 {\n    n016_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n014_0<T: Score>(x: &T) -> i64 {\n    n015_0(x) + 1\n}\n",
+              "new": "pub fn n014_0<T: Score>(x: &T) -> f64 {\n    n015_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n013_0<T: Score>(x: &T) -> i64 {\n    n014_0(x) + 1\n}\n",
+              "new": "pub fn n013_0<T: Score>(x: &T) -> f64 {\n    n014_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n012_0<T: Score>(x: &T) -> i64 {\n    n013_0(x) + 1\n}\n",
+              "new": "pub fn n012_0<T: Score>(x: &T) -> f64 {\n    n013_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n011_0<T: Score>(x: &T) -> i64 {\n    n012_0(x) + 1\n}\n",
+              "new": "pub fn n011_0<T: Score>(x: &T) -> f64 {\n    n012_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n010_0<T: Score>(x: &T) -> i64 {\n    n011_0(x) + 1\n}\n",
+              "new": "pub fn n010_0<T: Score>(x: &T) -> f64 {\n    n011_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n009_0<T: Score>(x: &T) -> i64 {\n    n010_0(x) + 1\n}\n",
+              "new": "pub fn n009_0<T: Score>(x: &T) -> f64 {\n    n010_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n008_0<T: Score>(x: &T) -> i64 {\n    n009_0(x) + 1\n}\n",
+              "new": "pub fn n008_0<T: Score>(x: &T) -> f64 {\n    n009_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n007_0<T: Score>(x: &T) -> i64 {\n    n008_0(x) + 1\n}\n",
+              "new": "pub fn n007_0<T: Score>(x: &T) -> f64 {\n    n008_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n006_0<T: Score>(x: &T) -> i64 {\n    n007_0(x) + 1\n}\n",
+              "new": "pub fn n006_0<T: Score>(x: &T) -> f64 {\n    n007_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n005_0<T: Score>(x: &T) -> i64 {\n    n006_0(x) + 1\n}\n",
+              "new": "pub fn n005_0<T: Score>(x: &T) -> f64 {\n    n006_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n004_0<T: Score>(x: &T) -> i64 {\n    n005_0(x) + 1\n}\n",
+              "new": "pub fn n004_0<T: Score>(x: &T) -> f64 {\n    n005_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n003_0<T: Score>(x: &T) -> i64 {\n    n004_0(x) + 1\n}\n",
+              "new": "pub fn n003_0<T: Score>(x: &T) -> f64 {\n    n004_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n002_0<T: Score>(x: &T) -> i64 {\n    n003_0(x) + 1\n}\n",
+              "new": "pub fn n002_0<T: Score>(x: &T) -> f64 {\n    n003_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n001_0<T: Score>(x: &T) -> i64 {\n    n002_0(x) + 1\n}\n",
+              "new": "pub fn n001_0<T: Score>(x: &T) -> f64 {\n    n002_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n000_0<T: Score>(x: &T) -> i64 {\n    n001_0(x) + 1\n}\n",
+              "new": "pub fn n000_0<T: Score>(x: &T) -> f64 {\n    n001_0(x) + 1.0\n}\n"
+            },
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn root<T: Score>(x: &T) -> i64 {\n    n000_0(x) + n000_1(x) + n000_2(x) + n000_3(x)\n}\n",
+              "new": "pub fn root<T: Score>(x: &T) -> f64 {\n    n000_0(x) + n000_1(x) as f64 + n000_2(x) as f64 + n000_3(x) as f64\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "ws/lib/src/lib.rs": "1c8740f8359b43c09fb11123df9ba4c5d0e301cb066cbda1f2db7649edcbc963"
+          },
+          "after_sha256": {
+            "ws/lib/src/lib.rs": "b006f461cd5fc40735f40426dd74873508522b1a1e684997a5e3dbece60225a3"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "953f115256d501c5ca9da8ebb5482f0b2cc465c284ee86638265f462b94fd781"
+    },
+    {
+      "id": "rust_dag_workspace_c",
+      "family": "rust_edits",
+      "fixture": "rust_dag_ws_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "two first statements swapped at leaf n019_0 of the dag (workspace layout)",
+      "edited_function": "n019_0",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "c": {
+          "id": "c",
+          "edits": [
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let r = x.score();\n    let k = 1;\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "ws/lib/src/lib.rs": "1c8740f8359b43c09fb11123df9ba4c5d0e301cb066cbda1f2db7649edcbc963"
+          },
+          "after_sha256": {
+            "ws/lib/src/lib.rs": "6520b4aa091762cb6f194735618925b1873aea19185d99f8dd06be7aa75d5190"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "d2ce9c2894d21f61ac32676b88a2d8573423cc78ea8e69a881c6da89638a5d14"
+    },
+    {
+      "id": "rust_dag_workspace_d",
+      "family": "rust_edits",
+      "fixture": "rust_dag_ws_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "comment-only at leaf n019_0 of the dag (workspace layout)",
+      "edited_function": "n019_0",
+      "classification": "none",
+      "edit_count": 1,
+      "patches": {
+        "d": {
+          "id": "d",
+          "edits": [
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body (reworded)\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "ws/lib/src/lib.rs": "1c8740f8359b43c09fb11123df9ba4c5d0e301cb066cbda1f2db7649edcbc963"
+          },
+          "after_sha256": {
+            "ws/lib/src/lib.rs": "482f07e543428d6eab4032520f6c20b1a064266395bef9cd4517b297e7c0043a"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "5ef942d686085a4aca4b2139367dde9084c80c1b76b0983deebd20f5a77e372a"
+    },
+    {
+      "id": "rust_dag_workspace_e",
+      "family": "rust_edits",
+      "fixture": "rust_dag_ws_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "one comment line inserted above the leaf (line shift) at leaf n019_0 of the dag (workspace layout)",
+      "edited_function": "n019_0",
+      "classification": "identity",
+      "edit_count": 1,
+      "patches": {
+        "e": {
+          "id": "e",
+          "edits": [
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "// inserted above the leaf\npub fn n019_0<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "ws/lib/src/lib.rs": "1c8740f8359b43c09fb11123df9ba4c5d0e301cb066cbda1f2db7649edcbc963"
+          },
+          "after_sha256": {
+            "ws/lib/src/lib.rs": "50510740a1ddb8ece58b7a1e34bfef99b0e9b5ca74a9f1d8d587d8601afab8cb"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "03ffcdda4489bbfabeb35df8cbc532190be35ccf0b06c6ea47894de81682356d"
+    },
+    {
+      "id": "rust_dag_workspace_f",
+      "family": "rust_edits",
+      "fixture": "rust_dag_ws_d20_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "error path: `+ 1` -> `+ \"one\"` in the top node (i64 + &str) at leaf n019_0 of the dag (workspace layout)",
+      "edited_function": "n019_0",
+      "classification": "error",
+      "edit_count": 1,
+      "patches": {
+        "f": {
+          "id": "f",
+          "edits": [
+            {
+              "file": "ws/lib/src/lib.rs",
+              "old": "pub fn n000_0<T: Score>(x: &T) -> i64 {\n    n001_0(x) + 1\n}\n",
+              "new": "pub fn n000_0<T: Score>(x: &T) -> i64 {\n    n001_0(x) + \"one\"\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "ws/lib/src/lib.rs": "1c8740f8359b43c09fb11123df9ba4c5d0e301cb066cbda1f2db7649edcbc963"
+          },
+          "after_sha256": {
+            "ws/lib/src/lib.rs": "402e4ab495e27a5560ef15f86b3276dbba1aeccc235f2edb053f739506a1a4b6"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "fail",
+          "expect_exit": 101
+        },
+        {
+          "op": "revert",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "47ff8b48444daacecc0fd4abf88f6fb973951be0520b3c4a5342d55aed6d4381"
+    },
+    {
+      "id": "rust_fanin_single_a",
+      "family": "rust_edits",
+      "fixture": "rust_fanin_single_d50_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "summary-unchanged body edit at leaf c049 of the fanin (single layout)",
+      "edited_function": "c049",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "a": {
+          "id": "a",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 2;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "7bc1e0d9b93b8b6336344292aefb143a4fc031f2687513c3e2683ee2bf531296"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "37b2764dabf16494ac0fc869330d336d71161d10dd7037f56608d54282dbd1cb"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "a"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "350f0c1dccf44e7079a1b8eb1ba60e151039516109207050006d7f1c88ed7adf"
+    },
+    {
+      "id": "rust_fanin_single_b",
+      "family": "rust_edits",
+      "fixture": "rust_fanin_single_d50_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "return type i64 -> f64 through the call cone at leaf c049 of the fanin (single layout)",
+      "edited_function": "c049",
+      "classification": "cone",
+      "edit_count": 55,
+      "patches": {
+        "b": {
+          "id": "b",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn c049<T: Score>(x: &T) -> f64 {\n    // leaf body\n    let k = 0.5;\n    let r = x.score();\n    r as f64 + k\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c048<T: Score>(x: &T) -> i64 {\n    c049(x) + 1\n}\n",
+              "new": "pub fn c048<T: Score>(x: &T) -> f64 {\n    c049(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c047<T: Score>(x: &T) -> i64 {\n    c048(x) + 1\n}\n",
+              "new": "pub fn c047<T: Score>(x: &T) -> f64 {\n    c048(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c046<T: Score>(x: &T) -> i64 {\n    c047(x) + 1\n}\n",
+              "new": "pub fn c046<T: Score>(x: &T) -> f64 {\n    c047(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c045<T: Score>(x: &T) -> i64 {\n    c046(x) + 1\n}\n",
+              "new": "pub fn c045<T: Score>(x: &T) -> f64 {\n    c046(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c044<T: Score>(x: &T) -> i64 {\n    c045(x) + 1\n}\n",
+              "new": "pub fn c044<T: Score>(x: &T) -> f64 {\n    c045(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c043<T: Score>(x: &T) -> i64 {\n    c044(x) + 1\n}\n",
+              "new": "pub fn c043<T: Score>(x: &T) -> f64 {\n    c044(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c042<T: Score>(x: &T) -> i64 {\n    c043(x) + 1\n}\n",
+              "new": "pub fn c042<T: Score>(x: &T) -> f64 {\n    c043(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c041<T: Score>(x: &T) -> i64 {\n    c042(x) + 1\n}\n",
+              "new": "pub fn c041<T: Score>(x: &T) -> f64 {\n    c042(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c040<T: Score>(x: &T) -> i64 {\n    c041(x) + 1\n}\n",
+              "new": "pub fn c040<T: Score>(x: &T) -> f64 {\n    c041(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c039<T: Score>(x: &T) -> i64 {\n    c040(x) + 1\n}\n",
+              "new": "pub fn c039<T: Score>(x: &T) -> f64 {\n    c040(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c038<T: Score>(x: &T) -> i64 {\n    c039(x) + 1\n}\n",
+              "new": "pub fn c038<T: Score>(x: &T) -> f64 {\n    c039(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c037<T: Score>(x: &T) -> i64 {\n    c038(x) + 1\n}\n",
+              "new": "pub fn c037<T: Score>(x: &T) -> f64 {\n    c038(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c036<T: Score>(x: &T) -> i64 {\n    c037(x) + 1\n}\n",
+              "new": "pub fn c036<T: Score>(x: &T) -> f64 {\n    c037(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c035<T: Score>(x: &T) -> i64 {\n    c036(x) + 1\n}\n",
+              "new": "pub fn c035<T: Score>(x: &T) -> f64 {\n    c036(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c034<T: Score>(x: &T) -> i64 {\n    c035(x) + 1\n}\n",
+              "new": "pub fn c034<T: Score>(x: &T) -> f64 {\n    c035(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c033<T: Score>(x: &T) -> i64 {\n    c034(x) + 1\n}\n",
+              "new": "pub fn c033<T: Score>(x: &T) -> f64 {\n    c034(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c032<T: Score>(x: &T) -> i64 {\n    c033(x) + 1\n}\n",
+              "new": "pub fn c032<T: Score>(x: &T) -> f64 {\n    c033(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c031<T: Score>(x: &T) -> i64 {\n    c032(x) + 1\n}\n",
+              "new": "pub fn c031<T: Score>(x: &T) -> f64 {\n    c032(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c030<T: Score>(x: &T) -> i64 {\n    c031(x) + 1\n}\n",
+              "new": "pub fn c030<T: Score>(x: &T) -> f64 {\n    c031(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c029<T: Score>(x: &T) -> i64 {\n    c030(x) + 1\n}\n",
+              "new": "pub fn c029<T: Score>(x: &T) -> f64 {\n    c030(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c028<T: Score>(x: &T) -> i64 {\n    c029(x) + 1\n}\n",
+              "new": "pub fn c028<T: Score>(x: &T) -> f64 {\n    c029(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c027<T: Score>(x: &T) -> i64 {\n    c028(x) + 1\n}\n",
+              "new": "pub fn c027<T: Score>(x: &T) -> f64 {\n    c028(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c026<T: Score>(x: &T) -> i64 {\n    c027(x) + 1\n}\n",
+              "new": "pub fn c026<T: Score>(x: &T) -> f64 {\n    c027(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c025<T: Score>(x: &T) -> i64 {\n    c026(x) + 1\n}\n",
+              "new": "pub fn c025<T: Score>(x: &T) -> f64 {\n    c026(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c024<T: Score>(x: &T) -> i64 {\n    c025(x) + 1\n}\n",
+              "new": "pub fn c024<T: Score>(x: &T) -> f64 {\n    c025(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c023<T: Score>(x: &T) -> i64 {\n    c024(x) + 1\n}\n",
+              "new": "pub fn c023<T: Score>(x: &T) -> f64 {\n    c024(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c022<T: Score>(x: &T) -> i64 {\n    c023(x) + 1\n}\n",
+              "new": "pub fn c022<T: Score>(x: &T) -> f64 {\n    c023(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c021<T: Score>(x: &T) -> i64 {\n    c022(x) + 1\n}\n",
+              "new": "pub fn c021<T: Score>(x: &T) -> f64 {\n    c022(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c020<T: Score>(x: &T) -> i64 {\n    c021(x) + 1\n}\n",
+              "new": "pub fn c020<T: Score>(x: &T) -> f64 {\n    c021(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c019<T: Score>(x: &T) -> i64 {\n    c020(x) + 1\n}\n",
+              "new": "pub fn c019<T: Score>(x: &T) -> f64 {\n    c020(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c018<T: Score>(x: &T) -> i64 {\n    c019(x) + 1\n}\n",
+              "new": "pub fn c018<T: Score>(x: &T) -> f64 {\n    c019(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c017<T: Score>(x: &T) -> i64 {\n    c018(x) + 1\n}\n",
+              "new": "pub fn c017<T: Score>(x: &T) -> f64 {\n    c018(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c016<T: Score>(x: &T) -> i64 {\n    c017(x) + 1\n}\n",
+              "new": "pub fn c016<T: Score>(x: &T) -> f64 {\n    c017(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c015<T: Score>(x: &T) -> i64 {\n    c016(x) + 1\n}\n",
+              "new": "pub fn c015<T: Score>(x: &T) -> f64 {\n    c016(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c014<T: Score>(x: &T) -> i64 {\n    c015(x) + 1\n}\n",
+              "new": "pub fn c014<T: Score>(x: &T) -> f64 {\n    c015(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c013<T: Score>(x: &T) -> i64 {\n    c014(x) + 1\n}\n",
+              "new": "pub fn c013<T: Score>(x: &T) -> f64 {\n    c014(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c012<T: Score>(x: &T) -> i64 {\n    c013(x) + 1\n}\n",
+              "new": "pub fn c012<T: Score>(x: &T) -> f64 {\n    c013(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c011<T: Score>(x: &T) -> i64 {\n    c012(x) + 1\n}\n",
+              "new": "pub fn c011<T: Score>(x: &T) -> f64 {\n    c012(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c010<T: Score>(x: &T) -> i64 {\n    c011(x) + 1\n}\n",
+              "new": "pub fn c010<T: Score>(x: &T) -> f64 {\n    c011(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c009<T: Score>(x: &T) -> i64 {\n    c010(x) + 1\n}\n",
+              "new": "pub fn c009<T: Score>(x: &T) -> f64 {\n    c010(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c008<T: Score>(x: &T) -> i64 {\n    c009(x) + 1\n}\n",
+              "new": "pub fn c008<T: Score>(x: &T) -> f64 {\n    c009(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c007<T: Score>(x: &T) -> i64 {\n    c008(x) + 1\n}\n",
+              "new": "pub fn c007<T: Score>(x: &T) -> f64 {\n    c008(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c006<T: Score>(x: &T) -> i64 {\n    c007(x) + 1\n}\n",
+              "new": "pub fn c006<T: Score>(x: &T) -> f64 {\n    c007(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c005<T: Score>(x: &T) -> i64 {\n    c006(x) + 1\n}\n",
+              "new": "pub fn c005<T: Score>(x: &T) -> f64 {\n    c006(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c004<T: Score>(x: &T) -> i64 {\n    c005(x) + 1\n}\n",
+              "new": "pub fn c004<T: Score>(x: &T) -> f64 {\n    c005(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c003<T: Score>(x: &T) -> i64 {\n    c004(x) + 1\n}\n",
+              "new": "pub fn c003<T: Score>(x: &T) -> f64 {\n    c004(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c002<T: Score>(x: &T) -> i64 {\n    c003(x) + 1\n}\n",
+              "new": "pub fn c002<T: Score>(x: &T) -> f64 {\n    c003(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c001<T: Score>(x: &T) -> i64 {\n    c002(x) + 1\n}\n",
+              "new": "pub fn c001<T: Score>(x: &T) -> f64 {\n    c002(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c000<T: Score>(x: &T) -> i64 {\n    c001(x) + 1\n}\n",
+              "new": "pub fn c000<T: Score>(x: &T) -> f64 {\n    c001(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn e0<T: Score>(x: &T) -> i64 {\n    c000(x) + 0\n}\n",
+              "new": "pub fn e0<T: Score>(x: &T) -> f64 {\n    c000(x) + 0.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn e1<T: Score>(x: &T) -> i64 {\n    c000(x) + 1\n}\n",
+              "new": "pub fn e1<T: Score>(x: &T) -> f64 {\n    c000(x) + 1.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn e2<T: Score>(x: &T) -> i64 {\n    c000(x) + 2\n}\n",
+              "new": "pub fn e2<T: Score>(x: &T) -> f64 {\n    c000(x) + 2.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn e3<T: Score>(x: &T) -> i64 {\n    c000(x) + 3\n}\n",
+              "new": "pub fn e3<T: Score>(x: &T) -> f64 {\n    c000(x) + 3.0\n}\n"
+            },
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn root<T: Score>(x: &T) -> i64 {\n    e0(x) + e1(x) + e2(x) + e3(x)\n}\n",
+              "new": "pub fn root<T: Score>(x: &T) -> f64 {\n    e0(x) + e1(x) + e2(x) + e3(x)\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "7bc1e0d9b93b8b6336344292aefb143a4fc031f2687513c3e2683ee2bf531296"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "d89dd67ff442cad03766db50d620bd10c86fefcb18e7d9b7df60ce53096ff203"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "b"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "2c099b1dbde1656671dd372f1a410d5d745f69d188712a66fd874809c4dddb1f"
+    },
+    {
+      "id": "rust_fanin_single_c",
+      "family": "rust_edits",
+      "fixture": "rust_fanin_single_d50_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "two first statements swapped at leaf c049 of the fanin (single layout)",
+      "edited_function": "c049",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "c": {
+          "id": "c",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let r = x.score();\n    let k = 1;\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "7bc1e0d9b93b8b6336344292aefb143a4fc031f2687513c3e2683ee2bf531296"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "66f7f4b51b73247ea0fa6a78752cb87d757768adba1315eb76e0d4cb4585edbe"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "c"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "565a4f321a5292afe30d85ed905eb53b22ee06788be27d4dbc966ec598f1e74d"
+    },
+    {
+      "id": "rust_fanin_single_d",
+      "family": "rust_edits",
+      "fixture": "rust_fanin_single_d50_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "comment-only at leaf c049 of the fanin (single layout)",
+      "edited_function": "c049",
+      "classification": "none",
+      "edit_count": 1,
+      "patches": {
+        "d": {
+          "id": "d",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body (reworded)\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "7bc1e0d9b93b8b6336344292aefb143a4fc031f2687513c3e2683ee2bf531296"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "2c88880cfd3c5255fb4e54400cb7fcf19cd2943196cd82529e26ee956092cc44"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "d"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "640b1c8a0b5909c5a2883813cdb9f32cd3dd718cda6931bf71e2162641209696"
+    },
+    {
+      "id": "rust_fanin_single_e",
+      "family": "rust_edits",
+      "fixture": "rust_fanin_single_d50_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "one comment line inserted above the leaf (line shift) at leaf c049 of the fanin (single layout)",
+      "edited_function": "c049",
+      "classification": "identity",
+      "edit_count": 1,
+      "patches": {
+        "e": {
+          "id": "e",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n",
+              "new": "// inserted above the leaf\npub fn c049<T: Score>(x: &T) -> i64 {\n    // leaf body\n    let k = 1;\n    let r = x.score();\n    r + k\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "7bc1e0d9b93b8b6336344292aefb143a4fc031f2687513c3e2683ee2bf531296"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "afbf36ac1464de405dbefe94b070b86e71afd489cf94d0e176ecc56665ff681c"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "e"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "e5e50a4ed5b5641de8e00840cbf2305090bc7be54798054c77f942f552b9f3c8"
+    },
+    {
+      "id": "rust_fanin_single_f",
+      "family": "rust_edits",
+      "fixture": "rust_fanin_single_d50_w4_k02",
+      "kind": "rust_edit_sequence",
+      "description": "error path: `+ 1` -> `+ \"one\"` in the top node (i64 + &str) at leaf c049 of the fanin (single layout)",
+      "edited_function": "c049",
+      "classification": "error",
+      "edit_count": 1,
+      "patches": {
+        "f": {
+          "id": "f",
+          "edits": [
+            {
+              "file": "crate/src/dag.rs",
+              "old": "pub fn e0<T: Score>(x: &T) -> i64 {\n    c000(x) + 0\n}\n",
+              "new": "pub fn e0<T: Score>(x: &T) -> i64 {\n    c000(x) + \"one\"\n}\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/dag.rs": "7bc1e0d9b93b8b6336344292aefb143a4fc031f2687513c3e2683ee2bf531296"
+          },
+          "after_sha256": {
+            "crate/src/dag.rs": "bfe181058fe1c5f34975139c49e25783231983cfba1330a0b725ef2a78125456"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "fail",
+          "expect_exit": 101
+        },
+        {
+          "op": "revert",
+          "patch": "f"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "1369435cfd25ad388d98eabe889bef35b3a89356264ab43b691a68cead30abca"
+    },
+    {
+      "id": "rust_floor_edit",
+      "family": "rust_edits",
+      "fixture": "rust_floor_single",
+      "kind": "rust_edit_sequence",
+      "description": "one-line literal edit in the floor crate",
+      "edited_function": "main",
+      "classification": "local",
+      "edit_count": 1,
+      "patches": {
+        "edit": {
+          "id": "edit",
+          "edits": [
+            {
+              "file": "crate/src/main.rs",
+              "old": "    println!(\"0\");\n",
+              "new": "    println!(\"1\");\n"
+            }
+          ],
+          "before_sha256": {
+            "crate/src/main.rs": "b869b4fb4f578e1122c9b19abad0b80cd4facd10b3439273d015db8abb215029"
+          },
+          "after_sha256": {
+            "crate/src/main.rs": "66f3668cad6a5ec05cfe9b93ebc5a45a6ac930b55ee697261045d9ddfdaf1c47"
+          }
+        }
+      },
+      "steps": [
+        {
+          "op": "check",
+          "label": "first",
+          "expect": "pass"
+        },
+        {
+          "op": "check",
+          "label": "second",
+          "expect": "pass"
+        },
+        {
+          "op": "apply",
+          "patch": "edit"
+        },
+        {
+          "op": "check",
+          "label": "edit",
+          "expect": "pass"
+        },
+        {
+          "op": "revert",
+          "patch": "edit"
+        },
+        {
+          "op": "check",
+          "label": "revert",
+          "expect": "pass"
+        }
+      ],
+      "sha256": "6ec90cdb14f2ad2f9176a77cbbc364f98536ae7acf5edc9c677fe728d5f7efc9"
     }
   ],
   "replay": {

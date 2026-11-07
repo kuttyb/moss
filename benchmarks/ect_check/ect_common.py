@@ -22,7 +22,7 @@ import threading
 import time
 
 SUITE_NAME = "moss_ect_check"
-SUITE_VERSION = "0.4.1"
+SUITE_VERSION = "0.5.0"
 SUITE_SEED = 20261105
 
 SUITE_DIR = Path(__file__).resolve().parent

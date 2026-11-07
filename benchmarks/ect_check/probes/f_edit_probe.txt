@@ -1,0 +1,32 @@
+Probe results for B3 edit `f` (error path), moss-opt sha256 e9a22cf0a6029d31b617baf863c5c1e866a3641a22c38bb1cd1e78c31bfe4d36,
+`margo --check --json build` of a scratch copy of the frozen fixture, process-group kill after 20 s
+(an unbroken B3 check takes ~0.42 s DAG / ~0.64 s fan-in). Produced by probes/f_edit_probe.py.
+"TIMEOUT 20s" means "no answer within 20 s", NOT proven non-terminating.
+
+== phase 1: the break is in the LEAF (n019_0 / c049) ==
+every candidate, both shapes: TIMEOUT 20s
+  string_constant (k = "one"), undefined_name (r + kk), unknown_function (missing_fn(x)),
+  missing_method (x.nothere()), wrong_return_annotation (-> Bool), return_string (return "s")
+=> a break at the leaf of a deep DAG is ruled out for the Moss check (the known quirk).
+
+== phase 2: the break is in a NON-leaf node (`return child(x) + 1` -> `+ "one"`) ==
+b3_dag_d20_w4_k02 inner:n000_0: rc=1 0.31s ok=False code=TYPE_AMBIGUOUS_OPEN_RESULT msg="static specialization of function 'main__root' has an unresolved result type"
+b3_dag_d20_w4_k02 inner:n001_0: rc=1 0.39s ok=False code=TYPE_AMBIGUOUS_OPEN_RESULT msg="static specialization of function 'main__root' has an unresolved result type"
+b3_dag_d20_w4_k02 inner:n005_0: rc=1 2.17s ok=False code=TYPE_AMBIGUOUS_OPEN_RESULT msg="static specialization of function 'main__root' has an unresolved result type"
+b3_dag_d20_w4_k02 inner:n010_0: TIMEOUT 20s (process group killed)
+b3_dag_d20_w4_k02 inner:n015_0: TIMEOUT 20s (process group killed)
+b3_dag_d20_w4_k02 inner:n018_0: TIMEOUT 20s (process group killed)
+b3_fanin_d50_w4_k02 inner:e0: rc=1 0.55s ok=False code=TYPE_AMBIGUOUS_OPEN_RESULT msg="static specialization of function 'main__root' has an unresolved result type"
+b3_fanin_d50_w4_k02 inner:c000: rc=1 1.15s ok=False code=TYPE_AMBIGUOUS_OPEN_RESULT msg="static specialization of function 'main__root' has an unresolved result type"
+b3_fanin_d50_w4_k02 inner:c001: rc=1 2.17s ok=False code=TYPE_AMBIGUOUS_OPEN_RESULT msg="static specialization of function 'main__root' has an unresolved result type"
+b3_fanin_d50_w4_k02 inner:c010: TIMEOUT 20s (process group killed)
+b3_fanin_d50_w4_k02 inner:c025: TIMEOUT 20s (process group killed)
+b3_fanin_d50_w4_k02 inner:c040: TIMEOUT 20s (process group killed)
+b3_fanin_d50_w4_k02 inner:c048: TIMEOUT 20s (process group killed)
+
+Reading: the check terminates only when the break is near the top of the call chain; the time grows steeply
+with the distance of the break from the root (DAG: n000_0 0.31 s, n001_0 0.39 s, n005_0 2.2 s, n010_0 > 20 s;
+fan-in: e0 0.55 s, c000 1.15 s, c001 2.2 s, c010 > 20 s). The cause is NOT established. Chosen for edit `f`:
+DAG n000_0, fan-in e0 (the top node of the edited chain), diagnostic TYPE_AMBIGUOUS_OPEN_RESULT on
+`main__root` (the diagnostic names the root specialization, not the broken node: a diagnostic-quality
+observation, see README).
