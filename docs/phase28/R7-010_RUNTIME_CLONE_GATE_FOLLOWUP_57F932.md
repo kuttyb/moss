@@ -39,7 +39,14 @@ The raw marker-stripped generated Rust digest changed across checkout paths beca
 2. Normalizes only the helper ID and corresponding `typed-copy-fact-v1:<id>` comment before the structural Rust hash.
 3. Rebuilds the identical fixture bytes from a second checkout-like source path, confirms the raw fact identity changes, confirms the normalized structural digest stays equal, and checks the full provenance audit returns the same counts for both artifacts.
 
-This keeps exact checker-fact matching intact while removing the path-only difference from a structural output digest. Focused Default and EST-shadow runs of the official evidence script both pass after this correction.
+This keeps exact checker-fact matching intact while removing the path-only difference from a structural output digest. A direct two-path run produced:
+
+| Source path | Helper suffix | Full TypedCopyFact ID | Normalized structural digest | Provenance audit |
+|---|---|---|---|---|
+| `tmp/path-checkout-a/tests/phase28/oracle_r7_005_1/fixtures/source.moss` | `16a2becba49efba8` | `16a2becba49efba81865f8489dd540a8a9ed3fb7ba78285a325a7b35b5e2c569` | `cf0bd5e74c782d1e860d77345d1908e3a0cf6eb881d16f27139a81bdddd34329` | `UNAUTHORIZED`, 1 authorized / 3 unauthorized / 3 unclassified |
+| `tmp/path-checkout-b/tests/phase28/oracle_r7_005_1/fixtures/source.moss` | `f70aa3057504e0c4` | `f70aa3057504e0c4d8308f307f7e48c8afcf1af74e2e8100cd05aae164c29120` | `cf0bd5e74c782d1e860d77345d1908e3a0cf6eb881d16f27139a81bdddd34329` | `UNAUTHORIZED`, 1 authorized / 3 unauthorized / 3 unclassified |
+
+Both full fact IDs begin with the exact helper suffix recorded for that artifact. Each artifact was audited against authority queried from its own source path. Focused Default and EST-shadow runs of the official evidence script both pass after this correction.
 
 ## Mutation validator correction
 

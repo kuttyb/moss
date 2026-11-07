@@ -18498,3 +18498,11 @@ untouched.
 - All six Team C provenance/scanner unit failures shared an omitted empty `runtime_clone_site_observations` field in synthetic v3 manifests. Added the explicit empty list to the synthetic sidecar builder. Exact affected tests and per-test PASS results are recorded in `docs/phase28/R7-010_RUNTIME_CLONE_GATE_FOLLOWUP_57F932.md`; the full command passed 46/46.
 - Focused evidence gate passes Default and EST-shadow. No full suite or oracle result is claimed. Team C/Agent 2 concerns about per-site lifetime evidence, Moss-callable runtime-02 config, and allowlist metadata remain unresolved; latest scope limited this follow-up to gate correctness. Authorization allowlist remains empty.
 - Follow-up implementation is frozen at `26f4a301356920b9c89f4d9ff6dd775eda626d0e` with a clean worktree. Await fresh exact-SHA Team C and Agent 2 reviews. No integration or push.
+- Follow-up evidence detail: two checkout-like source paths produced helper/fact
+  pairs `16a2becba49efba8` / `16a2becba49efba81865f8489dd540a8a9ed3fb7ba78285a325a7b35b5e2c569`
+  and `f70aa3057504e0c4` / `f70aa3057504e0c4d8308f307f7e48c8afcf1af74e2e8100cd05aae164c29120`.
+  Both audits were `UNAUTHORIZED` with 1 authorized, 3 unauthorized, 3 unclassified;
+  both normalized structural digests were
+  `cf0bd5e74c782d1e860d77345d1908e3a0cf6eb881d16f27139a81bdddd34329`.
+  The report `docs/phase28/R7-010_RUNTIME_CLONE_GATE_FOLLOWUP_57F932.md` records
+  the six unit-test resolutions individually.
