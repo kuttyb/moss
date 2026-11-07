@@ -3958,15 +3958,59 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
         row.module_identity.empty() ||
         !remap.emplace(source_id, InvalidSpecId).second)
       throw std::invalid_argument("duplicate or non-dense imported SpecId table");
-    if (destination.specialization_table.size() + appended.size() >= InvalidSpecId)
-      throw std::invalid_argument("program SpecId table exhausted");
-    const SpecId destination_id = static_cast<SpecId>(
-        destination.specialization_table.size() + appended.size());
-    row.id = destination_id;
-    row.provider_module_identity = provider_module_identity;
-    row.provider_spec_id = source_id;
-    appended.push_back(std::move(row));
-    remap[source_id] = destination_id;
+    const std::string source_module = row.provider_module_identity.empty()
+        ? row.module_identity : row.provider_module_identity;
+    const SpecId source_provider_id = row.provider_spec_id == InvalidSpecId
+        ? source_id : row.provider_spec_id;
+    if (source_module == provider_module_identity) {
+      if (row.module_identity != provider_module_identity)
+        throw std::invalid_argument(
+            "provider-owned SpecId row has contradictory module identity");
+      for (const auto& existing : destination.specialization_table) {
+        const std::string existing_module =
+            existing.provider_module_identity.empty()
+                ? existing.module_identity : existing.provider_module_identity;
+        const SpecId existing_provider_id =
+            existing.provider_spec_id == InvalidSpecId
+                ? existing.id : existing.provider_spec_id;
+        if (existing_module == source_module &&
+            existing_provider_id == source_provider_id)
+          throw std::invalid_argument(
+              "duplicate imported provider module/SpecId pair");
+      }
+      if (destination.specialization_table.size() + appended.size() >=
+          InvalidSpecId)
+        throw std::invalid_argument("program SpecId table exhausted");
+      const SpecId destination_id = static_cast<SpecId>(
+          destination.specialization_table.size() + appended.size());
+      row.id = destination_id;
+      row.provider_module_identity = source_module;
+      row.provider_spec_id = source_provider_id;
+      appended.push_back(std::move(row));
+      remap[source_id] = destination_id;
+      continue;
+    }
+
+    SpecId matched_destination = InvalidSpecId;
+    std::size_t pair_matches = 0;
+    for (const auto& existing : destination.specialization_table) {
+      const std::string existing_module =
+          existing.provider_module_identity.empty()
+              ? existing.module_identity : existing.provider_module_identity;
+      const SpecId existing_provider_id =
+          existing.provider_spec_id == InvalidSpecId
+              ? existing.id : existing.provider_spec_id;
+      if (existing_module == source_module &&
+          existing_provider_id == source_provider_id) {
+        matched_destination = existing.id;
+        ++pair_matches;
+      }
+    }
+    if (pair_matches != 1)
+      throw std::invalid_argument(pair_matches
+          ? "ambiguous imported external module/SpecId pair"
+          : "missing imported external module/SpecId pair");
+    remap[source_id] = matched_destination;
   }
   const auto remap_id = [&](SpecId& id) {
     if (id == InvalidSpecId) return;
@@ -4040,12 +4084,26 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
   for (auto& instance : provider.domain_specializations)
     for (auto& handler_id : instance.handler_spec_ids) remap_id(handler_id);
   for (auto& edge : provider.semantic_call_edges) {
+    if (edge.callee_spec_id != InvalidSpecId &&
+        !edge.target_module_identity.empty()) {
+      const auto source_row = std::find_if(
+          provider.specialization_table.begin(),
+          provider.specialization_table.end(), [&](const auto& row) {
+        return row.id == edge.callee_spec_id;
+      });
+      if (source_row == provider.specialization_table.end() ||
+          source_row->module_identity != edge.target_module_identity)
+        throw std::invalid_argument(
+            "imported call target module contradicts its provider SpecId row");
+    }
     remap_id(edge.caller_spec_id);
     remap_id(edge.callee_spec_id);
     for (auto& argument_id : edge.argument_callable_spec_ids)
       remap_id(argument_id);
-    if (edge.target_module_identity.empty())
-      edge.target_module_identity = provider_module_identity;
+    if (edge.target_module_identity.empty() &&
+        edge.callee_spec_id != InvalidSpecId)
+      edge.target_module_identity =
+          destination.specialization_table[edge.callee_spec_id].module_identity;
   }
   if (provider.typed_semantics) {
     auto& typed = *provider.typed_semantics;
