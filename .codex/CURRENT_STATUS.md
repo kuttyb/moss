@@ -18562,3 +18562,26 @@ untouched.
 - Required `make check-shadow` completed before the runner routing correction at 116/167 PASS, 51 FAIL, 0 SKIP. Its on_fail job failure was specifically the then-current optimized compiler selection, which left mutation hooks inert; the lightweight routing fix was subsequently verified by the isolated registered-job rerun. The other aggregate failures span unrelated Phase 15/20/25/26/27 and SDK suites, plus corpus hash mismatches. Do not treat this aggregate as a clean phase gate or compare it to a prior SHA baseline.
 - `make --jobs="$(nproc)" moss-dev` passed. Python compile checks, `git diff --check`, and `python3 tests/tooling/check_agent_feedback.py` passed. Final focused reruns remain valid after the last code edit; only whitespace/indentation and status updates followed, then perform final diff/status validation before commit.
 - Frozen source implementation: `1e24ea022bd62f7100e9233baedc10ee9768ca42`. The worktree is clean at that implementation plus this status-only update. Fresh Team A and Team C exact-SHA reviews are required; no integration/push authorized.
+
+## W5 Fast Debug call specialization follow-up
+
+- Fresh isolated branch `phase28-r7-010-w5-fastdebug-specialization` starts at
+  `56250fb10563dc8955ac355a4f06a1d8703c8862`; no staging/dead-tail files were
+  edited.
+- Checker concrete edges now carry exact target semantic callable identity and
+  specialization key for open- and closed-result static calls. Fast Debug
+  resolves ordinary calls only through those identities. Pipeline callbacks
+  use target and specialization facts on the structurally matched EST callback
+  Identifier; direct source calls cannot fall back to callback facts.
+- Registered W5 gate passes 1/1 in Default and EST-shadow via `tests/run_parallel.py`.
+  W2 inference worklist passes in both modes. The focused gate exercises
+  same-line distinct targets, direct edge drop/duplicate/perturb/wrong-target,
+  callback fact drop/duplicate/perturb, and native Debug/Optimized parity.
+  Feedback validation, Python compilation, and diff checks pass. Full suites
+  and oracle were not run.
+- `SemanticCallEdge::target_callable_identity` is runtime checker data copied
+  in module Program projection, not a `.mossi` field. Source-free imported
+  pipeline callback behavior remains unverified and fails closed without its
+  exact EST callback fact.
+- Candidate is frozen on the isolated branch for fresh Team A and Team C
+  exact-SHA review. No integration or push authorized.

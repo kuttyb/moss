@@ -1827,11 +1827,61 @@ class FastInterpreter {
       const ExpressionTreeView* tree = nullptr,
       std::optional<est::ExprId> call_expr = std::nullopt) const {
     if (!target.static_dispatch) return nullptr;
-    const auto checked = checked_call_edge_specialization(
-        program_, caller.functional_context, target.name, line);
-    if (checked.test_fact_dropped || checked.test_fact_perturbed)
+    const auto checked = checked_call_edge_specialization_exact(
+        program_, caller.functional_context, caller.specialization_key,
+        target, line);
+    if (checked.test_fact_dropped || checked.test_fact_perturbed ||
+        checked.test_edge_dropped || checked.test_edge_duplicated ||
+        checked.test_edge_perturbed ||
+        checked.test_target_identity_perturbed)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
+    if (checked.kind == CheckedCallEdgeSelectionKind::Missing && tree &&
+        call_expr &&
+        std::holds_alternative<est::Identifier>(
+            tree->arena->at(*call_expr))) {
+      const auto* facts = tree->arena->facts(*call_expr,
+                                             caller.functional_context);
+#ifdef MOSS_TEST_BUILD
+      est::SemanticFacts perturbed_facts;
+      if (std::getenv("MOSS_TEST_CONSUMER_DROP_CALLBACK_SPECIALIZATION"))
+        facts = nullptr;
+      if (facts &&
+          (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_SPECIALIZATION") ||
+           std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_TARGET"))) {
+        perturbed_facts = *facts;
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_SPECIALIZATION"))
+          perturbed_facts.specialization_result = "specialization-v2:forged";
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_TARGET"))
+          perturbed_facts.resolved_target = "callable-v1:forged";
+        facts = &perturbed_facts;
+      }
+#endif
+      if (!facts || facts->resolved_target != target.semantic_callable_id ||
+          facts->specialization_result.empty())
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked callback specialization fact is missing or contradictory");
+      const FunctionSpecialization* selected = nullptr;
+      std::size_t selected_count = 0;
+      for (const auto& candidate : target.specializations)
+        if (candidate.stable_type_key == facts->specialization_result) {
+          selected = &candidate;
+          ++selected_count;
+        }
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_CALLBACK_SPECIALIZATION"))
+        ++selected_count;
+#endif
+      if (selected_count != 1 || !selected)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked callback specialization fact is missing, duplicated, or contradictory");
+      return selected;
+    }
+    if (checked.kind != CheckedCallEdgeSelectionKind::Unique ||
+        !checked.unique || !checked.exact_edge)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT exact checked call edge specialization is "
+          "missing, duplicated, or contradictory");
     if (tree && call_expr) {
       const auto* facts = tree->arena->facts(*call_expr,
                                              caller.functional_context);
@@ -1840,33 +1890,23 @@ class FastInterpreter {
             facts->resolved_target != target.semantic_callable_id)
           throw RuntimeError(line,
               "MOSS_INTERNAL_INVARIANT exact call specialization target mismatch");
-        const FunctionSpecialization* match = nullptr;
-        for (const auto& candidate : target.specializations) {
-          if (candidate.stable_type_key != facts->specialization_result) continue;
-          if (match)
-            throw RuntimeError(line,
-                "MOSS_INTERNAL_INVARIANT exact call specialization is ambiguous");
-          match = &candidate;
-        }
-        if (!match)
+        if (checked.unique->stable_type_key != facts->specialization_result)
           throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT exact call specialization is unavailable");
-        return match;
+              "MOSS_INTERNAL_INVARIANT call edge and EST specialization disagree");
       }
     }
-    if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous)
-      throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT exact call specialization is unavailable for ambiguous call edge");
-    return checked.kind == CheckedCallEdgeSelectionKind::Unique
-        ? checked.unique : nullptr;
+    return checked.unique;
   }
 
   bool checked_call_requires_specialization(
       const Function& target, const Frame& caller, int line) const {
     if (!target.static_dispatch) return false;
-    return checked_call_edge_specialization(
-        program_, caller.functional_context, target.name, line).kind !=
-        CheckedCallEdgeSelectionKind::None;
+    const auto kind = checked_call_edge_specialization_exact(
+        program_, caller.functional_context, caller.specialization_key,
+        target, line).kind;
+    return kind == CheckedCallEdgeSelectionKind::Unique ||
+        kind == CheckedCallEdgeSelectionKind::Ambiguous ||
+        kind == CheckedCallEdgeSelectionKind::Contradictory;
   }
 
   const ObjectType* object_type(const std::string& name) const {
@@ -1916,7 +1956,9 @@ class FastInterpreter {
 
   Value invoke_pipeline_callable(const std::string& callable,
                                  const std::vector<Value>& values,
-                                 Frame& frame, int line, std::ostream& output) {
+                                 Frame& frame, int line, std::ostream& output,
+                                 const ExpressionTreeView* tree = nullptr,
+                                 std::optional<est::ExprId> callback_expr = std::nullopt) {
     Frame callback = frame;
     std::vector<std::string> names;
     for (size_t i = 0; i < values.size(); ++i) {
@@ -1929,8 +1971,8 @@ class FastInterpreter {
     if (local_it != callback.locals.end() && local_it->second.kind == Value::Kind::Callable)
       target_callable = local_it->second.string;
     if (auto fn = function(target_callable))
-      return call(*fn, names, callback, line, output, nullptr, nullptr,
-                  &values);
+      return call(*fn, names, callback, line, output, tree, nullptr,
+                  &values, callback_expr);
     throw RuntimeError(line,
         "MOSS_INTERNAL_INVARIANT missing checked pipeline callable target");
   }
@@ -1948,10 +1990,10 @@ class FastInterpreter {
       if (local != callback.locals.end() &&
           local->second.kind == Value::Kind::Callable)
         return invoke_pipeline_callable(local->second.string, values,
-                                        frame, line, output);
+                                        frame, line, output, &tree, expression);
       if (function(identifier->name))
         return invoke_pipeline_callable(identifier->name, values, frame,
-                                        line, output);
+                                        line, output, &tree, expression);
     }
     return evaluate_tree_node(tree, expression, callback, line, output);
   }

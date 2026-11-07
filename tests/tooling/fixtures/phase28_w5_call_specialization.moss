@@ -1,0 +1,11 @@
+fn one(value):
+  return value
+
+fn other(value):
+  return value + 1
+
+fn two(value):
+  return one(value) + other(value)
+
+fn main():
+  echo two(7)

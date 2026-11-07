@@ -77,6 +77,7 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
 
 # All individual standalone Python regressions from tests/run.sh
 TOOLING_TESTS: list[tuple] = [
+    ("check_phase28_w5_call_specialization", [sys.executable, "tests/tooling/check_phase28_w5_call_specialization.py", "{compiler}"]),
     ("check_run_parallel_timeout", [sys.executable, "tests/tooling/check_run_parallel_timeout.py"]),
     ("check_make_incremental_dependencies", [sys.executable, "tests/tooling/check_make_incremental_dependencies.py"]),
     ("check_retired_syntax", [sys.executable, "tests/tooling/check_retired_syntax.py", "--self-test"]),
@@ -258,6 +259,7 @@ def build_manifest() -> list[Job]:
         "check_agent_skills",
         "check_agent_feedback",
         "check_phase28_local_ownership",
+        "check_phase28_w5_call_specialization",
         "check_phase28_team_b_consumer",
         "check_phase24_imported_generic_expressions",
         "check_phase26_1_1_x1_v9",

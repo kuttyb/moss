@@ -21081,7 +21081,7 @@ class Checker {
                 source, "handler:" + domain + "." + message->handler, line,
                 argument_types, expression_source.empty() ? physical_source
                                                            : expression_source,
-                "synchronous_message", target->name, {}, {}};
+                "synchronous_message", target->name, {}, {}, {}};
             if (!bind_message_est_occurrence(edge, *statement, &expression,
                                               expression_index, id)) return;
             edge.occurrence = call_occurrences[std::make_tuple(
@@ -21146,7 +21146,7 @@ class Checker {
                                 statement.source_file.empty()
                                     ? physical_source
                                     : statement.source_file,
-                                "ordinary_call", {}, {}, {}};
+                                "ordinary_call", {}, {}, {}, {}};
           edge.occurrence = call_occurrences[std::make_tuple(
               edge.source_file, edge.line, edge.target)]++;
           p_.semantic_call_edges.push_back(std::move(edge));
@@ -21172,7 +21172,7 @@ class Checker {
                 statement.line, argument_types,
                 statement.source_file.empty() ? physical_source
                                               : statement.source_file,
-                "synchronous_message", statement.a, {}, {}};
+                "synchronous_message", statement.a, {}, {}, {}};
             est::ExprId message_id = UINT32_MAX;
             for (const auto& handle : statement.expression_handles) {
               if (handle.slot != est::ExprSlot::Receiver) continue;
@@ -21208,7 +21208,7 @@ class Checker {
         edge_lines.emplace(source + "\n" + call.target, result_line);
         SemanticCallEdge edge{source, call.target, result_line,
                               call.argument_types, physical_source,
-                              "ordinary_call", {}, {}, {}};
+                              "ordinary_call", {}, {}, {}, {}};
         edge.occurrence = call_occurrences[std::make_tuple(
             edge.source_file, edge.line, edge.target)]++;
         p_.semantic_call_edges.push_back(std::move(edge));
@@ -34034,13 +34034,74 @@ class Checker {
               edge.specialization_key != exact_key)
             err(line, "one checked call context acquired two specialization identities",
                 "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          if (!edge.target_callable_identity.empty() &&
+              edge.target_callable_identity !=
+                  function->second->semantic_callable_id)
+            err(line, "one checked call context acquired two target identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
           edge.specialization_key = exact_key;
+          edge.target_callable_identity =
+              function->second->semantic_callable_id;
           attached = true;
         }
         if (!attached && !caller_key.empty() && source_edge) {
+          if (!source_edge->target_callable_identity.empty() &&
+              source_edge->target_callable_identity !=
+                  function->second->semantic_callable_id)
+            err(line, "one checked call context acquired two target identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
           SemanticCallEdge concrete_edge = *source_edge;
           concrete_edge.source_specialization_key = caller_key;
           concrete_edge.specialization_key = exact_key;
+          concrete_edge.target_callable_identity =
+              function->second->semantic_callable_id;
+          p_.semantic_call_edges.push_back(std::move(concrete_edge));
+        }
+      }
+      if (!open_result && function->second->static_dispatch) {
+        const auto key = specialization_key_inputs(
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types));
+        if (!key || !key->stable_key())
+          err(line, "static call specialization has unresolved type bindings",
+              "TYPE_AMBIGUOUS_OPEN_RESULT");
+        const string exact_key = *key->stable_key();
+        const string caller_key = checking_specialization_
+            ? checking_specialization_->stable_type_key : string();
+        std::optional<SemanticCallEdge> source_edge;
+        bool attached = false;
+        for (auto& edge : p_.semantic_call_edges) {
+          if (edge.source != current_semantic_context_ || edge.line != line ||
+              (nested_occurrences &&
+               edge.occurrence != nested_occurrences->first) ||
+              (edge.target != function->second->name &&
+               edge.target != "fn:" + function->second->name) ||
+              (!edge.source_file.empty() && current_check_statement_ &&
+               edge.source_file != current_check_statement_->source_file))
+            continue;
+          if (edge.source_specialization_key.empty() && !source_edge)
+            source_edge = edge;
+          if (edge.source_specialization_key != caller_key) continue;
+          if (!edge.specialization_key.empty() &&
+              edge.specialization_key != exact_key)
+            err(line, "one checked call context acquired two specialization identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          if (!edge.target_callable_identity.empty() &&
+              edge.target_callable_identity !=
+                  function->second->semantic_callable_id)
+            err(line, "one checked call context acquired two target identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          edge.specialization_key = exact_key;
+          edge.target_callable_identity =
+              function->second->semantic_callable_id;
+          attached = true;
+        }
+        if (!attached && source_edge) {
+          SemanticCallEdge concrete_edge = *source_edge;
+          concrete_edge.source_specialization_key = caller_key;
+          concrete_edge.specialization_key = exact_key;
+          concrete_edge.target_callable_identity =
+              function->second->semantic_callable_id;
           p_.semantic_call_edges.push_back(std::move(concrete_edge));
         }
       }
@@ -34063,6 +34124,105 @@ class Checker {
     }
     auto result = functional_callable_result(function.name, input_types, env);
     return result && !unresolved_semantic_type(*result);
+  }
+
+  void retain_functional_callback_specialization(
+      const Function& function, const vector<string>& input_types,
+      int line) {
+    if (!function.static_dispatch || !current_body_types_ ||
+        current_body_types_->active_expression_occurrences.empty() ||
+        active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back())
+      return;
+    const auto stage_id =
+        current_body_types_->active_expression_occurrences.back();
+    if (stage_id >= current_body_types_->expression_occurrences.size())
+      throw std::invalid_argument(
+          "checked pipeline callback stage occurrence is unavailable");
+    const auto& stage_occurrence =
+        current_body_types_->expression_occurrences[stage_id];
+    if (stage_occurrence.kind !=
+            BodyTypeState::ExpressionOccurrence::Kind::PipelineStage ||
+        stage_occurrence.parent_id == UINT32_MAX)
+      throw std::invalid_argument(
+          "checked pipeline callback lacks its exact stage owner");
+    std::size_t stage_ordinal = 0;
+    std::size_t matching_stage_occurrences = 0;
+    std::size_t sibling_stage_count = 0;
+    for (const auto& occurrence :
+         current_body_types_->expression_occurrences) {
+      if (occurrence.parent_id != stage_occurrence.parent_id ||
+          occurrence.kind !=
+              BodyTypeState::ExpressionOccurrence::Kind::PipelineStage)
+        continue;
+      ++sibling_stage_count;
+      if (occurrence.id < stage_id) ++stage_ordinal;
+      if (occurrence.id == stage_id) ++matching_stage_occurrences;
+    }
+    if (matching_stage_occurrences != 1)
+      throw std::invalid_argument(
+          "checked pipeline callback stage identity is missing or duplicated");
+
+    const auto& cursor = *active_est_expression_cursors_.back();
+    auto* arena = expression_arena(cursor.arena_index);
+    if (!arena || cursor.expr >= arena->size())
+      throw std::invalid_argument(
+          "checked pipeline callback owner arena is unavailable");
+    const auto pipeline_root = est::unparenthesized(*arena, cursor.expr);
+    const auto* pipeline = std::get_if<est::Pipeline>(&arena->at(pipeline_root));
+    if (!pipeline || pipeline->stages.size() != sibling_stage_count)
+      throw std::invalid_argument(
+          "checked pipeline callback stage does not map to its EST owner");
+    if (stage_ordinal >= pipeline->stages.size())
+      throw std::invalid_argument(
+          "checked pipeline callback stage ordinal is out of range");
+    const auto* stage_call = std::get_if<est::Call>(
+        &arena->at(pipeline->stages[stage_ordinal]));
+    const std::size_t callback_ordinal =
+        stage_occurrence.operation_id == "functional:Reduce" ? 1 : 0;
+    if (!stage_call || callback_ordinal >= stage_call->arguments.size())
+      throw std::invalid_argument(
+          "checked pipeline callback argument occurrence is unavailable");
+    const auto callback_id = stage_call->arguments[callback_ordinal];
+    const auto* callback = callback_id < arena->size()
+        ? std::get_if<est::Identifier>(&arena->at(callback_id)) : nullptr;
+    if (!callback || !tree_plain_identifier(callback->name))
+      return;  // Non-identifier callback forms retain their existing checker path.
+
+    const auto key = specialization_key_inputs(
+        function.semantic_callable_id,
+        semantic_specialization_arguments(line, input_types));
+    if (!key || !key->stable_key())
+      throw std::invalid_argument(
+          "checked pipeline callback specialization key is unresolved");
+    const auto stable_key = *key->stable_key();
+    const auto specialization_count = std::count_if(
+        function.specializations.begin(), function.specializations.end(),
+        [&](const FunctionSpecialization& candidate) {
+          return candidate.stable_type_key == stable_key;
+        });
+    if (specialization_count != 1)
+      throw std::invalid_argument(
+          "checked pipeline callback specialization is missing or duplicated");
+    const string context = expression_fact_context();
+    const auto* existing = arena->facts(callback_id, context);
+    if (existing &&
+        ((!existing->resolved_target.empty() &&
+          existing->resolved_target != function.semantic_callable_id) ||
+         (!existing->specialization_result.empty() &&
+          existing->specialization_result != stable_key)))
+      throw std::invalid_argument(
+          "checked pipeline callback EST identity is contradictory");
+    est::SemanticFacts facts = existing ? *existing : est::SemanticFacts{};
+    facts.resolved_target = function.semantic_callable_id;
+    facts.specialization_result = stable_key;
+    arena->record_facts(callback_id, context, std::move(facts));
+    const auto* retained = arena->facts(callback_id, context);
+    if (!retained ||
+        retained->resolved_target != function.semantic_callable_id ||
+        retained->specialization_result != stable_key)
+      throw std::invalid_argument(
+          "checked pipeline callback EST authority failed publication");
   }
 
   std::optional<string> check_functional_callable(
@@ -34274,6 +34434,8 @@ class Checker {
           input_types);
       register_static_specialization(line, *function->second, input_types,
                                      std::move(requirements));
+      retain_functional_callback_specialization(*function->second,
+                                                input_types, line);
     }
     auto result = functional_callable_result(identity, input_types, env);
     if (!result && concrete)

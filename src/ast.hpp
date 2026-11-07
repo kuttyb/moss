@@ -783,6 +783,10 @@ struct SemanticCallEdge {
   // Set by the checked call closure. Query and module projection consume this
   // exact identity instead of reconstructing it from display argument types.
   string specialization_key;
+  // Semantic declaration identity selected by checker name/type resolution.
+  // `target` above is a display/call-graph spelling and is not authority for
+  // resolving a Fast Debug callable.
+  string target_callable_identity;
   // Source-order occurrence among calls with the same caller, line, and
   // target. This distinguishes two expressions on one source line without
   // changing the callable or specialization identity.
@@ -967,7 +971,9 @@ struct Program {
   }
 };
 
-enum class CheckedCallEdgeSelectionKind { None, Unique, Ambiguous };
+enum class CheckedCallEdgeSelectionKind {
+  None, Unique, Ambiguous, Missing, Contradictory
+};
 
 inline bool moss_test_fact_hook(const char* variable,
                                 std::string_view fact_class) {
@@ -992,10 +998,89 @@ inline bool moss_test_perturb_fact(std::string_view fact_class) {
 struct CheckedCallEdgeSpecialization {
   CheckedCallEdgeSelectionKind kind = CheckedCallEdgeSelectionKind::None;
   const FunctionSpecialization* unique = nullptr;
+  const SemanticCallEdge* exact_edge = nullptr;
   vector<const FunctionSpecialization*> candidates;
   bool test_fact_dropped = false;
   bool test_fact_perturbed = false;
+  bool test_edge_duplicated = false;
+  bool test_edge_dropped = false;
+  bool test_edge_perturbed = false;
+  bool test_target_identity_perturbed = false;
 };
+
+// Fast Debug selects a static call only from the checker's concrete semantic
+// call edge. The caller specialization key and target specialization key are
+// part of that edge's identity; parameter spellings and evaluated values are
+// deliberately not selection inputs.
+inline CheckedCallEdgeSpecialization checked_call_edge_specialization_exact(
+    const Program& program, const string& caller_context,
+    const string& caller_specialization_key, const Function& target,
+    int line) {
+  CheckedCallEdgeSpecialization result;
+  result.test_fact_dropped = moss_test_drop_fact("specializations");
+  result.test_fact_perturbed = moss_test_perturb_fact("specializations");
+#ifdef MOSS_TEST_BUILD
+  result.test_edge_dropped =
+      std::getenv("MOSS_TEST_CONSUMER_DROP_SEMANTIC_CALL_EDGE") != nullptr;
+  result.test_edge_duplicated =
+      std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_SEMANTIC_CALL_EDGE") != nullptr;
+  result.test_edge_perturbed =
+      std::getenv("MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE") != nullptr;
+  result.test_target_identity_perturbed = std::getenv(
+      "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_TARGET") != nullptr;
+#endif
+  if (result.test_fact_dropped || result.test_fact_perturbed) return result;
+
+  const auto exact_source = [&](const SemanticCallEdge& edge) {
+    if (edge.line != line || edge.invocation_kind != "ordinary_call")
+      return false;
+    const bool context_form = edge.source == caller_context &&
+        (caller_specialization_key.empty()
+            ? edge.source_specialization_key.empty()
+            : edge.source_specialization_key.empty() ||
+                  edge.source_specialization_key == caller_specialization_key);
+    const bool specialization_form = !caller_specialization_key.empty() &&
+        edge.source_specialization_key == caller_specialization_key;
+    return context_form || specialization_form;
+  };
+
+  std::size_t matching_edges = 0;
+  std::size_t matching_target_specializations = 0;
+  for (const auto& edge : program.semantic_call_edges) {
+    if (!exact_source(edge) || result.test_edge_dropped) continue;
+    if (result.test_target_identity_perturbed ||
+        edge.target_callable_identity != target.semantic_callable_id) continue;
+    ++matching_edges;
+    for (const auto& specialization : target.specializations)
+      if (specialization.stable_type_key == edge.specialization_key) {
+        result.unique = &specialization;
+        result.exact_edge = &edge;
+        ++matching_target_specializations;
+      }
+    if (result.test_edge_duplicated) {
+      ++matching_edges;
+      ++matching_target_specializations;
+    }
+    if (result.test_edge_perturbed)
+      matching_target_specializations = 0;
+  }
+  if (matching_edges == 0) {
+    result.kind = CheckedCallEdgeSelectionKind::Missing;
+    return result;
+  }
+  if (matching_edges != 1) {
+    result.kind = CheckedCallEdgeSelectionKind::Ambiguous;
+    return result;
+  }
+  if (matching_target_specializations != 1 || !result.unique ||
+      !result.exact_edge) {
+    result.kind = CheckedCallEdgeSelectionKind::Contradictory;
+    return result;
+  }
+  result.candidates.push_back(result.unique);
+  result.kind = CheckedCallEdgeSelectionKind::Unique;
+  return result;
+}
 
 // Consumers select only the specialization attached to a checker-recorded
 // call edge. They must not infer argument types from generated/runtime values.
