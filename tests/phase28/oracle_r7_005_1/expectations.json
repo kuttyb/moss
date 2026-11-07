@@ -1,7 +1,7 @@
 {
   "format": "moss-phase28-oracle-expectations",
   "version": 2,
-  "approval_status": "DRAFT_PENDING_L7_APPROVAL",
+  "approval_status": "CERTIFIED_FROZEN",
   "fixtures": [
     {
       "fixture_id": "ORACLE-01-VEC-WRITE-THROUGH",

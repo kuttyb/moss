@@ -4,8 +4,8 @@
 
 This suite provides an independent semantic oracle for Moss Phase 28 ownership semantics.
 Its 62-row successor expectation table includes the P28-R7-011 ORACLE-15 correction;
-the revised table is pending independent normative review and recertification. The
-previous 60-row version 2 table remains historically certified; certification records the
+the revised table has independent normative GO and reviewer-controlled holdouts PASS.
+The previous 60-row version 2 table remains historically certified; certification records the
 independent normative review, reviewer-controlled holdouts, implementation comparison, and digest pins. `certification.json` records the approved candidate, independent
 review verdict, reviewer-controlled holdout result, and digest pins.
 
@@ -46,8 +46,8 @@ The suite currently contains 62 successor fixtures covering:
 ## Invocation
 
 Current status: previous v2 expectations and diagnostic mappings were
-`CERTIFIED_FROZEN`; the P28-R7-011 successor edits are not certified until the
-independent normative review and recertification are complete. See
+`CERTIFIED_FROZEN`; the P28-R7-011 successor has independent normative GO and
+holdout PASS, with final frozen-SHA metadata being recorded. See
 `reports/P28_R7_011_ORACLE_LEDGER.md` for the fixture-defect record.
 The v1 oracle remains independently certified and unchanged. The R7-008
 implementation comparison records semantic mismatches and missing clone

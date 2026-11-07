@@ -25,11 +25,11 @@ claim implementation conformance.
 
 - Baseline source `150ab36b` predates `tests/phase28/oracle_r7_005_1/`; the
   update is based on current W5 source `45b586c2`.
-- The expectation digest and candidate commit SHA are recorded after review.
-- Independent normative review and full oracle recertification are pending.
-- Do not mark the revised table `CERTIFIED_FROZEN` until the independent
-  reviewer approves the exact candidate and the normal certification checks
-  complete.
+- Independent normative review returned GO for candidate
+  `ff306c27f58738bd7eb9c79b00eb165cead01209`; reviewer-controlled v2 holdouts
+  passed. The frozen expectations digest is recorded in `certification.json`.
+- The final frozen content SHA is the reviewed candidate's freeze commit; the
+  final certification commit records it after the freeze commit is created.
 
 ## Executable comparison on the current W5 compiler
 
@@ -89,8 +89,34 @@ python3 tests/phase28/oracle_r7_005_1/oracle_harness.py \
   --ledger-out tmp/p28-r7-011-oracle-83e42-corrected-ledger.md
 ```
 
-This remains an implementation comparison, not independent oracle
-certification. The expectation digest is refreshed in `certification.json`;
-candidate and frozen-SHA approval fields remain pending until the exact oracle
-candidate receives independent normative review and reviewer-controlled
-holdouts. Do not certify or broaden the report to unrelated changes.
+This remains an implementation comparison, not compiler-conformance approval.
+The normative expectations and holdout integrity have a scoped independent GO;
+the oracle certifies expected behavior only and approves no clone provenance
+exceptions. Do not broaden the report to unrelated changes.
+
+## Independent review and holdouts
+
+Independent normative review returned **GO** for candidate
+`ff306c27f58738bd7eb9c79b00eb165cead01209`, expectation digest
+`ce0581abcecd1b476f9f552433375493b1ed0cd9a58c61236b959c2d453fbfec`. The
+review confirmed the conditional Proposal §10 rule and the `3` stdout
+representation. Reviewer-controlled v2 holdouts were frozen before execution:
+
+- READ: `reports/holdouts/p28-r7-011-oracle-v2/holdout_read.moss` accepted and
+  printed `4` in Fast Debug, Native Debug and Native Optimized; the source field
+  remained readable.
+- CONSUME: `reports/holdouts/p28-r7-011-oracle-v2/holdout_consume.moss`
+  rejected with `OWNERSHIP_ILLEGAL_CONSUME` in checker, Fast Debug, Native Debug
+  and Native Optimized; no Rust artifact was emitted.
+
+The v1 holdout draft used reserved Moss identifier `crate` and produced invalid
+Rust. It was abandoned before complete execution and is explicitly not used as
+evidence. The v2 holdout plan, sources and independent report are preserved in
+`reports/holdouts/p28-r7-011-oracle-v2/`; report SHA-256 is
+`dd1afdcda55058517bc902378c08bc5d2919753948e0ac34cc99a25596683c62`, and plan
+SHA-256 is `596bf6b29dc930a90eb26e0b250493f8fd80bd91554f0db1fddcdc3ae1f8b28d`.
+
+This GO approves only the ORACLE-15/15B/15C normative expectations and holdout
+integrity. It does not approve compiler conformance or clone provenance. The
+certification metadata records the GO and PASS; the exact frozen content SHA is
+set by the following certification commit.

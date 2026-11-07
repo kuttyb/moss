@@ -4,8 +4,10 @@
 
 **P28-R7-011 status:** the v2 certification below is historical. The current
 expectation file has 62 rows after ORACLE-15 was corrected and ORACLE-15B/C
-were added. This R7-011 successor is pending independent review and
-reviewer-controlled holdouts; it is not certified by the v2 GO below. See
+were added. Independent normative review returned scoped GO and reviewer-
+controlled holdouts passed on candidate `ff306c27f58738bd7eb9c79b00eb165cead01209`.
+The R7-011 certification metadata records this separate review; it does not
+certify compiler conformance or clone provenance. See
 `tests/phase28/oracle_r7_005_1/reports/P28_R7_011_ORACLE_LEDGER.md` for the
 fixture-defect record and current combined-compiler comparison.
 

@@ -1,0 +1,11 @@
+type Ledger:
+  records: Vector[Int]
+
+fn consume_records(values: Vector[Int]) -> Vector[Int]:
+  return values
+
+fn main():
+  ledger_value = Ledger(records = [7, 8])
+  binding = ledger_value.records
+  moved = consume_records(binding)
+  echo (moved |> count)

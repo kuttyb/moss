@@ -1,0 +1,11 @@
+type Crate:
+  entries: Vector[Int]
+
+fn count_entries(values: Vector[Int]) -> Int:
+  return values |> count
+
+fn main():
+  holder = Crate(entries = [4, 5])
+  binding = holder.entries
+  observed = count_entries(binding)
+  echo observed + (holder.entries |> count)
