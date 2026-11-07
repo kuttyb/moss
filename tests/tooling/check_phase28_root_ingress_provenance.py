@@ -59,7 +59,7 @@ def main() -> None:
             manifest = json.loads(sidecar.read_text())
             assert len(manifest["root_ingress_domain_captures"]) == 1, manifest
             assert sum(row["origin_kind"] == "root_ingress_domain_capture"
-                       for row in manifest["occurrences"]) == 1, manifest
+                       for row in manifest["occurrences"]) == 0, manifest
             audit = oracle.audit_clone_provenance(
                 rust, source, mode, 0, copy_authority, root_authority)
             assert audit.get("status") == "UNAUTHORIZED", audit
@@ -99,9 +99,9 @@ def main() -> None:
                          if row["origin_kind"] != "root_ingress_domain_capture")
 
             def mutate_occurrence(value):
-                value["occurrences"] = [row for row in value["occurrences"]
-                                         if row["origin_kind"] !=
-                                         "root_ingress_domain_capture"]
+                forged = dict(value["occurrences"][0])
+                forged["origin_kind"] = "root_ingress_domain_capture"
+                value["occurrences"].append(forged)
 
             for mutation in (mutate_drop, mutate_duplicate, mutate_copy_authority,
                              mutate_id, mutate_span, mutate_occurrence):

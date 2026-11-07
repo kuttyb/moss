@@ -4,9 +4,12 @@ type Holder:
   fn test() -> Int:
     fallback = [1]
     result = values.get(99, fallback)
-    result.push(2)
+    result_count = result |> count
     return fallback |> count
 
 fn main():
   holder = Holder(values: Map())
   echo holder.test()
+  fallback = [1]
+  result = copy(fallback)
+  result.push(2)

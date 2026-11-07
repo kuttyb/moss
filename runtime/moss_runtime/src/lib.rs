@@ -12,6 +12,7 @@
 pub mod map;
 pub mod string;
 pub mod key_protocol;
+pub mod moss_rt;
 
 pub use map::{MossMap, MossSet};
 pub use string::MossString;

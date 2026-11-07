@@ -792,7 +792,7 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT duplicate Root-ingress capture fact identity");
   }
-  std::map<std::uint64_t, std::string> root_capture_by_clone;
+  std::map<std::uint64_t, std::string> root_capture_by_share;
   std::set<std::string> marked_root_captures;
   const std::string root_capture_marker =
       "/* Moss root ingress capture fact: ";
@@ -810,14 +810,20 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
     if (fact == root_facts.end() || !marked_root_captures.insert(id).second)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT unknown or duplicate Root-ingress capture marker");
-    std::size_t clone_begin = marker_end + 3;
-    while (clone_begin < code.size() &&
-           std::isspace(static_cast<unsigned char>(code[clone_begin])))
-      ++clone_begin;
-    if (clone_begin + 8 > code.size() ||
-        code.substr(clone_begin, 8) != ".clone()")
+    std::size_t share_end = marker_end + 3;
+    while (share_end < code.size() &&
+           std::isspace(static_cast<unsigned char>(code[share_end])))
+      ++share_end;
+    if (share_end + 2 > code.size() ||
+        code.substr(share_end, 2) != "))")
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT Root-ingress capture marker does not precede its direct clone");
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture marker does not belong to share_domain");
+    share_end += 2;
+    const auto share_begin = rust_bytes.rfind("moss_rt::share_domain(&(",
+                                               root_marker_at);
+    if (share_begin == std::string_view::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Root-ingress capture lacks typed share_domain call");
     std::size_t receiver_end = root_marker_at;
     while (receiver_end > 0 &&
            std::isspace(static_cast<unsigned char>(code[receiver_end - 1])))
@@ -831,17 +837,17 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
             fact->second->checked_fact.receiver_binding)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress marker is not bound to its checked receiver");
-    auto [position, inserted] = root_capture_by_clone.emplace(clone_begin, id);
+    auto [position, inserted] = root_capture_by_share.emplace(share_begin, id);
     (void)position;
     if (!inserted)
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT duplicate Root-ingress clone marker span");
+          "MOSS_INTERNAL_INVARIANT duplicate Root-ingress share marker span");
     NativeRootIngressCaptureV1 capture;
     capture.capture_id = id;
     capture.checked_fact = fact->second->checked_fact;
     capture.source_sha256 = source_free_contract_sha256(source_bytes);
     capture.rust_span = native_checked_copy_source_span(
-        rust_bytes, clone_begin, clone_begin + 8);
+        rust_bytes, share_begin, share_end);
     manifest.root_ingress_domain_captures.push_back(std::move(capture));
     root_marker_at = marker_end + 3;
   }
@@ -1038,24 +1044,7 @@ inline NativeCloneProvenanceV3 build_native_clone_provenance_v3(
     }
     NativeCloneOccurrenceV2 occurrence;
     occurrence.rust_span = span;
-    const auto root_capture = root_capture_by_clone.find(at);
-    if (root_capture != root_capture_by_clone.end()) {
-      const auto capture = std::find_if(
-          manifest.root_ingress_domain_captures.begin(),
-          manifest.root_ingress_domain_captures.end(),
-          [&](const auto& row) { return row.capture_id == root_capture->second; });
-      if (capture == manifest.root_ingress_domain_captures.end())
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT Root-ingress marker lost its checked row");
-      if (owner)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT Root-ingress capture clone overlaps explicit-copy helper");
-      occurrence.origin_kind = "root_ingress_domain_capture";
-      occurrence.semantic_type = capture->checked_fact.domain_type_identity;
-      occurrence.ownership_fact =
-          "compiler_generated_capture_only;permits_moss_value_copy=false";
-      occurrence.semantic_identity = capture->capture_id;
-    } else if (owner) {
+    if (owner) {
       occurrence.origin_kind = "explicit_copy";
       occurrence.source_copy_id = owner->copy_id;
       occurrence.semantic_identity = owner->identity;
@@ -1357,48 +1346,34 @@ inline void write_native_clone_provenance_v3(
   std::map<std::string, const NativeRootIngressCaptureV1*> root_capture_by_id;
   std::map<std::uint64_t, std::string> root_capture_by_span;
   for (const auto& capture : manifest.root_ingress_domain_captures) {
+    const auto capture_text = capture.rust_span.source_begin < rust_bytes.size() &&
+            capture.rust_span.source_end <= rust_bytes.size() &&
+            capture.rust_span.source_begin < capture.rust_span.source_end
+        ? rust_bytes.substr(capture.rust_span.source_begin,
+              capture.rust_span.source_end - capture.rust_span.source_begin)
+        : std::string_view{};
+    const std::string marker = "/* Moss root ingress capture fact: " +
+        capture.capture_id + " */";
     if (!capture.checked_fact.is_authoritative() ||
         capture.checked_fact.permits_moss_value_copy ||
         capture.capture_id != native_root_ingress_capture_identity(
                                   capture.checked_fact) ||
         capture.source_sha256 != source_free_contract_sha256(source_bytes) ||
-        capture.rust_span.source_begin >= capture.rust_span.source_end ||
-        capture.rust_span.source_end > rust_bytes.size() ||
-        rust_bytes.substr(capture.rust_span.source_begin,
-                          capture.rust_span.source_end -
-                              capture.rust_span.source_begin) != ".clone()" ||
+        capture_text.rfind("moss_rt::share_domain(&(", 0) != 0 ||
+        capture_text.size() < 2 ||
+        capture_text.substr(capture_text.size() - 2) != "))" ||
+        capture_text.find(marker) == std::string_view::npos ||
         !root_capture_by_id.emplace(capture.capture_id, &capture).second ||
         !root_capture_by_span.emplace(capture.rust_span.source_begin,
                                       capture.capture_id).second)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT invalid or duplicate Root-ingress capture row");
   }
-  std::map<std::string, std::size_t> root_occurrence_counts;
   for (const auto& occurrence : manifest.occurrences) {
-    if (occurrence.origin_kind != "root_ingress_domain_capture") continue;
-    const auto capture = root_capture_by_id.find(occurrence.semantic_identity);
-    const auto span = root_capture_by_span.find(
-        occurrence.rust_span.source_begin);
-    if (capture == root_capture_by_id.end() ||
-        span == root_capture_by_span.end() ||
-        span->second != occurrence.semantic_identity ||
-        occurrence.rust_span.source_end !=
-            capture->second->rust_span.source_end ||
-        occurrence.semantic_type !=
-            capture->second->checked_fact.domain_type_identity ||
-        occurrence.ownership_fact !=
-            "compiler_generated_capture_only;permits_moss_value_copy=false")
+    if (occurrence.origin_kind == "root_ingress_domain_capture")
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT Root-ingress occurrence does not match exact capture row");
-    ++root_occurrence_counts[occurrence.semantic_identity];
+          "MOSS_INTERNAL_INVARIANT domain sharing is not a Moss value-copy occurrence");
   }
-  if (root_occurrence_counts.size() != root_capture_by_id.size())
-    throw std::runtime_error(
-        "MOSS_INTERNAL_INVARIANT Root-ingress capture row lacks clone occurrence");
-  for (const auto& capture : root_capture_by_id)
-    if (root_occurrence_counts[capture.first] != 1)
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT Root-ingress capture is not one-to-one");
   out << "{\"format\":\"moss-clone-provenance\",\"version\":3,\"mode\":"
       << native_clone_json_string(manifest.mode)
       << ",\"rust_sha256\":"

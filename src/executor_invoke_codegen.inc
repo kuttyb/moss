@@ -80,7 +80,7 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
                       "caller continues after submission");
   o << pad << "{\n";
   string domain_temp = "__moss_invoke_domain_" + std::to_string(executor_invoke_temp_++);
-  o << pad << "    let " << domain_temp << " = " << plan.target_domain_binding << ".clone();\n";
+  o << pad << "    let " << domain_temp << " = moss_rt::share_domain(&(" << plan.target_domain_binding << "));\n";
   vector<string> argument_locals;
   for (size_t index = 0; index < plan.argument_expressions.size(); ++index) {
     string temp = "__moss_invoke_arg_" + std::to_string(executor_invoke_temp_++);
@@ -109,8 +109,13 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
     throw std::runtime_error(
         "internal error: raising Executor Root reached codegen without "
         "on_fail totality");
-  o << pad << "        let _ = " << domain_temp << "." << plan.handler_name
-    << (root_handles_failure ? "_root(" : "_shared(");
+  if (root_handles_failure)
+    o << pad << "        let _ = " << target_domain.name << plan.handler_name
+      << "RootMethods::" << plan.handler_name << "_root(&" << domain_temp;
+  else
+    o << pad << "        let _ = " << target_domain.name << "Messages::"
+      << plan.handler_name << "_shared(&" << domain_temp;
+  if (!argument_locals.empty()) o << ", ";
   for (size_t index = 0; index < argument_locals.size(); ++index) {
     if (index) o << ", ";
     if (root_handles_failure)
@@ -172,7 +177,7 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
 // synchronous ingress, which uses inline admission before start() and after
 // join(), and executor admission while ACTIVE:
 //
-//   { let __d = target.clone(); let __a0 = <checked owned value>; ...
+//   { let __d = moss_rt::share_domain(&target); let __a0 = <checked owned value>; ...
 //     runtime_invoke(move || __d.Handler_shared(<lend __a0>)[.unwrap reply]) }
 //
 // The target and every argument are evaluated exactly once at the message
@@ -197,9 +202,10 @@ string root_ingress_message(const string& receiver, const string& handler,
         "MOSS_INTERNAL_INVARIANT Root-ingress capture identity is missing");
   std::ostringstream rendered;
   string domain_temp = "__moss_root_domain_" + std::to_string(executor_invoke_temp_++);
-  rendered << "{ let " << domain_temp << " = " << expr(receiver, d, locals, types)
+  rendered << "{ let " << domain_temp << " = moss_rt::share_domain(&("
+           << expr(receiver, d, locals, types)
            << "/* Moss root ingress capture fact: " << capture_identity
-           << " */.clone(); ";
+           << " */)); ";
   vector<string> argument_locals;
   for (size_t index = 0; index < arguments.size(); ++index) {
     string temp = "__moss_root_arg_" + std::to_string(executor_invoke_temp_++);
@@ -261,12 +267,16 @@ string root_ingress_message(const string& receiver, const string& handler,
     throw std::runtime_error(
         "internal error: checked raising Root message lacks a Phase 21 outcome context");
   if (root_handles_failure && !exported_domain_bridge_body_) {
-    invocation << domain_temp << "." << handler << "_root(";
+    invocation << target_domain.name << handler << "RootMethods::"
+               << handler << "_root(&" << domain_temp;
+    if (!argument_locals.empty()) invocation << ", ";
     for (size_t index = 0; index < argument_locals.size(); ++index)
       invocation << (index ? ", " : "") << argument_locals[index];
     invocation << ")";
   } else if (target_domain.exported && !exported_domain_bridge_body_) {
-    invocation << domain_temp << ".__moss_message_" << handler << "(";
+    invocation << target_domain.name << "RefExportedBridge::__moss_message_"
+               << handler << "(&" << domain_temp;
+    if (!argument_locals.empty()) invocation << ", ";
     for (size_t index = 0; index < argument_locals.size(); ++index) {
       if (index) invocation << ", ";
       const auto& parameter = target_handler.params.at(index);
@@ -277,7 +287,9 @@ string root_ingress_message(const string& receiver, const string& handler,
     }
     invocation << ")";
   } else {
-    invocation << domain_temp << "." << handler << "_shared(";
+    invocation << target_domain.name << "Messages::" << handler
+               << "_shared(&" << domain_temp;
+    if (!argument_locals.empty()) invocation << ", ";
     for (size_t index = 0; index < argument_locals.size(); ++index)
       invocation << (index ? ", " : "")
                << shared_message_forward_argument(
