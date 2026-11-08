@@ -79,6 +79,7 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
 TOOLING_TESTS: list[tuple] = [
     ("check_phase28_w5_call_specialization", [sys.executable, "tests/tooling/check_phase28_w5_call_specialization.py", "{compiler}"]),
     ("check_phase28_no_hidden_copies", [sys.executable, "tests/tooling/check_phase28_no_hidden_copies.py", "{compiler}", "--out", "{out}/no-hidden-copies"]),
+    ("check_phase28_map_key_copy_occurrences", [sys.executable, "tests/tooling/check_phase28_map_key_copy_occurrences.py", "{compiler}" ]),
     ("check_run_parallel_timeout", [sys.executable, "tests/tooling/check_run_parallel_timeout.py"]),
     ("check_make_incremental_dependencies", [sys.executable, "tests/tooling/check_make_incremental_dependencies.py"]),
     ("check_retired_syntax", [sys.executable, "tests/tooling/check_retired_syntax.py", "--self-test"]),
