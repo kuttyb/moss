@@ -36966,8 +36966,12 @@ class Checker {
         -> std::optional<ParsedFunctionalPipeline> {
       const auto* arena = expression_arena(arena_index);
       if (!arena) return std::nullopt;
-      auto parsed = est::functional_pipeline(*arena, expression, source,
-                                              resolve_stage);
+      const auto pipeline_expression = est::unparenthesized(*arena, expression);
+      const auto exact_source = est::view(*arena, expression, source)
+          .source_text(pipeline_expression);
+      if (!exact_source) return std::nullopt;
+      auto parsed = est::functional_pipeline(*arena, pipeline_expression,
+                                              *exact_source, resolve_stage);
       if (parsed) {
         parsed->arena_index = arena_index;
         for (auto& stage : parsed->stages) stage.arena_index = arena_index;
