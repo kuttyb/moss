@@ -64,7 +64,7 @@ def refresh_v9_execution_section(text: str) -> str:
     prefix = text[:section2 + 1]
     section = text[section2 + 1:]
     framing = re.match(
-        r"execution_body_version ([12])\nexecution_body_length [0-9]+\n"
+        r"execution_body_version ([123])\nexecution_body_length [0-9]+\n"
         r"execution_body_hash sha256:[0-9a-f]{64}\n"
         r"execution_body_payload\n", section)
     if not framing or not section.endswith("execution_body_end\n"):
@@ -89,12 +89,12 @@ def refresh_v9_execution_section(text: str) -> str:
     }
     handler_pattern = re.compile(
         r'(?m)^handler ("[^"]+") ("[^"]+") ([0-9]+) '
-        r'("[^"]+") ([0-9]+) ([0-9]+)$')
+        r'("[^"]+") ([0-9]+) ([0-9]+)(.*)$')
     rebuilt = []
     cursor = 0
     for match in handler_pattern.finditer(payload):
         rebuilt.append(payload[cursor:match.start()])
-        owner, quoted_name, line, source_path, statement_count, old_count = \
+        owner, quoted_name, line, source_path, statement_count, old_count, tail = \
             match.groups()
         name = bytes(quoted_name[1:-1], "utf-8").decode("unicode_escape")
         desired = interface_counts.get(name, int(old_count))
@@ -118,7 +118,7 @@ def refresh_v9_execution_section(text: str) -> str:
                     for index in range(len(arms), desired))
         rebuilt.append(
             f"handler {owner} {quoted_name} {line} {source_path} "
-            f"{statement_count} {desired}\n{body}handler_end\n")
+            f"{statement_count} {desired}{tail}\n{body}handler_end\n")
         cursor = handler_end
     rebuilt.append(payload[cursor:])
     payload = "".join(rebuilt)
