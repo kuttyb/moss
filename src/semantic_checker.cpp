@@ -20114,45 +20114,43 @@ class Checker {
         return;
       }
     }
-    if (leaf_effect_capture_) {
-      if (auto pipeline = functional_pipeline_from_est(expression)) {
-        auto source_type = inferred_expr_type(pipeline->source, env);
-        auto element = source_type ? functional_element_type(*source_type, pipeline->source) : std::nullopt;
-        synchronization_require(element.has_value(), "unresolved functional effect source");
-        analyze_effect_expression(pipeline->source, env, params, parameter_effects,
-                                  receiver_effect, receiver_fields, Effect::Read);
-        string current_element = *element;
-        for (const auto& stage : pipeline->stages) {
-          if (stage.arguments.empty()) continue;
-          auto callable_env = env;
-          callable_env["_"] = current_element;
-          string callable = stage.arguments.back();
-          vector<string> inputs{current_element};
-          vector<string> arguments{"_"};
-          if (stage.kind == FunctionalNodeKind::Reduce && stage.arguments.size() == 2) {
-            analyze_effect_expression(stage.arguments.front(), env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Consume);
-            auto accumulator = inferred_expr_type(stage.arguments.front(), env);
-            synchronization_require(accumulator.has_value(), "unresolved reduce accumulator");
-            callable_env["__sync_accumulator"] = *accumulator;
-            inputs.insert(inputs.begin(), *accumulator);
-            arguments.insert(arguments.begin(), "__sync_accumulator");
-          }
-          if (expression_uses(callable, "_"))
-            analyze_effect_expression(callable, callable_env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Read);
-          else
-            analyze_effect_expression(callable + "(" + join_arguments(arguments) + ")",
-                                      callable_env, params, parameter_effects,
-                                      receiver_effect, receiver_fields, Effect::Read);
-          if (stage.kind == FunctionalNodeKind::Map) {
-            auto result = functional_callable_result(callable, inputs, env);
-            synchronization_require(result.has_value(), "unresolved functional callable");
-            current_element = *result;
-          }
+    if (auto pipeline = functional_pipeline_from_est(expression)) {
+      auto source_type = inferred_expr_type(pipeline->source, env);
+      auto element = source_type ? functional_element_type(*source_type, pipeline->source) : std::nullopt;
+      synchronization_require(element.has_value(), "unresolved functional effect source");
+      analyze_effect_expression(pipeline->source, env, params, parameter_effects,
+                                receiver_effect, receiver_fields, Effect::Read);
+      string current_element = *element;
+      for (const auto& stage : pipeline->stages) {
+        if (stage.arguments.empty()) continue;
+        auto callable_env = env;
+        callable_env["_"] = current_element;
+        string callable = stage.arguments.back();
+        vector<string> inputs{current_element};
+        vector<string> arguments{"_"};
+        if (stage.kind == FunctionalNodeKind::Reduce && stage.arguments.size() == 2) {
+          analyze_effect_expression(stage.arguments.front(), env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Consume);
+          auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+          synchronization_require(accumulator.has_value(), "unresolved reduce accumulator");
+          callable_env["__sync_accumulator"] = *accumulator;
+          inputs.insert(inputs.begin(), *accumulator);
+          arguments.insert(arguments.begin(), "__sync_accumulator");
         }
-        return;
+        if (expression_uses(callable, "_"))
+          analyze_effect_expression(callable, callable_env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        else
+          analyze_effect_expression(callable + "(" + join_arguments(arguments) + ")",
+                                    callable_env, params, parameter_effects,
+                                    receiver_effect, receiver_fields, Effect::Read);
+        if (stage.kind == FunctionalNodeKind::Map) {
+          auto result = functional_callable_result(callable, inputs, env);
+          synchronization_require(result.has_value(), "unresolved functional callable");
+          current_element = *result;
+        }
       }
+      return;
     }
     // The observation path uses checked storage locations before the legacy
     // parameter summary collapses projections to their root.
@@ -20750,10 +20748,14 @@ class Checker {
               // pass may reject a consuming alias, but parameter summaries
               // must not turn the projection itself into a field transfer.
               source_access = Effect::Read;
-            } else if (source && transfer_type(*source_type))
-              if (auto inferred = infer_straight_line_definition_effect(
-                      statements, index, statement.a, {}, *source, {}, env, {}))
+            } else if ((source || tree_simple_identifier(statement.b)) &&
+                       transfer_type(*source_type)) {
+              const string source_name = source.value_or(trim(statement.b));
+              const auto inferred = infer_straight_line_definition_effect(
+                  statements, index, statement.a, {}, source_name, {}, env, {});
+              if (inferred)
                 source_access = *inferred;
+            }
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, source_access);
           } else {
@@ -20793,12 +20795,15 @@ class Checker {
                 source_location->path.back() != "[]";
             if (plain_field_source) {
               source_access = Effect::Read;
-            } else if (source && transfer_type(*source_type) &&
+            } else if ((source || tree_simple_identifier(statement.b)) &&
+                transfer_type(*source_type) &&
                 simple_effect_identifier(statement.a) &&
-                env.count(statement.a) && !receiver_fields.count(statement.a))
+                !receiver_fields.count(statement.a)) {
+              const string source_name = source.value_or(trim(statement.b));
               if (auto inferred = infer_straight_line_definition_effect(
-                      statements, index, statement.a, {}, *source, {}, env, {}))
+                      statements, index, statement.a, {}, source_name, {}, env, {}))
                 source_access = *inferred;
+            }
             analyze_effect_expression(statement.b, env, params, parameter_effects,
                                       receiver_effect, receiver_fields, source_access);
           } else {
@@ -26486,9 +26491,10 @@ class Checker {
         return ownership_statement_uses_binding(statement, binding_identity,
                                                 binding_identities, root_slot);
       // The earlier callable-effect summary pass runs before checked body
-      // occurrence identities are installed. It uses the same straight-line
-      // flow walk only to summarize the callee; ownership fact publication
-      // below always takes the exact checker-identity path.
+      // occurrence identities and statement handles are installed. Prefer
+      // retained EST when available; otherwise use the parser's exact
+      // identifier tree for the relevant statement expression. Ownership
+      // fact publication below always takes the exact checker-identity path.
       for (const auto& handle : statement.expression_handles) {
         if (!root_slot.empty() &&
             ((root_slot == "assignment-place" &&
@@ -26501,6 +26507,20 @@ class Checker {
         if (arena && est_occurrence_mentions(*arena, handle.expr, name))
           return true;
       }
+      if (statement.kind == Stmt::Kind::Return ||
+          statement.kind == Stmt::Kind::Reply)
+        return tree_expression_mentions_identifier(statement.a, name);
+      if (statement.kind == Stmt::Kind::Let ||
+          statement.kind == Stmt::Kind::Var ||
+          statement.kind == Stmt::Kind::Assign)
+        return tree_expression_mentions_identifier(
+            root_slot == "assignment-place" ? statement.a : statement.b,
+            name);
+      if (statement.kind == Stmt::Kind::Echo)
+        return std::any_of(statement.args.begin(), statement.args.end(),
+            [&](const string& argument) {
+          return tree_expression_mentions_identifier(argument, name);
+        });
       return false;
     };
     auto writes_definition = [&](const Stmt& statement,
@@ -26739,35 +26759,20 @@ class Checker {
                          statement, alias, source, env))
               use = Effect::Read;
             else if ([&] {
-              for (const auto& handle : statement.expression_handles) {
-                if (handle.slot != est::ExprSlot::ReturnValue ||
-                    handle.argument_index != 0)
-                  continue;
-                const auto* arena = expression_arena(handle.arena_index);
-                if (!arena || handle.expr >= arena->size()) continue;
-                const auto root = est::unparenthesized(*arena, handle.expr);
-                const auto* pipeline =
-                    std::get_if<est::Pipeline>(&arena->at(root));
-                if (!pipeline) continue;
-                const auto input = est::unparenthesized(
-                    *arena, pipeline->input);
-                const auto* input_identifier =
-                    std::get_if<est::Identifier>(&arena->at(input));
-                if (!input_identifier) continue;
-                const auto identity =
-                    binding_identities.find(input_identifier->name);
-                // The early callable-effect pass runs before stable binding
-                // identities are installed. In that pass the alias name is
-                // the only available local key; ownership publication later
-                // takes this same branch only after the exact identity match.
-                if ((!alias_binding_identity.empty() &&
-                     identity != binding_identities.end() &&
-                     identity->second == alias_binding_identity) ||
-                    (alias_binding_identity.empty() &&
-                     input_identifier->name == alias))
-                  return true;
-              }
-              return false;
+              const auto pipeline = functional_pipeline_from_est(
+                  statement.a, &statement.expression_handles);
+              if (!pipeline || !tree_simple_identifier(pipeline->source))
+                return false;
+              const string input_name = trim(pipeline->source);
+              const auto identity = binding_identities.find(input_name);
+              // The early callable-effect pass runs before stable binding
+              // identities are installed. In that pass the exact EST pipeline
+              // source name is the only available local key; ownership
+              // publication later requires the binding identity match.
+              return (!alias_binding_identity.empty() &&
+                      identity != binding_identities.end() &&
+                      identity->second == alias_binding_identity) ||
+                  (alias_binding_identity.empty() && input_name == alias);
             }())
               // Checked functional pipelines READ their source collection and
               // build or compute their result without extracting the source.
