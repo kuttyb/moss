@@ -1,4 +1,7 @@
 # Baseline compile-failure paths captured on Team C source SHA 68005879.
+# Reviewed oracle-owner delta8dd27568: consuming holdout is an intentional negative.
+# Legacy ORACLE-15 pass-body source is a valid READ case under proposal§10/L8 F5;
+# its obsolete rejection expectation is not a compiler target. No fixture is edited here.
 examples/collections_and_methods.moss
 examples/errors/conflicting_access.moss
 examples/errors/domain_route_cycle.moss
@@ -644,7 +647,6 @@ tests/phase28/oracle/fixtures/oracle_03_collection_element_consume_rejected.moss
 tests/phase28/oracle/fixtures/oracle_08_user_defined_copy_resolution.moss
 tests/phase28/oracle/fixtures/oracle_10b_clone_alias_rejected.moss
 tests/phase28/oracle/fixtures/oracle_14_assignment_consume_borrowed_rejected.moss
-tests/phase28/oracle/fixtures/oracle_15_plain_field_access_consume_rejected.moss
 tests/phase28/oracle/fixtures/oracle_21_take_local_rejected.moss
 tests/phase28/oracle/fixtures/oracle_22_take_unified_field_rejected.moss
 tests/phase28/oracle/fixtures/oracle_23_take_vector_element_rejected.moss
@@ -680,6 +682,7 @@ tests/phase28/oracle_r7_005_1/fixtures/oracle_46_handler_nonprimitive_reply_reje
 tests/phase28/oracle_r7_005_1/fixtures/oracle_48_root_missing_collection_error.moss
 tests/phase28/oracle_r7_005_1/fixtures/oracle_52_mutate_collection_during_iteration_rejected.moss
 tests/phase28/oracle_r7_005_1/fixtures/oracle_54_imported_mossi_effects/consumer/src/main.moss
+tests/phase28/oracle_r7_005_1/reports/holdouts/p28-r7-011-oracle-v2/holdout_consume.moss
 tests/phase28/oracle_r7_005_1/reports/holdouts/sources/01b_nonprimitive_control.moss
 tests/phase28/r7_010/team_a/estless_indexed_copy.moss
 tests/phase28/reproducers/defect_e1_group_a_push_self_field_noncopy.moss
