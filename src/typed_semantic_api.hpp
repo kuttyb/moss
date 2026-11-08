@@ -865,10 +865,44 @@ inline const Function* unique_function_owner_for_spec_id(
   return owners == 1 ? owner : nullptr;
 }
 
-inline bool typed_return_value_source_free_occurrence_matches(
+inline bool method_owns_specialization_id(
+    const Method& method, SpecId specialization_id) noexcept {
+  if (specialization_id == InvalidSpecId) return false;
+  std::size_t matches = method.spec_id == specialization_id ? 1 : 0;
+  for (const auto& specialization : method.specializations)
+    matches += specialization.spec_id == specialization_id;
+  return matches == 1;
+}
+
+inline const Method* unique_method_owner_for_spec_id(
+    const Program& program, SpecId specialization_id,
+    const ObjectType** owner_object = nullptr) noexcept {
+  if (owner_object) *owner_object = nullptr;
+  if (specialization_id == InvalidSpecId ||
+      specialization_id >= program.specialization_table.size() ||
+      program.specialization_table[specialization_id].id != specialization_id)
+    return nullptr;
+  const Method* owner = nullptr;
+  const ObjectType* parent = nullptr;
+  std::size_t owners = 0;
+  for (const auto& object : program.objects)
+    for (const auto& method : object.methods)
+      if (method_owns_specialization_id(method, specialization_id)) {
+        owner = &method;
+        parent = &object;
+        ++owners;
+      }
+  if (owners != 1) return nullptr;
+  if (owner_object) *owner_object = parent;
+  return owner;
+}
+
+inline bool typed_return_value_source_free_occurrence_matches_impl(
     const TypedReturnValueFactV1& fact, const Program& program,
-    SpecId specialization_id, const Function& owner,
-    const Stmt& statement, const est::Handle& handle) {
+    SpecId specialization_id, const std::string& semantic_callable_identity,
+    const std::string& defining_module, const std::string& body_semantic_hash,
+    const std::vector<Stmt>& body, const Stmt& statement,
+    const est::Handle& handle, bool unique_owner) {
   bool matches = true;
   if (specialization_id == InvalidSpecId ||
       specialization_id >= program.specialization_table.size())
@@ -878,9 +912,9 @@ inline bool typed_return_value_source_free_occurrence_matches(
     const auto& candidate = program.specialization_table[specialization_id];
     if (candidate.id == specialization_id) owner_identity = &candidate;
   }
-  const auto module = owner.defining_module.empty()
+  const auto module = defining_module.empty()
       ? program.module_identities.end()
-      : program.module_identities.find(owner.defining_module);
+      : program.module_identities.find(defining_module);
   const std::string* module_identity =
       module == program.module_identities.end() ? nullptr : &module->second;
   const std::string* owner_module_identity = owner_identity
@@ -894,13 +928,11 @@ inline bool typed_return_value_source_free_occurrence_matches(
                     [&](const auto& entry) {
         return entry.second == *module_identity;
       });
-  if (!owner_identity || !function_owns_specialization_id(owner,
-                                                            specialization_id) ||
-      unique_function_owner_for_spec_id(program, specialization_id) != &owner ||
-      owner_identity->semantic_callable_identity != owner.semantic_callable_id ||
+  if (!owner_identity || !unique_owner ||
+      owner_identity->semantic_callable_identity != semantic_callable_identity ||
       !module_identity || module_identity->empty() ||
       module_identity_matches != 1 ||
-      !program.external_modules.count(owner.defining_module) ||
+      !program.external_modules.count(defining_module) ||
       owner_identity->module_identity != *module_identity ||
       !owner_module_identity || *owner_module_identity != *module_identity ||
       fact.specialization_id != specialization_id ||
@@ -911,7 +943,7 @@ inline bool typed_return_value_source_free_occurrence_matches(
   if (!fact.source_free_checked_body_occurrence ||
       fact.checked_body_semantic_hash.empty() ||
       fact.checked_body_semantic_hash !=
-          owner.imported_checked_body_semantic_hash) matches = false;
+          body_semantic_hash) matches = false;
   if (fact.statement_occurrence_id !=
       statement.checked_statement_occurrence_id ||
       fact.est_arena_index != handle.arena_index ||
@@ -923,10 +955,10 @@ inline bool typed_return_value_source_free_occurrence_matches(
     matches = false;
   std::uint32_t ordinal = UINT32_MAX;
   std::size_t occurrence_matches = 0;
-  for (std::size_t index = 0; index < owner.body.size(); ++index)
-    if (owner.body[index].checked_statement_occurrence_id ==
+  for (std::size_t index = 0; index < body.size(); ++index)
+    if (body[index].checked_statement_occurrence_id ==
         fact.statement_occurrence_id) {
-      const auto& owner_statement = owner.body[index];
+      const auto& owner_statement = body[index];
       std::size_t matching_handles = 0;
       for (const auto& owner_handle : owner_statement.expression_handles)
         if (owner_handle.slot == est::ExprSlot::ReturnValue &&
@@ -942,6 +974,38 @@ inline bool typed_return_value_source_free_occurrence_matches(
     }
   return matches && occurrence_matches == 1 &&
       ordinal == fact.checked_body_statement_ordinal;
+}
+
+inline bool typed_return_value_source_free_occurrence_matches(
+    const TypedReturnValueFactV1& fact, const Program& program,
+    SpecId specialization_id, const Function& owner,
+    const Stmt& statement, const est::Handle& handle) {
+  const bool unique_owner =
+      function_owns_specialization_id(owner, specialization_id) &&
+      unique_function_owner_for_spec_id(program, specialization_id) == &owner;
+  return typed_return_value_source_free_occurrence_matches_impl(
+      fact, program, specialization_id, owner.semantic_callable_id,
+      owner.defining_module, owner.imported_checked_body_semantic_hash,
+      owner.body, statement, handle, unique_owner);
+}
+
+inline bool typed_return_value_source_free_occurrence_matches(
+    const TypedReturnValueFactV1& fact, const Program& program,
+    SpecId specialization_id, const ObjectType& owner_object,
+    const Method& owner, const Stmt& statement,
+    const est::Handle& handle) {
+  if (!owner.execution_body) return false;
+  const ObjectType* selected_object = nullptr;
+  const bool unique_owner =
+      method_owns_specialization_id(owner, specialization_id) &&
+      unique_method_owner_for_spec_id(program, specialization_id,
+                                      &selected_object) == &owner &&
+      selected_object == &owner_object && owner.execution_body.has_value() &&
+      owner.execution_body_section_version > 0;
+  return typed_return_value_source_free_occurrence_matches_impl(
+      fact, program, specialization_id, owner.semantic_callable_id,
+      owner_object.defining_module, owner.execution_return_value_body_hash,
+      *owner.execution_body, statement, handle, unique_owner);
 }
 
 // Stable source-free transport record for a checker ReturnValue fact.

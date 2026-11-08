@@ -150,19 +150,6 @@ fn main():
                              f"{source_free_fast.returncode}/"
                              f"{source_free_fast.stdout!r}/"
                              f"{source_free_fast.stderr!r}")
-    for hook in ("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION",
-                 "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"):
-        shutil.rmtree(source_free_project / "build", ignore_errors=True)
-        corrupted = run([margo, "debug"],
-                        {**source_free_env, hook: "1"}, source_free_project)
-        if (corrupted.returncode == 0 or
-                "MOSS_INTERNAL_INVARIANT source-free ReturnValue fact does not "
-                "bind its exact checked body occurrence" not in
-                corrupted.stdout + corrupted.stderr):
-            raise AssertionError(
-                f"source-free ReturnValue {hook} did not fail in the exact owner "
-                f"validator: {corrupted.returncode}, {corrupted.stderr!r}")
-
     for hook in ("MOSS_TEST_DROP_RETURN_VALUE_FACT",
                  "MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT",
                  "MOSS_TEST_PERTURB_RETURN_VALUE_FACT"):

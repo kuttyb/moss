@@ -1474,6 +1474,11 @@ class Generator {
         checked_program.specialization_table[codegen_body_spec_id_];
     const Function* spec_owner = unique_function_owner_for_spec_id(
         checked_program, codegen_body_spec_id_);
+    const bool spec_owner_imported = spec_owner &&
+        (spec_owner->imported_checked_body_projected ||
+         (spec_owner->execution_body.has_value() &&
+          spec_owner->execution_body_section_version > 0 &&
+          !spec_owner->execution_return_value_body_hash.empty()));
     const std::string spec_owner_module = spec_owner &&
             !spec_owner->defining_module.empty() &&
             checked_program.module_identities.count(spec_owner->defining_module)
@@ -1491,7 +1496,7 @@ class Generator {
         });
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      return spec_owner && spec_owner->imported_checked_body_projected &&
+      return spec_owner_imported &&
           owner_identity.semantic_callable_identity ==
               spec_owner->semantic_callable_id &&
           !spec_owner_module.empty() && spec_owner_module_matches == 1 &&
@@ -1632,7 +1637,7 @@ class Generator {
                   *fact, checked_program, codegen_body_spec_id_, *owner,
                   statement, *handle)
             : false;
-        if (!owner || !owner->imported_checked_body_projected || !handle ||
+        if (!spec_owner_imported || !owner || !handle ||
             !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
@@ -5678,9 +5683,10 @@ class Generator {
       const NativeEstCursor* parent_cursor = occurrence
           ? occurrence : active_native_est_cursor_;
       auto child_cursor = native_call_argument_cursor(parent_cursor, index);
-      if (parent_cursor && !child_cursor)
+      if (parent_cursor && !child_cursor) {
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT Native call argument lacks exact EST child");
+      }
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
       bool compile_time_callable = is_compile_time_callable(

@@ -2834,9 +2834,12 @@ class FastInterpreter {
     if (tree && expression_call(*tree, current_root, callee, args)) {
       const auto* call_node = std::get_if<est::Call>(
           &tree->arena->at(current_root));
-      const std::vector<est::ExprId>* call_argument_nodes = nullptr;
-      if (call_node) call_argument_nodes = &call_node->arguments;
-      if (call_node) {
+      const auto* constructor_node = std::get_if<est::Constructor>(
+          &tree->arena->at(current_root));
+      const std::vector<est::ExprId>* call_argument_nodes = call_node
+          ? &call_node->arguments
+          : constructor_node ? &constructor_node->arguments : nullptr;
+      if (call_node || constructor_node) {
         if (const auto* constructor = checked_record_constructor_for_occurrence(
                 *tree, current_root, frame.spec_id, line))
           return construct(*constructor, args, frame, line, output, tree,
@@ -4651,33 +4654,51 @@ class FastInterpreter {
         program_.specialization_table[query_spec_id];
     const Function* spec_owner =
         unique_function_owner_for_spec_id(program_, query_spec_id);
-    const std::string spec_owner_module = spec_owner &&
-            !spec_owner->defining_module.empty() &&
-            program_.module_identities.count(spec_owner->defining_module)
-        ? program_.module_identities.at(spec_owner->defining_module)
-        : std::string();
-    const std::string spec_owner_table_module =
+    const ObjectType* spec_owner_object = nullptr;
+    const Method* spec_owner_method = unique_method_owner_for_spec_id(
+        program_, query_spec_id, &spec_owner_object);
+    const std::string* spec_owner_callable = spec_owner
+        ? &spec_owner->semantic_callable_id
+        : spec_owner_method ? &spec_owner_method->semantic_callable_id : nullptr;
+    const std::string* spec_owner_module_name = spec_owner
+        ? &spec_owner->defining_module
+        : spec_owner_object ? &spec_owner_object->defining_module : nullptr;
+    const bool spec_owner_imported = spec_owner
+        ? (spec_owner->imported_checked_body_projected ||
+           (spec_owner->execution_body.has_value() &&
+            spec_owner->execution_body_section_version > 0 &&
+            !spec_owner->execution_return_value_body_hash.empty()))
+        : spec_owner_method && spec_owner_method->execution_body.has_value() &&
+              spec_owner_method->execution_body_section_version > 0;
+    const auto spec_owner_module_entry = spec_owner_module_name &&
+            !spec_owner_module_name->empty()
+        ? program_.module_identities.find(*spec_owner_module_name)
+        : program_.module_identities.end();
+    const std::string* spec_owner_module =
+        spec_owner_module_entry == program_.module_identities.end()
+            ? nullptr : &spec_owner_module_entry->second;
+    const std::string* spec_owner_table_module =
         owner_identity.provider_module_identity.empty()
-            ? owner_identity.module_identity
-            : owner_identity.provider_module_identity;
-    const std::size_t spec_owner_module_matches = spec_owner_module.empty() ? 0 :
+            ? &owner_identity.module_identity
+            : &owner_identity.provider_module_identity;
+    const std::size_t spec_owner_module_matches =
+        !spec_owner_module || spec_owner_module->empty() ? 0 :
         std::count_if(program_.module_identities.begin(),
                       program_.module_identities.end(),
                       [&](const auto& entry) {
-          return entry.second == spec_owner_module;
+          return entry.second == *spec_owner_module;
         });
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      return spec_owner && spec_owner->imported_checked_body_projected &&
-          owner_identity.semantic_callable_identity ==
-              spec_owner->semantic_callable_id &&
-          !spec_owner_module.empty() && spec_owner_module_matches == 1 &&
-          program_.external_modules.count(spec_owner->defining_module) != 0 &&
-          owner_identity.module_identity == spec_owner_module &&
-          spec_owner_table_module == spec_owner_module &&
+      return spec_owner_imported && spec_owner_callable &&
+          owner_identity.semantic_callable_identity == *spec_owner_callable &&
+          spec_owner_module && !spec_owner_module->empty() &&
+          spec_owner_module_matches == 1 && spec_owner_module_name &&
+          program_.external_modules.count(*spec_owner_module_name) != 0 &&
+          owner_identity.module_identity == *spec_owner_module &&
+          *spec_owner_table_module == *spec_owner_module &&
           candidate.specialization_id == query_spec_id &&
-          candidate.provenance.defining_module_id ==
-              spec_owner_module &&
+          candidate.provenance.defining_module_id == *spec_owner_module &&
           !statement.source_file.empty() &&
           candidate.provenance.source_file == statement.source_file &&
           candidate.provenance.line == statement.line;
@@ -4792,13 +4813,16 @@ class FastInterpreter {
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
       if (fact->source_free_checked_body_occurrence) {
-        const Function* owner = spec_owner;
-        const bool source_free_occurrence_matches = owner && handle
+        const bool source_free_occurrence_matches = spec_owner && handle
             ? typed_return_value_source_free_occurrence_matches(
-                  *fact, program_, query_spec_id, *owner, statement, *handle)
-            : false;
-        if (!owner || !owner->imported_checked_body_projected || !handle ||
-            !source_free_occurrence_matches)
+                  *fact, program_, query_spec_id, *spec_owner, statement,
+                  *handle)
+            : spec_owner_method && spec_owner_object && handle
+                ? typed_return_value_source_free_occurrence_matches(
+                      *fact, program_, query_spec_id, *spec_owner_object,
+                      *spec_owner_method, statement, *handle)
+                : false;
+        if (!spec_owner_imported || !handle || !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
       }
@@ -4814,27 +4838,34 @@ class FastInterpreter {
       const auto* occurrence = arena->facts(handle->expr,
                                              fact->specialization_id);
       if (!occurrence || !occurrence->type) {
-        const bool imported_checked_body_owner =
-            spec_owner && spec_owner->imported_checked_body_projected &&
-            unique_function_owner_for_spec_id(program_, query_spec_id) ==
-                spec_owner;
 #ifdef MOSS_TEST_BUILD
         if (std::getenv("MOSS_TEST_TRACE_IMPORTED_RETURN_VALUE_OWNER")) {
           std::cerr << "IMPORTED_RETURN_OWNER spec=" << query_spec_id
-                    << " module=" << spec_owner_table_module
+                    << " module=" << *spec_owner_table_module
                     << " row_module=" << owner_identity.module_identity
                     << " callable=" << owner_identity.semantic_callable_identity
+                    << " owner_present=" << (spec_owner != nullptr || spec_owner_method != nullptr)
+                    << " owner_name=" << (spec_owner ? spec_owner->name : "<none>")
+                    << " owner_callable=" << (spec_owner_callable ? *spec_owner_callable : "<none>")
+                    << " owner_module=" << (spec_owner_module_name ? *spec_owner_module_name : "<none>")
+                    << " owner_imported=" << spec_owner_imported
+                    << " owner_execution_body=" << (spec_owner && spec_owner->execution_body.has_value())
+                    << " owner_section=" << (spec_owner ? spec_owner->execution_body_section_version : 0)
+                    << " owner_body_hash=" << (spec_owner ? spec_owner->imported_checked_body_semantic_hash : "<none>")
+                    << " module_identity=" << (spec_owner_module ? *spec_owner_module : "<none>")
+                    << " module_matches=" << spec_owner_module_matches
+                    << " external=" << (spec_owner_module_name && program_.external_modules.count(*spec_owner_module_name) != 0)
                     << " exact_owner=" << fact_is_from_exact_imported_owner(*fact)
                     << " fact_module=" << fact->provenance.defining_module_id
                     << " fact_source=" << fact->provenance.source_file
                     << " stmt_source=" << statement.source_file
                     << " fact_spec=" << fact->specialization_id
-                    << " imported_function_owner=" << imported_checked_body_owner
+                    << " fact_source_free=" << fact->source_free_checked_body_occurrence
+                    << " fact_body_hash=" << fact->checked_body_semantic_hash
                     << "\n";
         }
 #endif
-        if (imported_checked_body_owner ||
-            !fact_is_from_exact_imported_owner(*fact))
+        if (!fact_is_from_exact_imported_owner(*fact))
           throw std::invalid_argument(
               "return-value EST type fact missing outside exact imported owner");
       } else if (occurrence->type->is_closed()
