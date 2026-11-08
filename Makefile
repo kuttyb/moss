@@ -149,6 +149,7 @@ check: check-parallel
 
 # Run the EST-shadow regression matrix separately from the default suite.
 check-shadow: moss-dev moss-opt
+	MOSS_EST=shadow python3 tests/tooling/check_phase28_native_call_argument_cursor.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/phase28/r7_010/team_b/check_collection_view_consumers.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_root_ingress_capture_authority.py $(MOSS_DEV)
 	MOSS_EST=shadow python3 tests/tooling/check_phase28_local_return_authority.py $(MOSS_DEV)
@@ -156,6 +157,7 @@ check-shadow: moss-dev moss-opt
 	MOSS_EST=shadow python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
 check-parallel: moss-dev moss-opt
+	python3 tests/tooling/check_phase28_native_call_argument_cursor.py $(MOSS_DEV)
 	python3 tests/tooling/check_phase27_5_3_fastdebug_checked_tree.py $(MOSS_DEV)
 	python3 tests/tooling/check_phase27_string_debt.py
 	python3 tests/tooling/check_phase27_est.py $(MOSS_DEV)

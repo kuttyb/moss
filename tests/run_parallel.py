@@ -77,6 +77,7 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
 
 # All individual standalone Python regressions from tests/run.sh
 TOOLING_TESTS: list[tuple] = [
+    ("check_phase28_native_call_argument_cursor", [sys.executable, "tests/tooling/check_phase28_native_call_argument_cursor.py", "{compiler}"]),
     ("check_phase28_w5_call_specialization", [sys.executable, "tests/tooling/check_phase28_w5_call_specialization.py", "{compiler}"]),
     ("check_phase28_l8_identity_repros", [sys.executable, "tests/tooling/check_phase28_l8_identity_repros.py", "{compiler}"]),
     ("check_phase28_l8_callback_authority", [sys.executable, "tests/tooling/check_phase28_l8_callback_authority.py", "{compiler}"]),

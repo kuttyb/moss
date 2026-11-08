@@ -7262,9 +7262,14 @@ class Generator {
             if (field != object->second->fields.end()) {
               string p_b, p_i;
               const bool indexed_base = tree_parse_index(projection_base, p_b, p_i);
+              const auto projection_base_cursor =
+                  native_member_receiver_cursor(active_native_est_cursor_);
               string base_rendered = indexed_base
                   ? read_call_place(projection_base, d, locals, types)
-                  : expr(projection_base, d, locals, types);
+                  : expr(projection_base, d, locals, types, 0, nullptr,
+                         std::nullopt,
+                         projection_base_cursor ? &*projection_base_cursor
+                                                : nullptr);
               string projected = "(" + base_rendered + ")." + rust_identifier(projection_field);
               if (indexed_base && !copy_type(field->type)) {
                 string indexed_collection, indexed_key;
