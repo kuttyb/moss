@@ -1,0 +1,13 @@
+# Spec: Proposal §10 row "b = state.frontier; archive(b) | Reject if archive consumes".
+# A pass-body archive only reads b; the field remains available for a later read.
+type State:
+  frontier: Vector[Int]
+
+fn archive(items: Vector[Int]):
+  pass
+
+fn main():
+  s = State(frontier = [1, 2, 3])
+  b = s.frontier
+  archive(b)
+  echo (s.frontier |> count)

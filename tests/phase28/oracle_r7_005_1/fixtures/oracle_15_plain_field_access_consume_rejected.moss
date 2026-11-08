@@ -3,9 +3,9 @@ type State:
   frontier: Vector[Int]
 
 fn archive(items: Vector[Int]):
-  pass
+  return items
 
 fn main():
   s = State(frontier = [1, 2, 3])
   b = s.frontier
-  archive(b)
+  kept = archive(b)

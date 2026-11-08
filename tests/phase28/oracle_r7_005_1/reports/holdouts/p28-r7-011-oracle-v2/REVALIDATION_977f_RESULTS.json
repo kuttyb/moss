@@ -1,0 +1,149 @@
+{
+  "compiler_source_sha": "977f5fe1a40e13cc72245b38f625ef00879194a6",
+  "compiler_source_worktree_head": "a9432fe3a99ae05cc7af1cc713eb021f0a9f72f3",
+  "compiler_diff_after_requested_source": "only .codex/CURRENT_STATUS.md",
+  "binaries": {
+    "moss_dev_sha256": "d0cbe77c29c7b935691641e497ab0064c668484207d71c1b159b1a74f2ee8a10",
+    "moss_opt_sha256": "82a7255c64280f79d5c09e32ecfb36fa95ba421875b1e5272d7bce61c33c0cb4"
+  },
+  "holdouts": {
+    "read": {
+      "checker": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev",
+          "check",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_read.moss",
+          "--json"
+        ],
+        "returncode": 0,
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": true,\n  \"result\": {\"source_file\": \"/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_read.moss\", \"diagnostics\": []}\n}\n",
+        "stderr": ""
+      },
+      "fast_debug": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev",
+          "run",
+          "--interp",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_read.moss"
+        ],
+        "returncode": 0,
+        "stdout": "4\n",
+        "stderr": ""
+      },
+      "native_emit": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_read.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread.rs"
+        ],
+        "returncode": 0,
+        "stdout": "generated /home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread.rs\ngenerated /home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread.rs.mossclone.json\ngenerated /home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread.mossmap\n",
+        "stderr": ""
+      },
+      "rustc_native": {
+        "argv": [
+          "rustc",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_native"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "native_debug": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_native"
+        ],
+        "returncode": 0,
+        "stdout": "4\n",
+        "stderr": ""
+      },
+      "optimized_emit": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-opt",
+          "-O",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_read.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt.rs"
+        ],
+        "returncode": 0,
+        "stdout": "generated /home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt.rs\ngenerated /home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt.rs.mossclone.json\ngenerated /home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt.mossmap\n",
+        "stderr": ""
+      },
+      "rustc_optimized": {
+        "argv": [
+          "rustc",
+          "-O",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt.rs",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt_native"
+        ],
+        "returncode": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "native_optimized": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/reread_opt_native"
+        ],
+        "returncode": 0,
+        "stdout": "4\n",
+        "stderr": ""
+      }
+    },
+    "consume": {
+      "checker": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev",
+          "check",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_consume.moss",
+          "--json"
+        ],
+        "returncode": 1,
+        "stdout": "{\n  \"protocol_version\": 1,\n  \"schema_version\": \"moss-agent-1\",\n  \"compiler_version\": \"0.1.0\",\n  \"command\": \"check\",\n  \"ok\": false,\n  \"error\": {\"code\": \"OWNERSHIP_ILLEGAL_CONSUME\", \"severity\": \"error\", \"message\": \"plain field access cannot consume or transfer a non-Copy field; use take or copy\", \"source_file\": \"/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_consume.moss\", \"line\": 9, \"column\": 1, \"span\": {\"start_line\": 9, \"start_column\": 1, \"end_line\": 9, \"end_column\": 1}, \"source\": {\"file\": \"/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_consume.moss\", \"line\": 9, \"column\": 1, \"span\": {\"start_line\": 9, \"start_column\": 1, \"end_line\": 9, \"end_column\": 1}}, \"semantic_identity\": \"main@7\", \"symbol\": null, \"rule\": null, \"cause\": null, \"related\": [], \"guidance\": null, \"details\": {\"ownership_expected\": null, \"ownership_actual\": null, \"consume_line\": null, \"recursion_witness\": null, \"resolution\": null}, \"fixes\": [], \"legal_alternatives\": []}\n}\n",
+        "stderr": ""
+      },
+      "fast_debug": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev",
+          "run",
+          "--interp",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_consume.moss"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "moss:9: error: [OWNERSHIP_ILLEGAL_CONSUME] plain field access cannot consume or transfer a non-Copy field; use take or copy\n"
+      },
+      "native_emit": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-dev",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_consume.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/consume_revalidation_native.rs"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "moss:9: error: [OWNERSHIP_ILLEGAL_CONSUME] plain field access cannot consume or transfer a non-Copy field; use take or copy\n"
+      },
+      "optimized_emit": {
+        "argv": [
+          "/home/owner/daji/code/moss/tmp/phase28-r7-011-integration/build/compiler/moss-opt",
+          "-O",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/holdout_consume.moss",
+          "-o",
+          "/home/owner/daji/code/moss/tmp/review-p28-r7-011-oracle-ff306/tmp/p28-r7-011-review-holdouts-v2/consume_revalidation_opt.rs"
+        ],
+        "returncode": 1,
+        "stdout": "",
+        "stderr": "moss:9: error: [OWNERSHIP_ILLEGAL_CONSUME] plain field access cannot consume or transfer a non-Copy field; use take or copy\n"
+      }
+    }
+  },
+  "holdouts_source_sha256": {
+    "read": "3113cfbde2492c45f54a52edf3011bb00a70e6bc6f324511d82ea8ec506d3500",
+    "consume": "197b10e89838bfb588d8aedf5d2d1a3a39feb42e0ada399b48c6bb32865488ac"
+  },
+  "holdout_plan_sha256": "596bf6b29dc930a90eb26e0b250493f8fd80bd91554f0db1fddcdc3ae1f8b28d"
+}

@@ -379,11 +379,67 @@
       "fixture_id": "ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
       "defect_id": "DEFECT-ORACLE-15-PLAIN-FIELD-CONSUME-REJECT",
       "expectation": "REJECT",
-      "specification_basis": "Proposal §10 row 'b = state.frontier; archive(b)', §5.2",
+      "specification_basis": "Proposal §10 row 'b = state.frontier; archive(b)' (reject if archive consumes), §3 and §5.2",
       "expected": {
         "checker": "reject"
       },
       "fixture_file": "oracle_15_plain_field_access_consume_rejected.moss"
+    },
+    {
+      "fixture_id": "ORACLE-15B-PLAIN-FIELD-READ-PRESERVES",
+      "defect_id": "DEFECT-ORACLE-15B-PLAIN-FIELD-READ-PRESERVES",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 row 'b = state.frontier; archive(b)' rejects only when archive consumes; §3 per-definition use inference",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "3"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "3"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "3"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_15b_plain_field_read_preserves_field.moss"
+    },
+    {
+      "fixture_id": "ORACLE-15C-PLAIN-FIELD-READ",
+      "defect_id": "DEFECT-ORACLE-15C-PLAIN-FIELD-READ",
+      "expectation": "ACCEPT",
+      "specification_basis": "Proposal §10 plain field assignment/read row and §3 per-definition use inference; absent a consuming use, field assignment is READ",
+      "expected": {
+        "checker": "accept",
+        "fast_debug": {
+          "status": "execute",
+          "stdout": "3"
+        },
+        "native_debug": {
+          "status": "execute",
+          "stdout": "3"
+        },
+        "native_optimized": {
+          "status": "execute",
+          "stdout": "3"
+        },
+        "clone_audit": {
+          "authorized_copy_calls": 0,
+          "max_unclassified": 0,
+          "max_unauthorized": 0
+        },
+        "observable_mutations": []
+      },
+      "fixture_file": "oracle_15c_plain_field_read.moss"
     },
     {
       "fixture_id": "ORACLE-16-TAKE-FRONTIER-ARCHIVE",

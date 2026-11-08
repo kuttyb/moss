@@ -3,7 +3,9 @@
 ## Overview
 
 This suite provides an independent semantic oracle for Moss Phase 28 ownership semantics.
-Its 60-row successor expectation table is version 2; certification records the
+Its 62-row successor expectation table includes the P28-R7-011 ORACLE-15 correction;
+the revised table has independent normative GO and reviewer-controlled holdouts PASS.
+The previous 60-row version 2 table remains historically certified; certification records the
 independent normative review, reviewer-controlled holdouts, implementation comparison, and digest pins. `certification.json` records the approved candidate, independent
 review verdict, reviewer-controlled holdout result, and digest pins.
 
@@ -16,7 +18,7 @@ The oracle is decoupled from Team A and Team B implementations and asserts expec
 
 ## Required Coverage
 
-The suite currently contains 60 successor fixtures covering:
+The suite currently contains 62 successor fixtures covering:
 - **Core NO-GO Review Findings (Items 1–10):**
   1. Write-through borrowed Vector elements (`ORACLE-01-VEC-WRITE-THROUGH`): expected 9,9.
   2. Indexed field reads without hidden clones (`ORACLE-02-INDEXED-FIELD-READ-NO-CLONE`).
@@ -43,8 +45,13 @@ The suite currently contains 60 successor fixtures covering:
 
 ## Invocation
 
-Current status: v2 oracle expectations and diagnostic mappings are
-`CERTIFIED_FROZEN`; see `certification.json` and the Phase 28 successor report.
+Current status: previous v2 expectations and diagnostic mappings were
+`CERTIFIED_FROZEN`; the P28-R7-011 successor is also `CERTIFIED_FROZEN` after
+independent normative GO and reviewer-controlled holdout PASS. The latest full
+oracle comparison is on combined compiler source
+`00b54a515364f9237ce758eb866fa621da5375b5`. It still has 43 provenance-only
+failures; certification does not imply compiler conformance. See
+`reports/P28_R7_011_ORACLE_LEDGER.md` for the fixture-defect record.
 The v1 oracle remains independently certified and unchanged. The R7-008
 implementation comparison records semantic mismatches and missing clone
 provenance; oracle certification does not establish compiler compliance.
