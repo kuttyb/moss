@@ -60,6 +60,51 @@ def native_output(compiler: str, source: Path, out: Path) -> str:
     return result.stdout.strip()
 
 
+def run_generic_grid(compiler: str, out: Path, failures: list[str]) -> None:
+    passed = 0
+    for caller in ("main", "function", "method", "handler", "try", "callback"):
+        for type_name, value in (("Int", "10"), ("Float", "3.5")):
+            for depth in range(3):
+                tag = f"generic-{caller}-{type_name}-{depth}"
+                prefix = "fn normalize(x):\n  return x\n\n"
+                target = "normalize"
+                for level in range(depth):
+                    name = f"relay{level}"
+                    prefix += f"fn {name}(x):\n  return {target}(x)\n\n"
+                    target = name
+                call = f"{target}({value})"
+                if caller == "main":
+                    body = f"fn main():\n  echo {call}\n"
+                elif caller == "function":
+                    body = f"fn invoke(x):\n  return {target}(x)\n\nfn main():\n  echo invoke({value})\n"
+                elif caller == "method":
+                    body = (f"type Holder:\n  n: {type_name}\n\n  fn invoke():\n    return {target}(n)\n\n"
+                            f"fn main():\n  h = Holder(n = {value})\n  echo h.invoke()\n")
+                elif caller == "handler":
+                    body = (f"domain Worker:\n  fn Invoke(x: {type_name}):\n    reply {target}(x)\n\n"
+                            f"fn main():\n  worker = Worker()\n  echo message worker.Invoke({value})\n")
+                elif caller == "try":
+                    body = f"fn main():\n  try:\n    echo {call}\n  recover:\n    echo 0\n"
+                else:
+                    body = f"fn main():\n  echo [{value}] |> map({target})\n"
+                source = out / f"{tag}.moss"
+                source.write_text(prefix + body)
+                expected = f"[{value}]" if caller == "callback" else value
+                outputs = {}
+                for engine in ("Fast Debug", "Native"):
+                    try:
+                        outputs[engine] = (run([compiler, "run", "--interp", str(source)]).stdout.strip()
+                                           if engine == "Fast Debug" else native_output(compiler, source, out))
+                    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                        failures.append(f"{tag} {engine}: {error}")
+                if outputs == {"Fast Debug": expected, "Native": expected}:
+                    passed += 1
+                    print(f"PASS {tag}: {expected!r}")
+                else:
+                    failures.append(f"{tag}: expected={expected!r}, actual={outputs!r}")
+    print(f"GENERIC GRID: {passed}/36 cells passed")
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_phase28_l8_identity_repros.py COMPILER", file=sys.stderr)
@@ -71,6 +116,7 @@ def main() -> int:
     out.mkdir()
     failures: list[str] = []
     try:
+        run_generic_grid(compiler, out, failures)
         provider = out / "mossi_provider"
         consumer = out / "mossi_consumer"
         (provider / "src").mkdir(parents=True)
