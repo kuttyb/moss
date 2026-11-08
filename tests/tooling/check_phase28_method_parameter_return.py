@@ -155,9 +155,13 @@ fn main():
         shutil.rmtree(source_free_project / "build", ignore_errors=True)
         corrupted = run([margo, "debug"],
                         {**source_free_env, hook: "1"}, source_free_project)
-        if corrupted.returncode == 0:
+        if (corrupted.returncode == 0 or
+                "MOSS_INTERNAL_INVARIANT source-free ReturnValue fact does not "
+                "bind its exact checked body occurrence" not in
+                corrupted.stdout + corrupted.stderr):
             raise AssertionError(
-                f"source-free ReturnValue consumer accepted contradictory {hook}")
+                f"source-free ReturnValue {hook} did not fail in the exact owner "
+                f"validator: {corrupted.returncode}, {corrupted.stderr!r}")
 
     for hook in ("MOSS_TEST_DROP_RETURN_VALUE_FACT",
                  "MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT",
@@ -181,7 +185,149 @@ fn main():
             raise AssertionError(f"native ReturnValue consumer accepted {hook}: "
                                  f"{result!r}\n{failed.stderr}")
 
-    print("Phase 28 method parameter ReturnValue authority: PASS")
+    function_provider = SCRATCH / "function_provider"
+    function_src = function_provider / "src"
+    function_src.mkdir(parents=True, exist_ok=True)
+    (function_provider / "moss.toml").write_text(
+        '[project]\nname = "phase28_function_return_provider"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (function_src / "provider.moss").write_text(
+        "module provider\nexport fn identity(value):\n  return value\n",
+        encoding="utf-8")
+    function_provider_build = run(
+        [margo, "build", "--json"],
+        {**base_env, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"},
+        function_provider)
+    function_provider_response = json.loads(function_provider_build.stdout)
+    if (function_provider_build.returncode or
+            not function_provider_response.get("ok")):
+        raise AssertionError("source-free generic function provider failed: "
+                             f"{function_provider_response!r}\n"
+                             f"{function_provider_build.stderr}")
+    function_consumer = SCRATCH / "function_consumer"
+    function_consumer_src = function_consumer / "src"
+    function_consumer_src.mkdir(parents=True, exist_ok=True)
+    (function_consumer / "moss.toml").write_text(
+        '[project]\nname = "phase28_function_return_consumer"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (function_consumer_src / "main.moss").write_text(
+        "module app\nimport provider\nfn main():\n"
+        "  echo provider.identity(9)\n", encoding="utf-8")
+    function_env = {
+        **base_env,
+        "MOSS": compiler,
+        "MOSS_STAGED_ABI": "v10",
+        "MOSS_MODULE_PATH": str(function_provider / "build" / "debug"),
+    }
+    function_build = run([margo, "build", "--json"], function_env,
+                         function_consumer)
+    function_build_response = json.loads(function_build.stdout)
+    if function_build.returncode or not function_build_response.get("ok"):
+        raise AssertionError("source-free generic function consumer build failed: "
+                             f"{function_build_response!r}\n"
+                             f"{function_build.stderr}")
+    function_executable = Path(
+        function_build_response["artifacts"]["artifacts"]["executable"])
+    function_native = run([str(function_executable)], function_env,
+                          function_consumer)
+    function_fast = run([margo, "debug"], function_env, function_consumer)
+    if (function_native.returncode or function_native.stdout != "9\n" or
+            function_fast.returncode or function_fast.stdout != "9\n"):
+        raise AssertionError("source-free generic function output mismatch: "
+                             f"Native={function_native.returncode}/"
+                             f"{function_native.stdout!r}/"
+                             f"{function_native.stderr!r}; Fast Debug="
+                             f"{function_fast.returncode}/"
+                             f"{function_fast.stdout!r}/"
+                             f"{function_fast.stderr!r}")
+    owner_mutation_diagnostic = (
+        "MOSS_INTERNAL_INVARIANT source-free ReturnValue fact does not bind its "
+        "exact checked body occurrence")
+    for hook in ("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION",
+                 "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"):
+        shutil.rmtree(function_consumer / "build", ignore_errors=True)
+        native_corruption = run([margo, "build", "--json"],
+                                {**function_env, hook: "1"}, function_consumer)
+        if (native_corruption.returncode == 0 or
+                owner_mutation_diagnostic not in
+                native_corruption.stdout + native_corruption.stderr):
+            raise AssertionError(
+                f"Native {hook} did not reach the production owner validator: "
+                f"{native_corruption.returncode}, {native_corruption.stderr!r}")
+        shutil.rmtree(function_consumer / "build", ignore_errors=True)
+        fast_corruption = run([margo, "debug"],
+                              {**function_env, hook: "1"}, function_consumer)
+        if (fast_corruption.returncode == 0 or
+                owner_mutation_diagnostic not in
+                fast_corruption.stdout + fast_corruption.stderr):
+            raise AssertionError(
+                f"Fast Debug {hook} did not reach the production owner validator: "
+                f"{fast_corruption.returncode}, {fast_corruption.stderr!r}")
+
+    paired_provider = SCRATCH / "paired_function_provider"
+    paired_provider_src = paired_provider / "src"
+    paired_provider_src.mkdir(parents=True, exist_ok=True)
+    (paired_provider / "moss.toml").write_text(
+        '[project]\nname = "phase28_paired_function_provider"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (paired_provider_src / "provider.moss").write_text(
+        "module provider\n"
+        "export type Payload:\n  value: Int\n"
+        "export fn identity(payload: Payload) -> Payload:\n"
+        "  return payload\n"
+        "export fn normalize(value):\n  return value\n",
+        encoding="utf-8")
+    paired_consumer = SCRATCH / "paired_function_consumer"
+    paired_consumer_src = paired_consumer / "src"
+    paired_consumer_src.mkdir(parents=True, exist_ok=True)
+    (paired_consumer / "moss.toml").write_text(
+        '[project]\nname = "phase28_paired_function_consumer"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (paired_consumer_src / "main.moss").write_text(
+        "module app\nimport provider\n"
+        "fn pair(left, right):\n  echo left\n  echo right\n"
+        "fn main():\n"
+        "  payload = provider.Payload(value: 9)\n"
+        "  echo provider.identity(payload).value\n"
+        "  pair(provider.normalize(10), provider.normalize(3.5))\n",
+        encoding="utf-8")
+    paired_provider_build = run(
+        [margo, "build", "--json"],
+        {**base_env, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"},
+        paired_provider)
+    paired_provider_response = json.loads(paired_provider_build.stdout)
+    if (paired_provider_build.returncode or
+            not paired_provider_response.get("ok")):
+        raise AssertionError("source-free Payload/generic provider failed: "
+                             f"{paired_provider_response!r}\n"
+                             f"{paired_provider_build.stderr}")
+    paired_env = {
+        **base_env,
+        "MOSS": compiler,
+        "MOSS_STAGED_ABI": "v10",
+        "MOSS_MODULE_PATH": str(paired_provider / "build" / "debug"),
+    }
+    paired_build = run([margo, "build", "--json"], paired_env,
+                       paired_consumer)
+    paired_response = json.loads(paired_build.stdout)
+    if paired_build.returncode or not paired_response.get("ok"):
+        raise AssertionError("source-free Payload/generic consumer build failed: "
+                             f"{paired_response!r}\n{paired_build.stderr}")
+    paired_executable = Path(
+        paired_response["artifacts"]["artifacts"]["executable"])
+    paired_native = run([str(paired_executable)], paired_env, paired_consumer)
+    paired_fast = run([margo, "debug"], paired_env, paired_consumer)
+    if (paired_native.returncode or paired_native.stdout != "9\n10\n3.5\n" or
+            paired_fast.returncode or paired_fast.stdout != "9\n10\n3.5\n"):
+        raise AssertionError("source-free Payload/generic output mismatch: "
+                             f"Native={paired_native.returncode}/"
+                             f"{paired_native.stdout!r}/"
+                             f"{paired_native.stderr!r}; Fast Debug="
+                             f"{paired_fast.returncode}/"
+                             f"{paired_fast.stdout!r}/"
+                             f"{paired_fast.stderr!r}")
+
+    print("Phase 28 method, function, Payload, and generic pair ReturnValue authority: PASS")
     return 0
 
 

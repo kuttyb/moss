@@ -1983,10 +1983,15 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT constructor ExprId is out of range");
     const auto* facts = tree.arena->facts(expression, caller_spec_id);
     if (!facts || facts->specialization_id != caller_spec_id ||
-        !facts->resolved_target.empty() || !facts->type ||
+        !facts->type ||
         facts->type->kind != TypeKind::NominalInstance ||
         !facts->type->declaration ||
         facts->type->declaration->kind != DeclarationKind::Record)
+      return nullptr;
+    if (facts->resolved_target.empty())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked constructor lacks declaration identity");
+    if (facts->resolved_target != facts->type->declaration->id)
       return nullptr;
     if (!program_.type_context)
       throw RuntimeError(line,
@@ -2001,10 +2006,16 @@ class FastInterpreter {
     const ObjectType* selected = nullptr;
     std::size_t matches = 0;
     for (const auto& candidate : program_.objects) {
-      const auto candidate_declaration = program_.type_context->find(
-          candidate.name);
-      if (!candidate_declaration ||
-          candidate_declaration->id != declaration->id)
+      const auto candidate_module = program_.module_identities.find(
+          candidate.defining_module);
+      if (candidate_module == program_.module_identities.end() ||
+          candidate_module->second.empty())
+        continue;
+      const std::string candidate_name = candidate.declaration_name.empty()
+          ? candidate.name : candidate.declaration_name;
+      if (declaration_identity(DeclarationKind::Record,
+                               candidate_module->second, candidate_name) !=
+          declaration->id)
         continue;
       selected = &candidate;
       ++matches;
@@ -4631,11 +4642,6 @@ class FastInterpreter {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT missing exact checked return-value EST handle");
     SpecId query_spec_id = frame.spec_id;
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT") ||
-        std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
-      ++query_spec_id;
-#endif
     if (query_spec_id == InvalidSpecId ||
         query_spec_id >= program_.specialization_table.size() ||
         program_.specialization_table[query_spec_id].id != query_spec_id)
@@ -4643,23 +4649,35 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT ReturnValue caller SpecId is missing or contradictory");
     const auto& owner_identity =
         program_.specialization_table[query_spec_id];
+    const Function* spec_owner =
+        unique_function_owner_for_spec_id(program_, query_spec_id);
+    const std::string spec_owner_module = spec_owner &&
+            !spec_owner->defining_module.empty() &&
+            program_.module_identities.count(spec_owner->defining_module)
+        ? program_.module_identities.at(spec_owner->defining_module)
+        : std::string();
+    const std::string spec_owner_table_module =
+        owner_identity.provider_module_identity.empty()
+            ? owner_identity.module_identity
+            : owner_identity.provider_module_identity;
+    const std::size_t spec_owner_module_matches = spec_owner_module.empty() ? 0 :
+        std::count_if(program_.module_identities.begin(),
+                      program_.module_identities.end(),
+                      [&](const auto& entry) {
+          return entry.second == spec_owner_module;
+        });
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      const std::string provider_module_identity =
-          owner_identity.provider_module_identity.empty()
-              ? owner_identity.module_identity
-              : owner_identity.provider_module_identity;
-      if (provider_module_identity.empty() ||
-          candidate.specialization_id != query_spec_id) return false;
-      const auto module_identity_matches = std::count_if(
-          program_.module_identities.begin(), program_.module_identities.end(),
-          [&](const auto& entry) {
-            return entry.second == provider_module_identity &&
-                program_.external_modules.count(entry.first) != 0;
-          });
-      return module_identity_matches == 1 &&
+      return spec_owner && spec_owner->imported_checked_body_projected &&
+          owner_identity.semantic_callable_identity ==
+              spec_owner->semantic_callable_id &&
+          !spec_owner_module.empty() && spec_owner_module_matches == 1 &&
+          program_.external_modules.count(spec_owner->defining_module) != 0 &&
+          owner_identity.module_identity == spec_owner_module &&
+          spec_owner_table_module == spec_owner_module &&
+          candidate.specialization_id == query_spec_id &&
           candidate.provenance.defining_module_id ==
-              provider_module_identity &&
+              spec_owner_module &&
           !statement.source_file.empty() &&
           candidate.provenance.source_file == statement.source_file &&
           candidate.provenance.line == statement.line;
@@ -4754,38 +4772,32 @@ class FastInterpreter {
         throw RuntimeError(line,
             "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue EST context unexpectedly passed");
       }
-      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
-        auto corrupted = *requirement;
-        corrupted.provenance.defining_module_id += ":wrong-module";
-        (void)program_.typed_semantics->find_return_value_fact(corrupted);
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT perturbed imported ReturnValue module authority unexpectedly passed");
+#endif
+      const TypedReturnValueFactV1* fact =
+          program_.typed_semantics->find_return_value_fact(*requirement);
+#ifdef MOSS_TEST_BUILD
+      std::optional<TypedReturnValueFactV1> injected_source_free_fact;
+      if (fact && fact->source_free_checked_body_occurrence &&
+          (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT") ||
+           std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION") ||
+           std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))) {
+        injected_source_free_fact = *fact;
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))
+          injected_source_free_fact->provenance.defining_module_id += ":wrong-module";
+        else
+          injected_source_free_fact->specialization_id = InvalidSpecId;
+        fact = &*injected_source_free_fact;
       }
 #endif
-      const auto* fact =
-          program_.typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
       if (fact->source_free_checked_body_occurrence) {
-        const Function* owner = function_by_semantic_identity(
-            owner_identity.semantic_callable_identity);
-        const std::size_t owner_count = owner ? 1 : 0;
+        const Function* owner = spec_owner;
         const bool source_free_occurrence_matches = owner && handle
             ? typed_return_value_source_free_occurrence_matches(
-                  *fact, *owner, statement, *handle)
+                  *fact, program_, query_spec_id, *owner, statement, *handle)
             : false;
-        const std::string source_free_module = owner
-            ? module_name_from_symbol(owner->name) : std::string();
-        const auto source_free_module_identity =
-            program_.module_identities.find(source_free_module);
-        if (owner_count != 1 || !owner || !owner->imported_checked_body_projected ||
-            !handle || source_free_module.empty() ||
-            !program_.external_modules.count(source_free_module) ||
-            source_free_module_identity == program_.module_identities.end() ||
-            source_free_module_identity->second.empty() ||
-            fact->provenance.defining_module_id !=
-                source_free_module_identity->second ||
-            fact->provenance.enclosing_callable_id != owner_identity.semantic_callable_identity ||
+        if (!owner || !owner->imported_checked_body_projected || !handle ||
             !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
@@ -4802,31 +4814,18 @@ class FastInterpreter {
       const auto* occurrence = arena->facts(handle->expr,
                                              fact->specialization_id);
       if (!occurrence || !occurrence->type) {
-        const Function* imported_checked_owner =
-            function_by_semantic_identity(
-                owner_identity.semantic_callable_identity);
-        const std::size_t imported_checked_owner_count =
-            imported_checked_owner &&
-                    imported_checked_owner->imported_checked_body_projected
-                ? 1 : 0;
-        if (imported_checked_owner_count == 0)
-          imported_checked_owner = nullptr;
-        if (imported_checked_owner_count > 1 ||
-            (imported_checked_owner &&
-             imported_checked_owner->semantic_callable_id.empty()))
-          throw std::invalid_argument(
-              "imported checked ReturnValue owner identity is ambiguous");
         const bool imported_checked_body_owner =
-            imported_checked_owner_count == 1 && imported_checked_owner;
+            spec_owner && spec_owner->imported_checked_body_projected &&
+            unique_function_owner_for_spec_id(program_, query_spec_id) ==
+                spec_owner;
 #ifdef MOSS_TEST_BUILD
         if (std::getenv("MOSS_TEST_TRACE_IMPORTED_RETURN_VALUE_OWNER")) {
           std::cerr << "IMPORTED_RETURN_OWNER spec=" << query_spec_id
-                    << " module=" << owner_identity.provider_module_identity
+                    << " module=" << spec_owner_table_module
                     << " row_module=" << owner_identity.module_identity
                     << " callable=" << owner_identity.semantic_callable_identity
                     << " exact_owner=" << fact_is_from_exact_imported_owner(*fact)
                     << " fact_module=" << fact->provenance.defining_module_id
-                    << " fact_callable=" << fact->provenance.enclosing_callable_id
                     << " fact_source=" << fact->provenance.source_file
                     << " stmt_source=" << statement.source_file
                     << " fact_spec=" << fact->specialization_id

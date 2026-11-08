@@ -837,16 +837,81 @@ struct TypedReturnValueFactV1 {
 };
 struct TypedReturnValueRequirementV1 : TypedReturnValueFactV1 {};
 
+inline bool function_owns_specialization_id(
+    const Function& function, SpecId specialization_id) noexcept {
+  if (specialization_id == InvalidSpecId) return false;
+  std::size_t matches = function.spec_id == specialization_id ? 1 : 0;
+  for (const auto& specialization : function.specializations)
+    matches += specialization.spec_id == specialization_id;
+  return matches == 1;
+}
+
+inline const Function* unique_function_owner_for_spec_id(
+    const Program& program, SpecId specialization_id) noexcept {
+  if (specialization_id == InvalidSpecId ||
+      specialization_id >= program.specialization_table.size() ||
+      program.specialization_table[specialization_id].id != specialization_id)
+    return nullptr;
+  const Function* owner = nullptr;
+  std::size_t owners = 0;
+  auto visit = [&](const Function& candidate) {
+    if (!function_owns_specialization_id(candidate, specialization_id)) return;
+    owner = &candidate;
+    ++owners;
+  };
+  for (const auto& function : program.functions) visit(function);
+  for (const auto& function : program.file_scope_pruned_functions)
+    visit(function);
+  return owners == 1 ? owner : nullptr;
+}
+
 inline bool typed_return_value_source_free_occurrence_matches(
-    const TypedReturnValueFactV1& fact, const Function& owner,
-    const Stmt& statement, const est::Handle& handle) noexcept {
+    const TypedReturnValueFactV1& fact, const Program& program,
+    SpecId specialization_id, const Function& owner,
+    const Stmt& statement, const est::Handle& handle) {
   bool matches = true;
+  if (specialization_id == InvalidSpecId ||
+      specialization_id >= program.specialization_table.size())
+    matches = false;
+  const ProgramSpecializationIdentity* owner_identity = nullptr;
+  if (specialization_id < program.specialization_table.size()) {
+    const auto& candidate = program.specialization_table[specialization_id];
+    if (candidate.id == specialization_id) owner_identity = &candidate;
+  }
+  const auto module = owner.defining_module.empty()
+      ? program.module_identities.end()
+      : program.module_identities.find(owner.defining_module);
+  const std::string* module_identity =
+      module == program.module_identities.end() ? nullptr : &module->second;
+  const std::string* owner_module_identity = owner_identity
+      ? (owner_identity->provider_module_identity.empty()
+             ? &owner_identity->module_identity
+             : &owner_identity->provider_module_identity)
+      : nullptr;
+  const std::size_t module_identity_matches = !module_identity || module_identity->empty() ? 0 :
+      std::count_if(program.module_identities.begin(),
+                    program.module_identities.end(),
+                    [&](const auto& entry) {
+        return entry.second == *module_identity;
+      });
+  if (!owner_identity || !function_owns_specialization_id(owner,
+                                                            specialization_id) ||
+      unique_function_owner_for_spec_id(program, specialization_id) != &owner ||
+      owner_identity->semantic_callable_identity != owner.semantic_callable_id ||
+      !module_identity || module_identity->empty() ||
+      module_identity_matches != 1 ||
+      !program.external_modules.count(owner.defining_module) ||
+      owner_identity->module_identity != *module_identity ||
+      !owner_module_identity || *owner_module_identity != *module_identity ||
+      fact.specialization_id != specialization_id ||
+      fact.provenance.defining_module_id != *module_identity ||
+      fact.provenance.source_file != statement.source_file ||
+      fact.provenance.line != statement.line)
+    matches = false;
   if (!fact.source_free_checked_body_occurrence ||
       fact.checked_body_semantic_hash.empty() ||
       fact.checked_body_semantic_hash !=
           owner.imported_checked_body_semantic_hash) matches = false;
-  if (fact.provenance.enclosing_callable_id != "fn:" + owner.name)
-    matches = false;
   if (fact.statement_occurrence_id !=
       statement.checked_statement_occurrence_id ||
       fact.est_arena_index != handle.arena_index ||

@@ -1472,17 +1472,35 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT ReturnValue owner SpecId is missing or contradictory");
     const auto& owner_identity =
         checked_program.specialization_table[codegen_body_spec_id_];
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT ReturnValue SpecId was perturbed");
-#endif
+    const Function* spec_owner = unique_function_owner_for_spec_id(
+        checked_program, codegen_body_spec_id_);
+    const std::string spec_owner_module = spec_owner &&
+            !spec_owner->defining_module.empty() &&
+            checked_program.module_identities.count(spec_owner->defining_module)
+        ? checked_program.module_identities.at(spec_owner->defining_module)
+        : std::string();
+    const std::string spec_owner_table_module =
+        owner_identity.provider_module_identity.empty()
+            ? owner_identity.module_identity
+            : owner_identity.provider_module_identity;
+    const std::size_t spec_owner_module_matches = spec_owner_module.empty() ? 0 :
+        std::count_if(checked_program.module_identities.begin(),
+                      checked_program.module_identities.end(),
+                      [&](const auto& entry) {
+          return entry.second == spec_owner_module;
+        });
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      return candidate.specialization_id == codegen_body_spec_id_ &&
-          !owner_identity.provider_module_identity.empty() &&
+      return spec_owner && spec_owner->imported_checked_body_projected &&
+          owner_identity.semantic_callable_identity ==
+              spec_owner->semantic_callable_id &&
+          !spec_owner_module.empty() && spec_owner_module_matches == 1 &&
+          checked_program.external_modules.count(spec_owner->defining_module) != 0 &&
+          owner_identity.module_identity == spec_owner_module &&
+          spec_owner_table_module == spec_owner_module &&
+          candidate.specialization_id == codegen_body_spec_id_ &&
           candidate.provenance.defining_module_id ==
-              owner_identity.provider_module_identity &&
+              spec_owner_module &&
           !statement.source_file.empty() &&
           candidate.provenance.source_file == statement.source_file;
     };
@@ -1589,39 +1607,32 @@ class Generator {
             "perturbed source-free ReturnValue EST context unexpectedly passed");
       }
 
-      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
-        auto corrupted = *requirement;
-        corrupted.provenance.defining_module_id += ":wrong-module";
-        (void)typed_semantics->find_return_value_fact(corrupted);
-        throw std::runtime_error(
-            "perturbed imported ReturnValue module authority unexpectedly passed");
+#endif
+      const TypedReturnValueFactV1* fact =
+          typed_semantics->find_return_value_fact(*requirement);
+#ifdef MOSS_TEST_BUILD
+      std::optional<TypedReturnValueFactV1> injected_source_free_fact;
+      if (fact && fact->source_free_checked_body_occurrence &&
+          (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION") ||
+           std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))) {
+        injected_source_free_fact = *fact;
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))
+          injected_source_free_fact->provenance.defining_module_id += ":wrong-module";
+        else
+          injected_source_free_fact->specialization_id = InvalidSpecId;
+        fact = &*injected_source_free_fact;
       }
 #endif
-      const auto* fact = typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
       if (fact->source_free_checked_body_occurrence) {
-        const Function* owner = nullptr;
-        std::size_t owner_count = 0;
-        for (const auto& candidate : checked_program.functions) {
-          bool owns_spec = candidate.spec_id == codegen_body_spec_id_;
-          for (const auto& specialization : candidate.specializations)
-            owns_spec = owns_spec ||
-                specialization.spec_id == codegen_body_spec_id_;
-          if (owns_spec) {
-            owner = &candidate;
-            ++owner_count;
-          }
-        }
+        const Function* owner = spec_owner;
         const bool source_free_occurrence_matches = owner && handle
             ? typed_return_value_source_free_occurrence_matches(
-                  *fact, *owner, statement, *handle)
+                  *fact, checked_program, codegen_body_spec_id_, *owner,
+                  statement, *handle)
             : false;
-        if (owner_count != 1 || !owner ||
-            !owner->imported_checked_body_projected ||
-            owner_identity.provider_module_identity.empty() || !handle ||
-            fact->provenance.defining_module_id !=
-                owner_identity.provider_module_identity ||
+        if (!owner || !owner->imported_checked_body_projected || !handle ||
             !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
