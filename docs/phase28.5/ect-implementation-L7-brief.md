@@ -126,7 +126,8 @@ Give each team **one self-contained message**: everything inline, outcome-level 
 - **The native emitter** keeps its existing per-type walk for emission; that's unchanged in this phase.
 - A **drift report** at package build: exported signatures widened, narrowed or changed since the last `.mossi`.
 - **Migrate** SDK exports using the suggested-trait errors.
-- *Done when:* **B1** consumer check time is flat in D, W and K; the gate passes; M1 is re-measured after migration; and Agent 2 has confirmed that no consumer path opens a provider body during checking.
+- **Out of scope: exported template types.** An exported function over a type with untyped fields (`export fn relay(b: Box)`) stays unhardened and keeps today's per-instance walk. No SDK package exports one. Don't claim "no Mossi Leak"; claim "hardened exports never leak". See principles §4.8.
+- *Done when:* **B1** consumer check time is flat in D, W and K; the gate passes; M1 is re-measured after migration; and Agent 2 has confirmed that no consumer path opens a hardened export's body during checking.
 
 **Team 4 — Shared store and incremental check (no daemon).**
 - **Per declaration:** direct facts (local types, access per path, raises, observable flags, copy facts) and an **inferred signature** expressed as a formula over its callees' signatures.

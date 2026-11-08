@@ -26,7 +26,7 @@ Today's in-process memo stays as the dedup inside any walk. Source syntax doesn'
 **Non-goals**
 - Native build speed (rustc).
 - Fast Debug execution speed.
-- Generic user-defined types.
+- New generic-type features. Template types (types with untyped fields) already exist and cross exports; see §4.8.
 - Changes to source syntax.
 
 **Success** is measured on the Phase 28.5 benchmarks:
@@ -174,6 +174,11 @@ All types that satisfy a bound are equivalent for checking, Fast Debug and queri
 - **`.mossi` gets a new ABI version** carrying bounds, internal type variables, effect formulas and constraints, along with the semantic IR bodies it already holds (still needed for execution and emission).
 - **Drift is reported, not blocked.** Each build diffs exported bounds against the previous `.mossi` and prints the changes: widened, narrowed or changed. That makes interface changes visible.
 - **Migration.** M1 (the share of exports that close today) sizes the work. The compiler's suggested-trait errors make migration mechanical, and the SDK swarm can apply them.
+
+
+### 4.8 Known gap: exported template types
+
+A type with untyped fields is a template. An exported function that takes or returns one (`export fn relay(b: Box)`) is recorded as generic and re-walked by the consumer per instance, even though its parameter is annotated. This phase does not harden those functions: no package in `sdk/` or `packages/` exports a template type today, and the gap costs check time, not correctness. Until it is closed, the firewall's guarantee is "hardened exports never leak", not "no Mossi Leak". Closing it means treating a template's untyped fields as generic parameters for hardening, including trait cover for field requirements such as `b.value + 1`.
 
 ---
 
