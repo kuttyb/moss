@@ -18057,9 +18057,10 @@ static ParsedModuleUnit load_module_interface(
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
   const size_t section2_marker = text.find("\nexecution_body_version ");
   ExecutionBodySectionView execution_bodies;
-  // ABI-v10 checker projection needs the provider's stored arenas and SpecIds
-  // for both consumers. Native linking does not bypass identity restoration.
-  const bool restore_checked_execution = load_execution_bodies || v10_interface;
+  // Both consumers need the provider's stored arenas and SpecIds whenever
+  // Section 2 is present. Native linking cannot bypass identity restoration.
+  const bool restore_checked_execution = load_execution_bodies ||
+      section2_marker != string::npos;
   if (restore_checked_execution)
     execution_bodies = parse_execution_body_section(text);
   // Section 2 stays outside Section 1 semantic/interface fingerprints; both
