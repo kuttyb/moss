@@ -80,6 +80,10 @@ static Program method_provider(const string& module) {
   method.spec_id = 0;
   method.specializations.push_back(
       {"method-body-v1:Holder.select(int)", {"int"}, 1});
+  Stmt execution_loop;
+  execution_loop.kind = Stmt::Kind::For;
+  execution_loop.iterator_method_spec_ids_by_spec_id[1] = {1};
+  method.execution_body = vector<Stmt>{execution_loop};
   object.methods.push_back(std::move(method));
   result.objects.push_back(std::move(object));
   result.main = MainProc{};
@@ -281,6 +285,12 @@ int main() {
   assert(first_methods.objects.front().methods.front().specializations.front()
              .spec_id == first_method_map.at(1));
   assert(first_methods.main->spec_id == first_method_map.at(2));
+  const auto& execution_iterator_ids = first_methods.objects.front()
+      .methods.front().execution_body->front().iterator_method_spec_ids_by_spec_id;
+  assert(execution_iterator_ids.size() == 1);
+  assert(execution_iterator_ids.at(first_method_map.at(1)) ==
+         std::vector<SpecId>{first_method_map.at(1)});
+  assert(first_method_map.at(1) != 1);  // Destination was already populated.
   const auto& first_iterator_ids = first_methods.main->body.front()
       .iterator_method_spec_ids_by_spec_id;
   assert(first_iterator_ids.size() == 1);
