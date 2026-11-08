@@ -19109,3 +19109,17 @@ untouched.
 - Per the stop rule, no corpus/diagnostic measurements or full Default/Shadow
   suites were run after this gate failure. No commit or push was made; no fresh
   final implementation review was requested. Current worktree is not accepted.
+
+## Phase 28 Task F1 WSL disk recovery — stopped before Step 1 validation
+
+- Recovery health: `/` has 736 GB available; creating and deleting a scratch
+  file under repository `tmp/` succeeded. The F1 worktree was present and clean
+  after checkpointing all 11 changed files as `a1758df4` on
+  `phase28-f1-field-wip` (based on `019451b8`). No changes were reconstructed.
+- `make --jobs="$(nproc)"` returned success; forced `make
+  --jobs="$(nproc)" -B moss-dev` also completed successfully with warnings only.
+- Cheap validation did not run. A script usage probe mistakenly invoked
+  `check_phase28_l8_field_controls.py --help`, which has no help option and
+  treated `--help` as its compiler path, returning failures. Per the task stop
+  rule, corpus, field gate, diagnostic counts, full suites, and fresh Agent 2
+  review remain unrun. No push or merge occurred.
