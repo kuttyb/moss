@@ -35667,11 +35667,38 @@ class Checker {
              argument_index < actual_types.size() &&
              argument_index < edge.argument_callable_spec_ids.size();
              ++argument_index) {
-          const string callable_type = canonical_type_name(
-              actual_types[argument_index]);
-          if (!starts_with(callable_type, "callable-v1:")) continue;
-          const Function* callback =
-              find_function_by_callable_id(callable_type);
+          if (!callable_identity(canonical_type_name(
+                  actual_types[argument_index]))) continue;
+          if (!exact_call_cursor)
+            err(line,
+                "checked callable argument has no exact parent Call occurrence",
+                "MOSS_INTERNAL_INVARIANT");
+          const auto* argument_arena =
+              expression_arena(exact_call_cursor->arena_index);
+          const auto* exact_call = argument_arena &&
+                  exact_call_cursor->expr < argument_arena->size()
+              ? std::get_if<est::Call>(&argument_arena->at(
+                    est::unparenthesized(*argument_arena,
+                                         exact_call_cursor->expr)))
+              : nullptr;
+          if (!exact_call || argument_index >= exact_call->arguments.size())
+            err(line,
+                "checked callable argument has no exact EST argument slot",
+                "MOSS_INTERNAL_INVARIANT");
+          auto callback_expr = est::unparenthesized(
+              *argument_arena, exact_call->arguments[argument_index]);
+          if (const auto* named = std::get_if<est::NamedArgument>(
+                  &argument_arena->at(callback_expr)))
+            callback_expr = est::unparenthesized(*argument_arena,
+                                                  named->value);
+          const auto* callback_facts = argument_arena->facts(
+              callback_expr, current_spec_id_);
+          if (!callback_facts || callback_facts->resolved_target.empty())
+            err(line,
+                "checked callable argument lacks exact EST target authority",
+                "MOSS_INTERNAL_INVARIANT");
+          const string callable_type = callback_facts->resolved_target;
+          const Function* callback = find_function_by_callable_id(callable_type);
           if (!callback)
             err(line,
                 "checked callable argument has no semantic function identity",
@@ -36316,11 +36343,9 @@ class Checker {
                                       !traits_.count(canonical_type_name(type));
                                 });
     if (concrete) {
-      // Publish callback target/specialization authority while the exact
-      // caller occurrence and semantic context are still active. The
-      // specialization registration below may switch checker body context.
-      retain_functional_callback_specialization(*function->second,
-                                                input_types, line, callable);
+      // Registering first makes the exact concrete callback body SpecId
+      // available to the occurrence publisher. The registration scopes its
+      // body/cursor context and restores the caller's active EST occurrence.
       const auto validation_view = imported_method_validation_view(
           *function->second);
       auto requirements = validate_method_requirements(
@@ -36328,6 +36353,8 @@ class Checker {
           input_types);
       register_static_specialization(line, *function->second, input_types,
                                      std::move(requirements));
+      retain_functional_callback_specialization(*function->second,
+                                                input_types, line, callable);
     }
     auto result = functional_callable_result(identity, input_types, env);
     if (!result && concrete)
@@ -39650,6 +39677,35 @@ class Checker {
           check_function_call(line, callee, args, env);
           return;
         }
+        std::set<std::size_t> prechecked_callable_arguments;
+        if (!active_est_expression_cursors_.empty() &&
+            active_est_expression_cursors_.back()) {
+          const auto cursor = *active_est_expression_cursors_.back();
+          const auto* arena = expression_arena(cursor.arena_index);
+          const auto* call = arena && cursor.expr < arena->size()
+              ? std::get_if<est::Call>(&arena->at(
+                    est::unparenthesized(*arena, cursor.expr)))
+              : nullptr;
+          if (call) {
+            for (std::size_t index = 0;
+                 index < args.size() && index < call->arguments.size();
+                 ++index) {
+              auto argument_expr = est::unparenthesized(
+                  *arena, call->arguments[index]);
+              if (const auto* named = std::get_if<est::NamedArgument>(
+                      &arena->at(argument_expr)))
+                argument_expr = est::unparenthesized(*arena, named->value);
+              const auto* identifier = std::get_if<est::Identifier>(
+                  &arena->at(argument_expr));
+              if (!identifier || env.count(identifier->name) ||
+                  !functions_.count(identifier->name))
+                continue;
+              check_expression(line, args[index], env, {},
+                               "argument:" + std::to_string(index));
+              prechecked_callable_arguments.insert(index);
+            }
+          }
+        }
         Function* resolved_target = nullptr;
         check_function_call(line, callee, args, env, nullptr, std::nullopt,
                             &resolved_target);
@@ -39689,6 +39745,7 @@ class Checker {
           retain_active_expression_target("builtin:" + callee);
         }
         for (size_t index = 0; index < args.size(); ++index) {
+          if (prechecked_callable_arguments.count(index)) continue;
           const auto& arg = args[index];
           string name, val;
           if (tree_parse_named_argument(arg, name, val))
@@ -39909,6 +39966,23 @@ class Checker {
       if (contains_domain_handle(env.at(binding)))
         err(line, "domain handle '" + binding +
             "' is not an ordinary value; use domainroutes and message targets only");
+    if (tree_plain_identifier(value) && !env.count(value)) {
+      const auto function = functions_.find(value);
+      if (function != functions_.end() && function->second &&
+          !active_est_expression_cursors_.empty() &&
+          active_est_expression_cursors_.back() &&
+          current_spec_id_ != InvalidSpecId) {
+        const auto& cursor = *active_est_expression_cursors_.back();
+        const auto* arena = expression_arena(cursor.arena_index);
+        const auto* identifier = arena && cursor.expr < arena->size()
+            ? std::get_if<est::Identifier>(&arena->at(
+                  est::unparenthesized(*arena, cursor.expr)))
+            : nullptr;
+        if (identifier && identifier->name == value)
+          retain_active_expression_target(
+              function->second->semantic_callable_id);
+      }
+    }
     if (tree_plain_identifier(value) && value != "true" && value != "false" && value != "None" &&
         !functions_.count(value) && !objects_.count(value) && !domains_.count(value) &&
         !traits_.count(value) && !env.count(value)) {
