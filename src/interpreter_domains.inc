@@ -175,6 +175,8 @@
       }
       if (!type.empty()) frame.local_types[parameters[i].name] = type;
       Effect effect = i < effects.size() ? effects[i] : Effect::Read;
+      const bool has_node = tree && argument_nodes &&
+          i < argument_nodes->size();
       auto bind_callable_id = [&](Value& value) {
         const SpecId id = argument_callable_spec_ids &&
                 i < argument_callable_spec_ids->size()
@@ -206,13 +208,46 @@
               "MOSS_INTERNAL_INVARIANT callable argument SpecId does not identify a checked specialization");
         value.callable_spec_id = id;
       };
+      const SpecId checked_callable_id = argument_callable_spec_ids &&
+              i < argument_callable_spec_ids->size()
+          ? argument_callable_spec_ids->at(i) : InvalidSpecId;
+      const bool callable_parameter =
+          type.rfind("callable-v1:", 0) == 0 ||
+          type.rfind("callable:", 0) == 0;
+      if (!callable_parameter && checked_callable_id != InvalidSpecId)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT non-callable parameter has a checked callable SpecId");
+      if (callable_parameter) {
+        if (checked_callable_id == InvalidSpecId ||
+            checked_callable_id >= program_.specialization_table.size())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable parameter lacks checked SpecId authority");
+        const std::string expected_identity =
+            type.rfind("callable:", 0) == 0 ? type.substr(9) : type;
+        const auto& row = program_.specialization_table[checked_callable_id];
+        if (row.id != checked_callable_id ||
+            row.semantic_callable_identity != expected_identity)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable parameter SpecId contradicts its checked type");
+        if (!has_node)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable parameter has no exact argument occurrence");
+        const auto* identifier = std::get_if<est::Identifier>(
+            &tree->arena->at(argument_nodes->at(i)));
+        const auto* target = unique_function_owner_for_spec_id(
+            program_, checked_callable_id);
+        if (!identifier || !target)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable parameter SpecId has no exact identifier owner");
+        frame.locals[parameters[i].name] = Value::callable_value(
+            identifier->name, target, checked_callable_id);
+        continue;
+      }
       if (argument_values && i < argument_values->size()) {
         frame.locals[parameters[i].name] = independent(argument_values->at(i));
         bind_callable_id(frame.locals[parameters[i].name]);
         continue;
       }
-      const bool has_node = tree && argument_nodes &&
-          i < argument_nodes->size();
       auto place = has_node
           ? locate_tree_node(*tree, argument_nodes->at(i), caller, line, output)
           : locate(arguments[i], caller, line, output);
