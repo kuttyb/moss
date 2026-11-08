@@ -20,6 +20,9 @@ static Program provider(SpecId id, const string& module) {
   statement.semantic_types_by_spec_id[id] = "int";
   statement.joined_types_by_spec_id[id]["x"] = "int";
   function.body.push_back(statement);
+  function.execution_body = function.body;
+  function.result_functional_pipeline_ids[id] = 7;
+  function.result_functional_expression_plans_by_spec_id[id] = {};
   FunctionSpecialization specialization;
   specialization.spec_id = id;
   specialization.generated_name = "f__specialized";
@@ -28,6 +31,18 @@ static Program provider(SpecId id, const string& module) {
   specialization.dependencies.push_back(dependency);
   function.specializations.push_back(specialization);
   result.functions.push_back(function);
+  Domain declaration;
+  Handler handler;
+  handler.spec_id = id;
+  handler.body.push_back(statement);
+  handler.execution_body = handler.body;
+  FailureArm arm;
+  arm.body.push_back(statement);
+  arm.execution_body = arm.body;
+  handler.failure_arms.push_back(arm);
+  handler.execution_failure_arms = handler.failure_arms;
+  declaration.handlers.push_back(handler);
+  result.domains.push_back(declaration);
   DomainSpecialization domain;
   domain.handler_spec_ids.push_back(id);
   result.domain_specializations.push_back(domain);
@@ -110,6 +125,18 @@ int main() {
          "int");
   assert(first.functions.front().body.front().joined_types_by_spec_id.at(1)
              .at("x") == "int");
+  assert(first.functions.front().execution_body->front()
+             .semantic_types_by_spec_id.at(1) == "int");
+  assert(first.functions.front().result_functional_pipeline_ids.at(1) == 7);
+  assert(first.functions.front().result_functional_expression_plans_by_spec_id.count(1));
+  const auto& imported_handler = first.domains.front().handlers.front();
+  assert(imported_handler.execution_body->front().semantic_types_by_spec_id.at(1) == "int");
+  assert(imported_handler.failure_arms.front().execution_body->front()
+             .semantic_types_by_spec_id.at(1) == "int");
+  assert(imported_handler.execution_failure_arms->front().body.front()
+             .semantic_types_by_spec_id.at(1) == "int");
+  assert(imported_handler.execution_failure_arms->front().execution_body->front()
+             .semantic_types_by_spec_id.at(1) == "int");
   assert(first.domain_specializations.front().handler_spec_ids.front() == 1);
   assert(first.semantic_call_edges.front().caller_spec_id == 1);
   assert(first.semantic_call_edges.front().callee_spec_id == 1);
@@ -263,6 +290,32 @@ int main() {
          second_method_map.at(0));
   assert(second_methods.objects.front().methods.front().specializations.front()
              .spec_id == second_method_map.at(1));
+
+  // Section 2 execution bodies retain live iterator authority. An actual
+  // missing foreign target must not survive merely because its table row is
+  // otherwise unused by the generic body view.
+  auto missing_execution = method_provider("module-v1:execution-missing");
+  ProgramSpecializationIdentity missing_target;
+  missing_target.id = 3;
+  missing_target.module_identity = "module-v1:unselected-iterator";
+  missing_target.semantic_callable_identity = "method-v1:Foreign.next";
+  missing_execution.specialization_table.push_back(missing_target);
+  Stmt execution_loop;
+  execution_loop.kind = Stmt::Kind::For;
+  execution_loop.iterator_method_spec_ids_by_spec_id[1] = {3};
+  missing_execution.objects.front().methods.front().execution_body =
+      vector<Stmt>{execution_loop};
+  Program execution_destination;
+  bool missing_execution_rejected = false;
+  try {
+    (void)remap_imported_program_spec_ids(
+        execution_destination, missing_execution, "module-v1:execution-missing");
+  } catch (const std::invalid_argument& error) {
+    missing_execution_rejected = string(error.what()) ==
+        "missing imported external module/SpecId pair";
+  }
+  assert(missing_execution_rejected);
+  assert(execution_destination.specialization_table.empty());
 
   auto duplicated_iterator = method_provider("module-v1:methods-duplicate-iterator");
   duplicated_iterator.main->body.front().iterator_method_spec_ids_by_spec_id[2] =

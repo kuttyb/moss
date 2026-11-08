@@ -4099,20 +4099,20 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
         static_cast<std::size_t>(id) - destination.specialization_table.size();
     return appended_index < appended.size() ? &appended[appended_index] : nullptr;
   };
+  const auto remap_map_keys = [&](auto& map) {
+    using Map = std::decay_t<decltype(map)>;
+    Map rewritten;
+    rewritten.reserve(map.size());
+    for (auto& entry : map) {
+      SpecId id = entry.first;
+      remap_id(id);
+      if (!rewritten.emplace(id, std::move(entry.second)).second)
+        throw std::invalid_argument(
+            "duplicate statement facts after imported SpecId remap");
+    }
+    map = std::move(rewritten);
+  };
   const auto remap_statement = [&](auto&& self, Stmt& statement) -> void {
-    const auto remap_map_keys = [&](auto& map) {
-      using Map = std::decay_t<decltype(map)>;
-      Map rewritten;
-      rewritten.reserve(map.size());
-      for (auto& entry : map) {
-        SpecId id = entry.first;
-        remap_id(id);
-        if (!rewritten.emplace(id, std::move(entry.second)).second)
-          throw std::invalid_argument(
-              "duplicate statement facts after imported SpecId remap");
-      }
-      map = std::move(rewritten);
-    };
     remap_map_keys(statement.open_call_results_by_spec_id);
     remap_map_keys(statement.member_requirements_by_spec_id);
     remap_map_keys(statement.open_call_keys_by_spec_id);
@@ -4151,6 +4151,10 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
   for (auto& function : provider.functions) {
     remap_id(function.spec_id);
     remap_body(remap_body, function.body);
+    if (function.execution_body)
+      remap_body(remap_body, *function.execution_body);
+    remap_map_keys(function.result_functional_pipeline_ids);
+    remap_map_keys(function.result_functional_expression_plans_by_spec_id);
     for (auto& specialization : function.specializations) {
       remap_id(specialization.spec_id);
       for (auto& dependency : specialization.dependencies)
@@ -4163,12 +4167,24 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
       for (auto& specialization : method.specializations)
         remap_id(specialization.spec_id);
       remap_body(remap_body, method.body);
+      if (method.execution_body)
+        remap_body(remap_body, *method.execution_body);
+      remap_map_keys(method.result_functional_pipeline_ids);
+      remap_map_keys(method.result_functional_expression_plans_by_spec_id);
     }
+  const auto remap_failure_arm = [&](FailureArm& arm) {
+    remap_body(remap_body, arm.body);
+    if (arm.execution_body) remap_body(remap_body, *arm.execution_body);
+  };
   for (auto& domain : provider.domains)
     for (auto& handler : domain.handlers) {
       remap_id(handler.spec_id);
       remap_body(remap_body, handler.body);
-      for (auto& arm : handler.failure_arms) remap_body(remap_body, arm.body);
+      if (handler.execution_body)
+        remap_body(remap_body, *handler.execution_body);
+      for (auto& arm : handler.failure_arms) remap_failure_arm(arm);
+      if (handler.execution_failure_arms)
+        for (auto& arm : *handler.execution_failure_arms) remap_failure_arm(arm);
     }
   for (auto& test : provider.tests) {
     remap_id(test.spec_id);
