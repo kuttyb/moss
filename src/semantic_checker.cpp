@@ -40625,6 +40625,7 @@ class Checker {
         } call_occurrence_scope{call_occurrence_state, call_occurrence_id,
                                 &statement_call_type, false};
         Function* selected_function = nullptr;
+        std::optional<EstExpressionCursor> statement_call_cursor;
         if (!statement.b.empty()) {
           auto receiver = current_env.find(statement.a);
           auto receiver_type = receiver != current_env.end()
@@ -40707,12 +40708,6 @@ class Checker {
               statement_call_handle = &handle;
             }
           }
-          if (!delayed_assert_check && functions_.count(statement.a) &&
-              !statement_call_handle)
-            err(statement.line,
-                "resolved direct function call has no exact EST root",
-                "MOSS_INTERNAL_INVARIANT");
-          std::optional<EstExpressionCursor> statement_call_cursor;
           if (statement_call_handle) {
             const auto* arena =
                 expression_arena(statement_call_handle->arena_index);
@@ -40722,13 +40717,10 @@ class Checker {
                   "MOSS_INTERNAL_INVARIANT");
             const auto expression = est::unparenthesized(
                 *arena, statement_call_handle->expr);
-            if (!std::holds_alternative<est::Call>(arena->at(expression)))
-              err(statement.line,
-                  "direct call statement EST root is not a Call occurrence",
-                  "MOSS_INTERNAL_INVARIANT");
-            statement_call_cursor = EstExpressionCursor{
-                statement_call_handle->arena_index, expression,
-                statement.text, 0};
+            if (std::holds_alternative<est::Call>(arena->at(expression)))
+              statement_call_cursor = EstExpressionCursor{
+                  statement_call_handle->arena_index, expression,
+                  statement.text, 0};
           }
           auto check_direct_call = [&] {
             if (delayed_assert_check) return;
@@ -40749,6 +40741,11 @@ class Checker {
           } else {
             check_direct_call();
           }
+          if (selected_function && selected_function->static_dispatch &&
+              !statement_call_cursor)
+            err(statement.line,
+                "resolved direct function call has no exact EST Call occurrence",
+                "MOSS_INTERNAL_INVARIANT");
           if (call_occurrence_id != UINT32_MAX) {
             if (selected_function) {
               call_occurrence_state->retain_expression_target(
@@ -40810,13 +40807,79 @@ class Checker {
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            if (tree_parse_named_argument(argument, name, val))
-              check_expression(statement.line, val, current_env, occurrence_slot,
-                               "call-argument:" + std::to_string(index));
-            else
-              check_expression(statement.line, argument, current_env,
-                               occurrence_slot,
-                               "call-argument:" + std::to_string(index));
+            const string& checked_argument =
+                tree_parse_named_argument(argument, name, val) ? val : argument;
+            std::optional<EstExpressionCursor> exact_argument_cursor;
+            if (statement_call_cursor && statement.b.empty() &&
+                !tree_parse_named_argument(argument, name, val)) {
+              const auto* call_arena = expression_arena(
+                  statement_call_cursor->arena_index);
+              if (!call_arena ||
+                  statement_call_cursor->expr >= call_arena->size())
+                err(statement.line,
+                    "direct call argument has a stale outer EST occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
+              const auto* call = std::get_if<est::Call>(
+                  &call_arena->at(statement_call_cursor->expr));
+              if (!call || call->arguments.size() != statement.args.size())
+                err(statement.line,
+                    "direct call arguments contradict the exact outer EST Call",
+                    "MOSS_INTERNAL_INVARIANT");
+              const est::Handle* argument_handle = nullptr;
+              for (const auto& handle : statement.expression_handles) {
+                if (handle.slot != est::ExprSlot::Argument ||
+                    handle.argument_index != index) continue;
+                if (argument_handle)
+                  err(statement.line,
+                      "direct call argument has duplicate retained EST roots",
+                      "MOSS_INTERNAL_INVARIANT");
+                argument_handle = &handle;
+              }
+              if (!argument_handle)
+                err(statement.line,
+                    "direct call argument has no retained EST root",
+                    "MOSS_INTERNAL_INVARIANT");
+              est::assert_fresh(*argument_handle, checked_argument);
+              const auto argument_expression = est::unparenthesized(
+                  *call_arena, call->arguments[index]);
+              const auto* argument_arena = expression_arena(
+                  argument_handle->arena_index);
+              if (!argument_arena ||
+                  argument_handle->expr >= argument_arena->size() ||
+                  !est::structurally_equal(
+                      est::view(*call_arena, argument_expression,
+                                checked_argument),
+                      est::view(*argument_arena, argument_handle->expr,
+                                checked_argument)))
+                err(statement.line,
+                    "direct call child disagrees with its exact argument occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
+              exact_argument_cursor = EstExpressionCursor{
+                  statement_call_cursor->arena_index, argument_expression,
+                  checked_argument, 0};
+            }
+            auto check_call_argument = [&] {
+              check_expression(statement.line, checked_argument,
+                  current_env, occurrence_slot,
+                  "call-argument:" + std::to_string(index));
+            };
+            if (exact_argument_cursor) {
+              struct ExactArgumentRootScope {
+                std::optional<EstExpressionCursor>& slot;
+                std::optional<EstExpressionCursor> prior;
+                ExactArgumentRootScope(
+                    std::optional<EstExpressionCursor>& target,
+                    EstExpressionCursor cursor)
+                    : slot(target), prior(target) {
+                  slot = std::move(cursor);
+                }
+                ~ExactArgumentRootScope() { slot = std::move(prior); }
+              } exact_argument_scope(forced_root_expression_cursor_,
+                                    std::move(*exact_argument_cursor));
+              check_call_argument();
+            } else {
+              check_call_argument();
+            }
           } else if (call_occurrence_id != UINT32_MAX &&
                      statement.b.empty()) {
             call_occurrence_state->expression_occurrences.at(
