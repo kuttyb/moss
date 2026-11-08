@@ -225,7 +225,8 @@
     phase21_capture_handler_ = handler_has_failure_captures(h) ? &h : nullptr;
     phase21_result_context_ = !h.observable_effects.raise_set.empty();
     gen_stmts(o, body, &d, &h, result, locals, types, 2, true, false,
-              functional_handler_context(d, h));
+              functional_handler_context(d, h),
+              checked_handler_body_spec_id(d, h));
     phase21_result_context_ = saved_phase21_result_context;
     phase21_capture_handler_ = saved_capture_handler;
     view_domain_ = false; view_domain_access_ = false; borrowed_message_parameters_.clear();
@@ -629,7 +630,8 @@
                   h.reply_type ? "__moss_failure_reply" : string(),
                   locals, types, needs_label ? 7 : 6, true, false,
                   functional_handler_context(d, h) + ":on_fail:" +
-                      std::to_string(arm_index));
+                      std::to_string(arm_index),
+                  checked_handler_body_spec_id(d, h));
         if (needs_label) o << "                        }\n";
         phase21_selected_error_ = saved_selected_error;
         view_domain_ = false;
@@ -778,7 +780,8 @@
                   h.reply_type ? "__moss_failure_reply" : string(),
                   locals, types, needs_label ? 4 : 3, true, false,
                   functional_handler_context(d, h) + ":on_fail:" +
-                      std::to_string(arm_index));
+                      std::to_string(arm_index),
+                  checked_handler_body_spec_id(d, h));
         if (needs_label) o << "            }\n";
         phase21_selected_error_ = saved_selected_error;
         view_domain_ = false;
@@ -1081,7 +1084,9 @@
       const Handler* saved_capture_handler = phase21_capture_handler_;
       phase21_capture_handler_ = handler_has_failure_captures(h) ? &h : nullptr;
       phase21_result_context_ = !h.observable_effects.raise_set.empty();
-      gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false, functional_handler_context(d, h));
+      gen_stmts(o, h.body, &d, &h, result, locals, types, 2, true, false,
+                functional_handler_context(d, h),
+                checked_handler_body_spec_id(d, h));
       phase21_result_context_ = saved_phase21_result_context;
       phase21_capture_handler_ = saved_capture_handler;
       view_domain_ = false; view_domain_access_ = false;

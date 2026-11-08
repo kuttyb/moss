@@ -4527,6 +4527,70 @@ class Generator {
     return method.specializations.front().spec_id;
   }
 
+  SpecId checked_handler_body_spec_id(const Domain& domain,
+                                     const Handler& handler) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const auto source_entry = this->specialization_sources_.find(domain.name);
+    const string source_name = source_entry == this->specialization_sources_.end()
+        ? domain.name : source_entry->second;
+    const auto source = std::find_if(
+        checked_program.domains.begin(), checked_program.domains.end(),
+        [&](const Domain& candidate) { return candidate.name == source_name; });
+    if (source == checked_program.domains.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked handler source declaration is missing");
+    size_t handler_index = source->handlers.size();
+    size_t declaration_matches = 0;
+    for (size_t index = 0; index < source->handlers.size(); ++index) {
+      if (source->handlers[index].spec_id == handler.spec_id) {
+        handler_index = index;
+        ++declaration_matches;
+      }
+    }
+    if (handler.spec_id == InvalidSpecId ||
+        handler.spec_id >= checked_program.specialization_table.size() ||
+        declaration_matches != 1 || handler_index >= source->handlers.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked handler declaration SpecId is missing or ambiguous");
+
+    SpecId selected = handler.spec_id;
+    if (source_entry != this->specialization_sources_.end()) {
+      const DomainSpecialization* owner = nullptr;
+      size_t owner_count = 0;
+      for (const auto& candidate : checked_program.domain_specializations) {
+        const auto generated = specialization_names_.find(
+            candidate.source_domain + "\n" + candidate.instance);
+        if (!candidate.materialized_layout ||
+            candidate.source_domain != source_name ||
+            generated == specialization_names_.end() ||
+            generated->second != domain.name)
+          continue;
+        owner = &candidate;
+        ++owner_count;
+      }
+      if (owner_count != 1 || !owner ||
+          owner->handler_spec_ids.size() != source->handlers.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked domain handler specialization is missing or ambiguous");
+      selected = owner->handler_spec_ids[handler_index];
+    }
+    if (selected == InvalidSpecId ||
+        selected >= checked_program.specialization_table.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked handler body SpecId is invalid");
+    const auto& selected_row = checked_program.specialization_table[selected];
+    const auto& declaration_row =
+        checked_program.specialization_table[handler.spec_id];
+    if (selected_row.id != selected ||
+        declaration_row.id != handler.spec_id ||
+        selected_row.semantic_callable_identity !=
+            declaration_row.semantic_callable_identity ||
+        selected_row.module_identity != declaration_row.module_identity)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked handler body SpecId contradicts its declaration");
+    return selected;
+  }
+
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
       const std::unordered_map<string,string>* types,
@@ -8458,7 +8522,9 @@ class Generator {
                 false, true, functional_method_context(t, method),
                 checked_method_body_spec_id(method));
       if (method.result_expression) {
-        auto plan = method.result_functional_pipeline_ids.find(method.spec_id);
+        const SpecId method_body_spec_id = checked_method_body_spec_id(method);
+        auto plan = method.result_functional_pipeline_ids.find(
+            method_body_spec_id);
         FunctionalExpressionHandlesScope result_handles_scope(
             active_functional_expression_handles_,
             &method.expression_handles);
