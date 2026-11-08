@@ -4072,17 +4072,23 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
         ++pair_matches;
       }
     }
-    if (pair_matches != 1)
-      throw std::invalid_argument(pair_matches
-          ? "ambiguous imported external module/SpecId pair"
-          : "missing imported external module/SpecId pair");
-    remap[source_id] = matched_destination;
+    if (pair_matches > 1)
+      throw std::invalid_argument(
+          "ambiguous imported external module/SpecId pair");
+    // The provider's dense program table can also contain rows belonging to
+    // an unrelated module (for example its package executable). A table row
+    // alone is not a dependency. Keep an unresolved sentinel here; every
+    // actual declaration/fact/edge reference below must resolve exactly.
+    if (pair_matches == 1) remap[source_id] = matched_destination;
   }
   const auto remap_id = [&](SpecId& id) {
     if (id == InvalidSpecId) return;
     const auto found = remap.find(id);
     if (found == remap.end())
       throw std::invalid_argument("imported semantic row references unknown SpecId");
+    if (found->second == InvalidSpecId)
+      throw std::invalid_argument(
+          "missing imported external module/SpecId pair");
     id = found->second;
   };
   const auto destination_spec_row = [&](SpecId id)

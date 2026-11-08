@@ -152,6 +152,38 @@ int main() {
   assert(composite.semantic_call_edges.front().target_module_identity ==
          "module-v1:dependency");
 
+  // Dense artifact tables include unimported package modules. Their unused
+  // rows do not create a dependency; any actual semantic reference still does.
+  auto unrelated_table = provider(0, "module-v1:public-provider");
+  ProgramSpecializationIdentity unrelated_row;
+  unrelated_row.id = 1;
+  unrelated_row.module_identity = "module-v1:unimported-app";
+  unrelated_row.semantic_callable_identity = "program:main";
+  unrelated_table.specialization_table.push_back(unrelated_row);
+  Program unrelated_destination;
+  const auto unrelated_map = remap_imported_program_spec_ids(
+      unrelated_destination, unrelated_table, "module-v1:public-provider");
+  assert(unrelated_destination.specialization_table.size() == 1);
+  assert(unrelated_map.at(0) == 0);
+  assert(unrelated_map.at(1) == InvalidSpecId);
+
+  auto referenced_missing = provider(0, "module-v1:public-provider");
+  referenced_missing.specialization_table.push_back(unrelated_row);
+  referenced_missing.semantic_call_edges.front().callee_spec_id = 1;
+  referenced_missing.semantic_call_edges.front().target_module_identity =
+      unrelated_row.module_identity;
+  Program missing_destination;
+  bool referenced_missing_rejected = false;
+  try {
+    (void)remap_imported_program_spec_ids(
+        missing_destination, referenced_missing, "module-v1:public-provider");
+  } catch (const std::invalid_argument& error) {
+    referenced_missing_rejected = string(error.what()) ==
+        "missing imported external module/SpecId pair";
+  }
+  assert(referenced_missing_rejected);
+  assert(missing_destination.specialization_table.empty());
+
   const auto valid_call = select_exact_semantic_call_edge(
       first, first.semantic_call_edges.front().caller_spec_id,
       first.semantic_call_edges.front().call_est_arena_index,

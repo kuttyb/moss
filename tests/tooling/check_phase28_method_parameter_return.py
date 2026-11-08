@@ -49,6 +49,10 @@ fn main():
   payload = provider.Payload(value: 9)
   echo carrier.Echo(payload).value
 """
+    # The package executable's dense SpecId rows are not dependencies of an
+    # imported provider API. Actual cross-module references still fail closed.
+    (provider_source / "main.moss").write_text(
+        "module unimported_app\nfn main():\n  echo 0\n", encoding="utf-8")
     provider_build = run([margo, "build", "--json"],
                          {**base_env, "MOSS": compiler}, provider_project)
     provider_build_response = json.loads(provider_build.stdout)

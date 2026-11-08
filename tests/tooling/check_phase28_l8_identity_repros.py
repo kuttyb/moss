@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import shutil
+import shlex
 import subprocess
 import sys
 
@@ -116,6 +117,13 @@ def main() -> int:
     out.mkdir()
     failures: list[str] = []
     try:
+        remap_binary = out / "checked-spec-id-remap"
+        run([*shlex.split(os.environ.get("CXX", "g++")), "-std=c++17",
+             "-DMOSS_TEST_BUILD=1", "-I", str(ROOT / "src"),
+             str(ROOT / "tests/tooling/check_phase28_spec_id_remap.cpp"),
+             "-o", str(remap_binary)])
+        run([str(remap_binary)])
+        print("PASS imported SpecId remap: unused rows and referenced-ID corruption")
         run_generic_grid(compiler, out, failures)
         provider = out / "mossi_provider"
         consumer = out / "mossi_consumer"
