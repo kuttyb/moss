@@ -190,9 +190,13 @@
         view_method_ = true;
         const bool saved_phase21_result_context = phase21_result_context_;
         phase21_result_context_ = raises;
-        gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
+        const SpecId method_body_spec_id = checked_method_body_spec_id(method);
+        gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2,
+                  false, true, functional_method_context(t, method),
+                  method_body_spec_id);
         if (method.result_expression) {
-          auto pipeline = method.result_functional_pipeline_ids.find(method.spec_id);
+          auto pipeline = method.result_functional_pipeline_ids.find(
+              method_body_spec_id);
           o << "        ";
           if (raises) o << "Ok(";
           o << expr(*method.result_expression, &receiver, locals, &types,
