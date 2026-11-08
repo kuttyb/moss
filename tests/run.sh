@@ -78,6 +78,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_nominal_identity.p
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_field_visibility.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_team_a_semantics.py "$compiler"
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase25_typed_semantic_api.py "$compiler"
+PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase28_domain_handler_specids.py
 ${CXX:-c++} -std=c++17 -Wall -Wextra -pedantic -Wno-missing-field-initializers -Werror -Isrc \
   tests/tooling/check_phase28_spec_id_remap.cpp -o "$test_build/check_phase28_spec_id_remap"
 "$test_build/check_phase28_spec_id_remap"
