@@ -37633,6 +37633,138 @@ class Checker {
     record_active_expression_facts(std::move(facts));
   }
 
+  void retain_exact_nested_message_edge(
+      int line, const string& receiver, const string& handler_name,
+      const vector<string>& arguments, const TypeEnv& env,
+      const Handler& checked_handler) {
+    if (active_est_expression_cursors_.empty() ||
+        !active_est_expression_cursors_.back() ||
+        current_spec_id_ == InvalidSpecId)
+      err(line, "checked nested message has no exact caller EST owner",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto cursor = *active_est_expression_cursors_.back();
+    auto* arena = expression_arena(cursor.arena_index);
+    if (!arena || cursor.expr >= arena->size())
+      err(line, "checked nested message has an invalid EST occurrence",
+          "MOSS_INTERNAL_INVARIANT");
+    const est::ExprId message_id = est::unparenthesized(*arena, cursor.expr);
+    const auto* message = std::get_if<est::Message>(&arena->at(message_id));
+    const auto* target_name = message && message->target < arena->size()
+        ? std::get_if<est::Identifier>(&arena->at(message->target)) : nullptr;
+    if (!message || !target_name || target_name->name != receiver ||
+        message->handler != handler_name ||
+        message->arguments.size() != arguments.size())
+      err(line, "checked nested message disagrees with its exact EST occurrence",
+          "MOSS_INTERNAL_INVARIANT");
+
+    const auto receiver_type = env.find(receiver);
+    const auto target_domain = receiver_type == env.end()
+        ? domains_.end()
+        : domains_.find(canonical_type_name(receiver_type->second));
+    if (target_domain == domains_.end())
+      err(line, "checked nested message has no resolved domain declaration",
+          "MOSS_INTERNAL_INVARIANT");
+    std::size_t handler_index = 0;
+    std::size_t handler_matches = 0;
+    for (std::size_t index = 0;
+         index < target_domain->second->handlers.size(); ++index) {
+      if (&target_domain->second->handlers[index] != &checked_handler) continue;
+      handler_index = index;
+      ++handler_matches;
+    }
+    if (handler_matches != 1)
+      err(line, "checked nested message target is not one declared handler",
+          "MOSS_INTERNAL_INVARIANT");
+    SpecId target_spec_id = checked_handler.spec_id;
+    if (const auto* instance = domain_specialization_for(receiver, env)) {
+      if (handler_index >= instance->handler_spec_ids.size() ||
+          instance->handler_spec_ids[handler_index] == InvalidSpecId)
+        err(line, "checked nested message target has no instance handler SpecId",
+            "MOSS_INTERNAL_INVARIANT");
+      target_spec_id = instance->handler_spec_ids[handler_index];
+    }
+    if (target_spec_id == InvalidSpecId ||
+        target_spec_id >= p_.specialization_table.size())
+      err(line, "checked nested message target has an invalid handler SpecId",
+          "MOSS_INTERNAL_INVARIANT");
+
+    vector<SemanticCallEdge*> occurrence_rows;
+    for (auto& edge : p_.semantic_call_edges)
+      if (edge.invocation_kind == "synchronous_message" &&
+          edge.message_est_arena_index == cursor.arena_index &&
+          edge.message_expression_occurrence_id == message_id &&
+          edge.receiver_expression_occurrence_id == message->target)
+        occurrence_rows.push_back(&edge);
+    vector<SemanticCallEdge*> caller_rows;
+    for (auto* edge : occurrence_rows)
+      if (edge->caller_spec_id == current_spec_id_)
+        caller_rows.push_back(edge);
+    if (caller_rows.size() > 1)
+      err(line, "checked nested message has duplicate caller SpecId rows",
+          "MOSS_INTERNAL_INVARIANT");
+
+    SemanticCallEdge* selected = caller_rows.empty() ? nullptr
+                                                     : caller_rows.front();
+    if (!selected) {
+      SemanticCallEdge* source_row = nullptr;
+      for (auto* edge : occurrence_rows) {
+        if (edge->caller_spec_id != InvalidSpecId) continue;
+        if (source_row)
+          err(line, "checked nested message has duplicate source occurrence rows",
+              "MOSS_INTERNAL_INVARIANT");
+        source_row = edge;
+      }
+      if (!source_row && !occurrence_rows.empty())
+        source_row = occurrence_rows.front();
+      if (!source_row)
+        err(line, "checked nested message has no checker-produced source edge",
+            "MOSS_INTERNAL_INVARIANT");
+      if (source_row->target != "handler:" + target_domain->second->name +
+                                    "." + handler_name ||
+          source_row->receiver != receiver)
+        err(line, "checked nested message source edge contradicts its resolved target",
+            "MOSS_INTERNAL_INVARIANT");
+      if (source_row->caller_spec_id == InvalidSpecId) {
+        selected = source_row;
+      } else {
+        p_.semantic_call_edges.push_back(*source_row);
+        selected = &p_.semantic_call_edges.back();
+      }
+    }
+
+    auto& edge = *selected;
+    const string expected_target =
+        "handler:" + target_domain->second->name + "." + handler_name;
+    const string expected_callable =
+        p_.specialization_table[target_spec_id].semantic_callable_identity;
+    if (edge.target != expected_target || edge.receiver != receiver ||
+        edge.invocation_kind != "synchronous_message" ||
+        edge.message_est_arena_index != cursor.arena_index ||
+        edge.message_expression_occurrence_id != message_id ||
+        edge.receiver_expression_occurrence_id != message->target ||
+        (!edge.target_callable_identity.empty() &&
+         edge.target_callable_identity != expected_callable) ||
+        (edge.callee_spec_id != InvalidSpecId &&
+         edge.callee_spec_id != target_spec_id))
+      err(line, "checked nested message edge has contradictory target authority",
+          "MOSS_INTERNAL_INVARIANT");
+    edge.source = current_semantic_context_;
+    edge.caller_spec_id = current_spec_id_;
+    edge.callee_spec_id = target_spec_id;
+    edge.target_kind = SemanticCallTargetKind::Static;
+    edge.target_callable_identity = expected_callable;
+    edge.target_module_identity = program_module_identity(
+        p_, target_domain->second->defining_module);
+    edge.line = line;
+    edge.source_file = current_source_file_;
+    edge.argument_types.clear();
+    for (const auto& argument : arguments)
+      edge.argument_types.push_back(
+          inferred_expr_type(argument, env).value_or(""));
+    edge.call_est_arena_index = cursor.arena_index;
+    edge.call_expression_occurrence_id = message_id;
+  }
+
   void check_expression(int line, const string& expression,
                         const std::unordered_map<string,string>& env,
                         std::string_view root_slot = {},
@@ -38141,6 +38273,8 @@ class Checker {
       for (size_t index = 0; index < args.size(); ++index)
         check_expression(line, args[index], env, {},
                          "argument:" + std::to_string(index));
+      retain_exact_nested_message_edge(line, receiver, handler, args, env,
+                                       *target);
       return;
     }
     if (auto syntax = checker_est_view(original); syntax &&
