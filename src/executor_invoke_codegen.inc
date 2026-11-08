@@ -217,8 +217,6 @@ string root_ingress_message(const string& receiver, const string& handler,
     if (index < occurrence.argument_expressions.size() &&
         p_.typed_semantics) {
       const auto argument_id = occurrence.argument_expressions[index];
-      const auto context = codegen_body_context_.empty()
-          ? string("main") : codegen_body_context_;
       const auto statement_id = phase21_codegen_statement_
           ? phase21_codegen_statement_->checked_statement_occurrence_id
           : UINT32_MAX;
@@ -233,7 +231,7 @@ string root_ingress_message(const string& receiver, const string& handler,
                 requirement.argument_index == index &&
                 requirement.argument_expression_occurrence_id == argument_id &&
                 requirement.source_fingerprint == occurrence.source_fingerprint &&
-                requirement.specialization_context == context;
+                requirement.specialization_id == codegen_body_spec_id_;
           });
       if (checker_requires_transfer)
         payload_fact = &resolve_root_ingress_payload_fact(

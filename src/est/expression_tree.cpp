@@ -46,7 +46,13 @@ void Arena::record_facts(ExprId id, std::uint32_t specialization_id,
   if (id >= nodes_.size())
     throw std::out_of_range("EST semantic facts refer to an unknown ExprId");
   facts.specialization_id = specialization_id;
-  auto& destination = semantic_facts_[FactKey{id, specialization_id}];
+  auto [position, inserted] = semantic_facts_.try_emplace(
+      FactKey{id, specialization_id});
+  auto& destination = position->second;
+  if (!inserted && destination.specialization_id != specialization_id)
+    throw std::invalid_argument(
+        "existing EST semantic fact payload disagrees with its SpecId key");
+  destination.specialization_id = specialization_id;
   if (facts.type) destination.type = std::move(facts.type);
   if (!facts.specialization_result.empty())
     destination.specialization_result =
@@ -65,6 +71,45 @@ const SemanticFacts* Arena::facts(ExprId id,
   auto found = semantic_facts_.find(FactKey{id, specialization_id});
   return found == semantic_facts_.end() ? nullptr : &found->second;
 }
+
+void Arena::remap_specialization_ids(
+    const std::unordered_map<std::uint32_t, std::uint32_t>& remap) {
+  std::unordered_map<FactKey, SemanticFacts, FactKeyHash> rewritten;
+  rewritten.reserve(semantic_facts_.size());
+  for (const auto& entry : semantic_facts_) {
+    const auto source_id = entry.first.specialization_id;
+    std::uint32_t destination_id = source_id;
+    if (source_id != UINT32_MAX) {
+      const auto found = remap.find(source_id);
+      if (found == remap.end() || found->second == UINT32_MAX)
+        throw std::invalid_argument(
+            "EST semantic fact references an unknown imported SpecId");
+      destination_id = found->second;
+    }
+    if (entry.second.specialization_id != source_id)
+      throw std::invalid_argument(
+          "EST semantic fact payload disagrees with its SpecId key");
+    auto facts = entry.second;
+    facts.specialization_id = destination_id;
+    if (!rewritten.emplace(FactKey{entry.first.expression, destination_id},
+                           std::move(facts)).second)
+      throw std::invalid_argument(
+          "duplicate EST semantic facts after imported SpecId remap");
+  }
+  semantic_facts_ = std::move(rewritten);
+}
+
+#ifdef MOSS_TEST_BUILD
+std::vector<std::uint32_t> Arena::test_fact_specialization_ids(
+    ExprId id) const {
+  std::vector<std::uint32_t> result;
+  for (const auto& entry : semantic_facts_)
+    if (entry.first.expression == id)
+      result.push_back(entry.first.specialization_id);
+  std::sort(result.begin(), result.end());
+  return result;
+}
+#endif
 
 #ifdef MOSS_TEST_BUILD
 void Arena::test_mutate_call_targets(bool drop) {
@@ -2496,6 +2541,39 @@ static void populate_impl(Program& program, std::vector<Stmt>* additional,
     // Query under an unrelated context returns nullptr.
     assert(!arena.facts(same_a, 19));
     assert(!arena.facts(same_a, 20));
+    Arena remap_arena;
+    const auto remap_expr = parse_expression(remap_arena, "item.field");
+    SemanticFacts provider_int_facts;
+    provider_int_facts.type = *parsed_fact_type;
+    remap_arena.record_facts(remap_expr, int_spec_id, provider_int_facts);
+    SemanticFacts provider_string_facts;
+    provider_string_facts.type = *parsed_string_type;
+    remap_arena.record_facts(remap_expr, string_spec_id, provider_string_facts);
+    std::unordered_map<std::uint32_t, std::uint32_t> imported_spec_ids{
+        {int_spec_id, 117}, {string_spec_id, 118}};
+    remap_arena.remap_specialization_ids(imported_spec_ids);
+    assert(!remap_arena.facts(remap_expr, int_spec_id) &&
+           !remap_arena.facts(remap_expr, string_spec_id) &&
+           remap_arena.facts(remap_expr, 117) &&
+           remap_arena.facts(remap_expr, 117)->specialization_id == 117 &&
+           remap_arena.facts(remap_expr, 118) &&
+           remap_arena.facts(remap_expr, 118)->specialization_id == 118);
+    bool missing_remap_rejected = false;
+    try {
+      remap_arena.remap_specialization_ids({{117, 217}});
+    } catch (const std::invalid_argument&) {
+      missing_remap_rejected = true;
+    }
+    assert(missing_remap_rejected && remap_arena.facts(remap_expr, 117) &&
+           remap_arena.facts(remap_expr, 118));
+    bool duplicate_remap_rejected = false;
+    try {
+      remap_arena.remap_specialization_ids({{117, 217}, {118, 217}});
+    } catch (const std::invalid_argument&) {
+      duplicate_remap_rejected = true;
+    }
+    assert(duplicate_remap_rejected && remap_arena.facts(remap_expr, 117) &&
+           remap_arena.facts(remap_expr, 118));
     Program copied_with_facts = copied;
     assert(copied_with_facts.expression_arena == program.expression_arena &&
            copied_with_facts.expression_arena->facts(

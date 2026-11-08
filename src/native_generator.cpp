@@ -240,11 +240,17 @@ class Generator {
     TypedSemanticModuleV1* test_semantic_facts = semantic_program.typed_semantics
         ? semantic_program.typed_semantics.get()
         : p_.typed_semantics.get();
-    const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    std::optional<SpecId> target_spec_id;
+    if (const char* raw = std::getenv("MOSS_TEST_TARGET_SPEC_ID")) {
+      const auto parsed = std::stoul(raw);
+      if (parsed >= InvalidSpecId)
+        throw std::invalid_argument("MOSS_TEST_TARGET_SPEC_ID is out of range");
+      target_spec_id = static_cast<SpecId>(parsed);
+    }
     auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -252,8 +258,8 @@ class Generator {
     };
     auto find_target_req = [&](std::vector<TypedLocalOwnershipRequirementV1>& reqs) -> TypedLocalOwnershipRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -261,18 +267,17 @@ class Generator {
     };
     auto find_target_copy_fact = [&](std::vector<TypedCopyFactV1>& facts) -> TypedCopyFactV1* {
       for (auto& fact : facts) {
-        if (!fact.specialization_identity.empty() &&
-            (!target_spec ||
-             fact.specialization_context.find(target_spec) != std::string::npos))
+        if (fact.specialization_id != InvalidSpecId &&
+            (!target_spec_id || fact.specialization_id == *target_spec_id))
           return &fact;
       }
       return facts.empty() ? nullptr : &facts.front();
     };
     auto find_target_copy_req = [&](std::vector<TypedCopyRequirementV1>& reqs) -> TypedCopyRequirementV1* {
       for (auto& requirement : reqs) {
-        if (!requirement.specialization_identity.empty() &&
-            (!target_spec ||
-             requirement.specialization_context.find(target_spec) != std::string::npos))
+        if (requirement.specialization_id != InvalidSpecId &&
+            (!target_spec_id ||
+             requirement.specialization_id == *target_spec_id))
           return &requirement;
       }
       return reqs.empty() ? nullptr : &reqs.front();
@@ -323,10 +328,10 @@ class Generator {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
       if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
-        if (target_spec) {
+        if (target_spec_id) {
           for (auto it = test_semantic_facts->local_ownership_facts.begin();
                it != test_semantic_facts->local_ownership_facts.end(); ++it) {
-            if (it->specialization_context.find(target_spec) != std::string::npos) {
+            if (it->specialization_id == *target_spec_id) {
               test_semantic_facts->local_ownership_facts.erase(it);
               break;
             }
@@ -340,7 +345,7 @@ class Generator {
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SPECIALIZATION_ID")) {
       if (test_semantic_facts && !test_semantic_facts->local_ownership_facts.empty()) {
         if (auto* fact = find_target_fact(test_semantic_facts->local_ownership_facts)) {
-          fact->specialization_identity = "perturbed-specialization-id";
+          fact->specialization_id = InvalidSpecId;
         }
       }
     }
@@ -368,8 +373,8 @@ class Generator {
 
     auto find_target_loop_fact = [&](std::vector<TypedLoopOwnershipFactV1>& facts) -> TypedLoopOwnershipFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -377,8 +382,8 @@ class Generator {
     };
     auto find_target_loop_req = [&](std::vector<TypedLoopOwnershipRequirementV1>& reqs) -> TypedLoopOwnershipRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -401,10 +406,10 @@ class Generator {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_LOOP_RECORD")) {
       if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
-        if (target_spec) {
+        if (target_spec_id) {
           for (auto it = p_.typed_semantics->loop_ownership_facts.begin();
                it != p_.typed_semantics->loop_ownership_facts.end(); ++it) {
-            if (it->specialization_context.find(target_spec) != std::string::npos) {
+            if (it->specialization_id == *target_spec_id) {
               p_.typed_semantics->loop_ownership_facts.erase(it);
               break;
             }
@@ -438,15 +443,15 @@ class Generator {
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOOP_SPECIALIZATION_ID")) {
       if (p_.typed_semantics && !p_.typed_semantics->loop_ownership_facts.empty()) {
         if (auto* fact = find_target_loop_fact(p_.typed_semantics->loop_ownership_facts)) {
-          fact->specialization_identity = "perturbed-loop-spec-id";
+          fact->specialization_id = InvalidSpecId;
         }
       }
     }
 
     auto find_target_ex_fact = [&](std::vector<TypedExceptionalOwnershipFactV1>& facts) -> TypedExceptionalOwnershipFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -454,8 +459,8 @@ class Generator {
     };
     auto find_target_ex_req = [&](std::vector<TypedExceptionalOwnershipRequirementV1>& reqs) -> TypedExceptionalOwnershipRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -478,10 +483,10 @@ class Generator {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")) {
       if (p_.typed_semantics && !p_.typed_semantics->exceptional_ownership_facts.empty()) {
-        if (target_spec) {
+        if (target_spec_id) {
           for (auto it = p_.typed_semantics->exceptional_ownership_facts.begin();
                it != p_.typed_semantics->exceptional_ownership_facts.end(); ++it) {
-            if (it->specialization_context.find(target_spec) != std::string::npos) {
+            if (it->specialization_id == *target_spec_id) {
               p_.typed_semantics->exceptional_ownership_facts.erase(it);
               break;
             }
@@ -552,8 +557,8 @@ class Generator {
 
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -561,8 +566,8 @@ class Generator {
     };
     auto find_target_take_req = [&](std::vector<TypedTakeRequirementV1>& reqs) -> TypedTakeRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -611,7 +616,7 @@ class Generator {
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_TAKE_SPECIALIZATION_ID")) {
       if (p_.typed_semantics && !p_.typed_semantics->take_facts.empty()) {
         if (auto* fact = find_target_take_fact(p_.typed_semantics->take_facts)) {
-          fact->specialization_identity = "perturbed-specialization-id";
+          fact->specialization_id = InvalidSpecId;
         }
       }
     }
@@ -624,33 +629,36 @@ class Generator {
     }
     if (auto* target_arena_env = std::getenv("MOSS_TEST_TARGET_ARENA")) {
       auto* target_expr_env = std::getenv("MOSS_TEST_TARGET_EXPR");
-      auto* target_context_env = std::getenv("MOSS_TEST_TARGET_CONTEXT");
+      auto* target_spec_env = std::getenv("MOSS_TEST_TARGET_SPEC_ID");
       auto* mutation_env = std::getenv("MOSS_TEST_TARGET_MUTATION");
-      if (target_expr_env && target_context_env && mutation_env) {
+      if (target_expr_env && target_spec_env && mutation_env) {
         size_t arena_idx = std::stoull(target_arena_env);
         est::ExprId expr_id = std::stoull(target_expr_env);
-        string ctx = target_context_env;
+        const auto parsed_spec = std::stoul(target_spec_env);
+        if (parsed_spec >= InvalidSpecId)
+          throw std::runtime_error("MOSS_TEST_TARGET_SPEC_ID is out of range");
+        const SpecId spec_id = static_cast<SpecId>(parsed_spec);
         string mut = mutation_env;
         if (arena_idx < p_.expression_arenas.size() && p_.expression_arenas[arena_idx]) {
           auto& arena = *p_.expression_arenas[arena_idx];
           if (mut == "drop_fact") {
-            arena.test_drop_occurrence_fact(expr_id, ctx);
+            arena.test_drop_occurrence_fact(expr_id, spec_id);
           } else if (mut == "drop_effect") {
-            arena.test_drop_occurrence_effect(expr_id, ctx);
+            arena.test_drop_occurrence_effect(expr_id, spec_id);
           } else if (mut == "perturb_effect") {
-            arena.test_perturb_occurrence_effect(expr_id, ctx);
+            arena.test_perturb_occurrence_effect(expr_id, spec_id);
           } else if (mut == "drop_target") {
-            arena.test_mutate_occurrence_target(expr_id, ctx, "");
+            arena.test_mutate_occurrence_target(expr_id, spec_id, "");
           } else if (mut == "perturb_target") {
-            arena.test_mutate_occurrence_target(expr_id, ctx, "fn:__moss_test_perturbed_target__");
+            arena.test_mutate_occurrence_target(expr_id, spec_id, "fn:__moss_test_perturbed_target__");
           } else if (mut == "corrupt_type") {
-            arena.test_mutate_occurrence_type(expr_id, ctx, Type::primitive("bool"));
+            arena.test_mutate_occurrence_type(expr_id, spec_id, Type::primitive("bool"));
           } else if (mut == "corrupt_specialization") {
-            arena.test_mutate_occurrence_specialization(expr_id, ctx, "fn:__moss_test_wrong_spec__");
+            arena.test_mutate_occurrence_specialization(expr_id, spec_id, "fn:__moss_test_wrong_spec__");
           }
           if (auto* sibling_env = std::getenv("MOSS_TEST_ISOLATION_SIBLING_EXPR")) {
             est::ExprId sibling_id = std::stoull(sibling_env);
-            const auto* sibling_facts = arena.facts(sibling_id, ctx);
+            const auto* sibling_facts = arena.facts(sibling_id, spec_id);
             if (!sibling_facts || !sibling_facts->inferred_effect) {
               throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector isolation violated: sibling facts corrupted");
             }
@@ -709,9 +717,7 @@ class Generator {
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
-      for (const auto& arena : p_.expression_arenas) {
-        if (arena) arena->test_perturb_specialization_identity("specialization-v2:sha256:corrupted_wrong_key");
-      }
+      throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector specialization perturbation requires an exact call-edge mutation hook");
     }
 #endif
   }
@@ -1101,7 +1107,133 @@ class Generator {
   std::set<string> phase21_option_slots_;
   const Stmt* phase21_codegen_statement_ = nullptr;
   const vector<est::Handle>* active_functional_expression_handles_ = nullptr;
-  string codegen_body_context_;
+  struct NativeEstCursor {
+    const est::Arena* arena = nullptr;
+    std::uint32_t arena_index = UINT32_MAX;
+    est::ExprId expression = UINT32_MAX;
+  };
+  mutable const NativeEstCursor* active_native_est_cursor_ = nullptr;
+  struct NativeEstCursorScope {
+    const NativeEstCursor*& slot;
+    const NativeEstCursor* prior;
+    NativeEstCursorScope(const NativeEstCursor*& target,
+                         const NativeEstCursor* current)
+        : slot(target), prior(target) { slot = current; }
+    ~NativeEstCursorScope() { slot = prior; }
+  };
+  NativeEstCursor checked_statement_cursor(
+      const Stmt& statement, est::ExprSlot slot,
+      std::uint32_t argument_index = 0) const {
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if (handle.slot != slot || handle.argument_index != argument_index)
+        continue;
+      if (selected)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT duplicate Native statement EST handle");
+      selected = &handle;
+    }
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!selected || selected->arena_index >=
+            checked_program.expression_arenas.size() ||
+        !checked_program.expression_arenas[selected->arena_index] ||
+        selected->expr >= checked_program.expression_arenas[
+            selected->arena_index]->size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Native statement EST handle is missing or invalid");
+    return {checked_program.expression_arenas[selected->arena_index].get(),
+            selected->arena_index, selected->expr};
+  }
+
+  static std::vector<est::ExprId> native_syntax_children(
+      const est::Arena& arena, est::ExprId expression) {
+    if (expression >= arena.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Native EST child traversal has invalid ExprId");
+    std::vector<est::ExprId> result;
+    std::visit([&](const auto& node) {
+      using T = std::decay_t<decltype(node)>;
+      auto child = [&](est::ExprId id) { result.push_back(id); };
+      auto children = [&](const auto& ids) {
+        result.insert(result.end(), ids.begin(), ids.end());
+      };
+      if constexpr (std::is_same_v<T, est::Unary>) child(node.operand);
+      else if constexpr (std::is_same_v<T, est::Binary>) {
+        child(node.left); child(node.right);
+      } else if constexpr (std::is_same_v<T, est::Call>) {
+        child(node.callee); children(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::Take>) children(node.arguments);
+      else if constexpr (std::is_same_v<T, est::Member>) child(node.base);
+      else if constexpr (std::is_same_v<T, est::Index>) {
+        child(node.base); child(node.index);
+      } else if constexpr (std::is_same_v<T, est::Parenthesized>) child(node.inner);
+      else if constexpr (std::is_same_v<T, est::Message>) {
+        child(node.target); children(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::NamedArgument>) child(node.value);
+      else if constexpr (std::is_same_v<T, est::Collection> ||
+                         std::is_same_v<T, est::Tuple>) children(node.elements);
+      else if constexpr (std::is_same_v<T, est::Constructor>) {
+        child(node.type); children(node.type_arguments); children(node.arguments);
+      } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+        child(node.input); children(node.stages);
+      }
+    }, arena.at(expression));
+    return result;
+  }
+
+  static std::optional<NativeEstCursor> native_call_argument_cursor(
+      const NativeEstCursor* parent, std::size_t argument) {
+    if (!parent || !parent->arena || parent->expression >= parent->arena->size())
+      return std::nullopt;
+    const auto call_id = est::unparenthesized(*parent->arena,
+                                              parent->expression);
+    const auto* call = std::get_if<est::Call>(&parent->arena->at(call_id));
+    if (!call || argument >= call->arguments.size()) return std::nullopt;
+    const auto children = native_syntax_children(*parent->arena, call_id);
+    if (children.size() != call->arguments.size() + 1 ||
+        children[argument + 1] != call->arguments[argument])
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Native EST Call child order is contradictory");
+    return NativeEstCursor{parent->arena, parent->arena_index,
+                            call->arguments[argument]};
+  }
+
+  static std::optional<NativeEstCursor> native_member_receiver_cursor(
+      const NativeEstCursor* parent) {
+    if (!parent || !parent->arena || parent->expression >= parent->arena->size())
+      return std::nullopt;
+    auto root = est::unparenthesized(*parent->arena, parent->expression);
+    if (const auto* call = std::get_if<est::Call>(&parent->arena->at(root))) {
+      auto callee = est::unparenthesized(*parent->arena, call->callee);
+      if (const auto* member =
+              std::get_if<est::Member>(&parent->arena->at(callee)))
+        return NativeEstCursor{parent->arena, parent->arena_index,
+                               member->base};
+      return std::nullopt;
+    }
+    if (const auto* member =
+            std::get_if<est::Member>(&parent->arena->at(root)))
+      return NativeEstCursor{parent->arena, parent->arena_index,
+                             member->base};
+    return std::nullopt;
+  }
+
+  static std::optional<NativeEstCursor> native_member_method_call_cursor(
+      const NativeEstCursor* parent) {
+    if (!parent || !parent->arena || parent->expression >= parent->arena->size())
+      return std::nullopt;
+    const auto root = est::unparenthesized(*parent->arena, parent->expression);
+    const auto& node = parent->arena->at(root);
+    if (std::holds_alternative<est::Call>(node))
+      return NativeEstCursor{parent->arena, parent->arena_index, root};
+    if (const auto* member = std::get_if<est::Member>(&node)) {
+      const NativeEstCursor base{parent->arena, parent->arena_index,
+                                 member->base};
+      return native_member_method_call_cursor(&base);
+    }
+    return std::nullopt;
+  }
+  SpecId codegen_body_spec_id_ = InvalidSpecId;
   string codegen_active_specialization_key_;
   mutable std::map<string, string> generated_copy_helper_fact_ids_;
   const FunctionSpecialization* codegen_result_specialization_ = nullptr;
@@ -1237,8 +1369,8 @@ class Generator {
           candidate.operation_expression_occurrence_id ==
               requirement.operation_expression_occurrence_id &&
           candidate.statement_occurrence_id == requirement.statement_occurrence_id &&
-          candidate.specialization_identity == requirement.specialization_identity &&
-          candidate.specialization_context == requirement.specialization_context) {
+          candidate.specialization_id == requirement.specialization_id &&
+          candidate.specialization_id == requirement.specialization_id) {
         ++requirement_count;
       }
     }
@@ -1250,8 +1382,8 @@ class Generator {
           candidate.operation_expression_occurrence_id ==
               requirement.operation_expression_occurrence_id &&
           candidate.statement_occurrence_id == requirement.statement_occurrence_id &&
-          candidate.specialization_identity == requirement.specialization_identity &&
-          candidate.specialization_context == requirement.specialization_context) {
+          candidate.specialization_id == requirement.specialization_id &&
+          candidate.specialization_id == requirement.specialization_id) {
         ++fact_count;
       }
     }
@@ -1292,6 +1424,7 @@ class Generator {
 
   const TypedReturnValueFactV1* resolve_return_value_fact(
       const Stmt& statement, const string& functional_context) const {
+    (void)functional_context;  // Kept only for diagnostics at legacy call sites.
     const auto* typed_semantics = semantic_program_ &&
             semantic_program_->typed_semantics
         ? semantic_program_->typed_semantics.get()
@@ -1312,208 +1445,31 @@ class Generator {
             "MOSS_INTERNAL_INVARIANT duplicate checked return-value handle");
       handle = &candidate;
     }
-    if (!handle && statement.checked_statement_occurrence_id != UINT32_MAX) {
-      string callable = functional_context;
-      const auto specialization_suffix = callable.find('<');
-      if (specialization_suffix != string::npos)
-        callable.resize(specialization_suffix);
-      const string function_name = starts_with(callable, "fn:")
-          ? callable.substr(3) : string();
-      const Function* owner = nullptr;
-      size_t owner_count = 0;
-      for (const auto& candidate : checked_program.functions)
-        if (!function_name.empty() && candidate.name == function_name) {
-          owner = &candidate;
-          ++owner_count;
-        }
-      if (owner_count == 1 && owner) {
-        vector<const est::Handle*> exact_handles;
-        for (const auto& candidate : owner->body)
-          if ((candidate.kind == Stmt::Kind::Return ||
-               candidate.kind == Stmt::Kind::Reply) &&
-              candidate.checked_statement_occurrence_id ==
-                  statement.checked_statement_occurrence_id &&
-              candidate.line == statement.line &&
-              (statement.source_file.empty() || candidate.source_file.empty() ||
-               candidate.source_file == statement.source_file))
-            for (const auto& candidate_handle : candidate.expression_handles)
-              if (candidate_handle.slot == est::ExprSlot::ReturnValue &&
-                  candidate_handle.argument_index == 0)
-                exact_handles.push_back(&candidate_handle);
-        if (exact_handles.size() == 1) handle = exact_handles.front();
-        else if (exact_handles.size() > 1)
-          throw std::runtime_error(
-              "MOSS_INTERNAL_INVARIANT ambiguous canonical checked return-value handle");
-      }
-    }
     if (!handle || handle->arena_index >= checked_program.expression_arenas.size() ||
         !checked_program.expression_arenas[handle->arena_index])
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked return-value EST handle missing");
-    const string context = functional_context.empty() ? "main" : functional_context;
-    string query_context = context;
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT"))
-      query_context += ":wrong-context";
-#endif
-    const string specialization = codegen_active_specialization_key_;
-    string callable_context = context;
-    const auto callable_suffix = callable_context.find('<');
-    if (callable_suffix != string::npos)
-      callable_context.resize(callable_suffix);
-    if (starts_with(callable_context, "handler:")) {
-      const auto failure_arm = callable_context.find(":on_fail:");
-      const auto source_line = callable_context.rfind('@');
-      const auto failure_index = failure_arm == string::npos
-          ? string::npos : failure_arm + 8;
-      const auto numeric_suffix = [&](std::size_t start) {
-        return start != string::npos && start + 1 < callable_context.size() &&
-            std::all_of(callable_context.begin() + start + 1,
-                        callable_context.end(),
-                        [](unsigned char ch) { return std::isdigit(ch); });
-      };
-      if (numeric_suffix(failure_index)) {
-        callable_context.resize(failure_arm);
-        query_context = callable_context;
-      } else if (numeric_suffix(source_line)) {
-        callable_context.resize(source_line);
-        query_context = callable_context;
-      }
-    }
-    string query_specialization = specialization;
+    if (codegen_body_spec_id_ == InvalidSpecId ||
+        codegen_body_spec_id_ >= checked_program.specialization_table.size() ||
+        checked_program.specialization_table[codegen_body_spec_id_].id !=
+            codegen_body_spec_id_)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT ReturnValue owner SpecId is missing or contradictory");
+    const auto& owner_identity =
+        checked_program.specialization_table[codegen_body_spec_id_];
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
-      query_specialization += ":wrong-specialization";
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT ReturnValue SpecId was perturbed");
 #endif
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      string callable = callable_context;
-      if (starts_with(callable, "fn:")) callable.erase(0, 3);
-      if (starts_with(callable_context, "fn:")) {
-        const Function* owner = nullptr;
-        size_t owner_count = 0;
-        for (const auto& function : checked_program.functions)
-          if (function.name == callable) {
-            owner = &function;
-            ++owner_count;
-          }
-        if (owner_count != 1 || !owner) return false;
-        const string module = module_name_from_symbol(owner->name);
-        if (module.empty() || !checked_program.external_modules.count(module))
-          return false;
-        const auto module_identity = checked_program.module_identities.find(module);
-        return module_identity != checked_program.module_identities.end() &&
-            !module_identity->second.empty() &&
-            candidate.provenance.defining_module_id == module_identity->second &&
-            candidate.provenance.enclosing_callable_id == callable_context &&
-            !statement.source_file.empty() &&
-            candidate.provenance.source_file == statement.source_file;
-      }
-
-      if (starts_with(callable_context, "handler:")) {
-        const string identity = callable_context.substr(8);
-        const auto separator = identity.rfind('.');
-        if (separator == string::npos || separator == 0 ||
-            separator + 1 >= identity.size()) return false;
-        string domain_identity = identity.substr(0, separator);
-        const string handler_name = identity.substr(separator + 1);
-#ifdef MOSS_TEST_BUILD
-        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_OWNER"))
-          domain_identity += ":wrong-owner";
-#endif
-        const Domain* owner_domain = nullptr;
-        size_t domain_count = 0;
-        for (const auto& domain : checked_program.domains)
-          if (domain.name == domain_identity) {
-            owner_domain = &domain;
-            ++domain_count;
-          }
-        if (domain_count != 1 || !owner_domain) return false;
-        const Handler* owner_handler = nullptr;
-        size_t handler_count = 0;
-        for (const auto& handler : owner_domain->handlers)
-          if (handler.name == handler_name) {
-            owner_handler = &handler;
-            ++handler_count;
-          }
-        if (handler_count != 1 || !owner_handler ||
-            !owner_handler->reply_type || !candidate.expression_type ||
-            candidate.expression_type->to_canonical_string() !=
-                *owner_handler->reply_type) return false;
-        const string module = module_name_from_symbol(owner_domain->name);
-        if (module.empty() || !checked_program.external_modules.count(module))
-          return false;
-        const auto module_identity = checked_program.module_identities.find(module);
-        if (module_identity == checked_program.module_identities.end() ||
-            module_identity->second.empty() ||
-            candidate.provenance.defining_module_id != module_identity->second)
-          return false;
-#ifdef MOSS_TEST_BUILD
-        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_MODULE") ||
-            std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_HANDLER_TYPE"))
-          return false;
-        string source_file = statement.source_file;
-        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_SOURCE"))
-          source_file += ":wrong-source";
-#else
-        const string& source_file = statement.source_file;
-#endif
-        return !source_file.empty() &&
-            candidate.provenance.enclosing_callable_id == callable_context &&
-            candidate.provenance.source_file == source_file;
-      }
-
-      const string method_prefix = "method:";
-      if (!starts_with(callable_context, method_prefix)) return false;
-      const string method_identity = callable_context.substr(method_prefix.size());
-      const auto separator = method_identity.rfind('.');
-      if (separator == string::npos || separator == 0 ||
-          separator + 1 >= method_identity.size()) return false;
-      string object_identity = method_identity.substr(0, separator);
-      const string method_name = method_identity.substr(separator + 1);
-#ifdef MOSS_TEST_BUILD
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_OWNER"))
-        object_identity += ":wrong-owner";
-#endif
-      const ObjectType* owner_object = nullptr;
-      size_t object_count = 0;
-      for (const auto& object : checked_program.objects)
-        if (object.name == object_identity) {
-          owner_object = &object;
-          ++object_count;
-        }
-      if (object_count != 1 || !owner_object) return false;
-      const Method* owner_method = nullptr;
-      size_t method_count = 0;
-      for (const auto& method : owner_object->methods)
-        if (method.name == method_name && method.owner == owner_object->name) {
-          owner_method = &method;
-          ++method_count;
-        }
-      if (method_count != 1 || !owner_method) return false;
-      const string module = module_name_from_symbol(owner_object->name);
-      if (module.empty() || !checked_program.external_modules.count(module))
-        return false;
-      const auto module_identity = checked_program.module_identities.find(module);
-      if (module_identity == checked_program.module_identities.end() ||
-          module_identity->second.empty() ||
-          candidate.provenance.defining_module_id != module_identity->second)
-        return false;
-#ifdef MOSS_TEST_BUILD
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_MODULE"))
-        return false;
-      string source_file = statement.source_file;
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_SOURCE"))
-        source_file += ":wrong-source";
-#else
-      const string& source_file = statement.source_file;
-#endif
-      return !source_file.empty() &&
-          candidate.provenance.enclosing_callable_id == callable_context &&
-          candidate.provenance.source_file == source_file &&
-          (!owner_method->execution_source_file.empty()
-              ? owner_method->execution_source_file == source_file
-              : true);
+      return candidate.specialization_id == codegen_body_spec_id_ &&
+          !owner_identity.provider_module_identity.empty() &&
+          candidate.provenance.defining_module_id ==
+              owner_identity.provider_module_identity &&
+          !statement.source_file.empty() &&
+          candidate.provenance.source_file == statement.source_file;
     };
     const auto occurrence_span =
         checked_program.expression_arenas[handle->arena_index]->span(handle->expr);
@@ -1537,11 +1493,9 @@ class Generator {
             candidate.expression_occurrence_span.origin_id ==
                 occurrence_span.origin_id)) &&
           candidate.provenance.line == statement.line &&
-          candidate.provenance.enclosing_callable_id == callable_context &&
           (statement.source_file.empty() ||
            candidate.provenance.source_file == statement.source_file) &&
-          candidate.specialization_context == query_context &&
-          candidate.specialization_identity == query_specialization) {
+          candidate.specialization_id == codegen_body_spec_id_) {
         requirement = &candidate;
         ++requirement_count;
       }
@@ -1562,11 +1516,9 @@ class Generator {
             candidate.expression_occurrence_span.origin_id ==
                 occurrence_span.origin_id)) &&
           candidate.provenance.line == statement.line &&
-          candidate.provenance.enclosing_callable_id == callable_context &&
           (statement.source_file.empty() ||
            candidate.provenance.source_file == statement.source_file) &&
-          candidate.specialization_context == query_context &&
-          candidate.specialization_identity == query_specialization)
+          candidate.specialization_id == codegen_body_spec_id_)
         ++fact_count;
     }
 #ifdef MOSS_TEST_BUILD
@@ -1576,16 +1528,6 @@ class Generator {
       ++requirement_count;
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT")) fact_count = 0;
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT")) ++fact_count;
-    if (callable_context.rfind("handler:", 0) == 0) {
-      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_REQUIREMENT"))
-        --requirement_count;
-      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_REQUIREMENT"))
-        ++requirement_count;
-      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_FACT"))
-        fact_count = 0;
-      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_FACT"))
-        ++fact_count;
-    }
 #endif
     if (requirement_count != 1 || fact_count != 1 || !requirement)
       throw std::runtime_error(
@@ -1626,20 +1568,12 @@ class Generator {
       if (requirement->source_free_checked_body_occurrence && std::getenv(
               "MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_EST_CONTEXT")) {
         auto corrupted = *requirement;
-        corrupted.est_fact_context += ":wrong-context";
+        corrupted.specialization_id = InvalidSpecId;
         (void)typed_semantics->find_return_value_fact(corrupted);
         throw std::runtime_error(
             "perturbed source-free ReturnValue EST context unexpectedly passed");
       }
-      if (callable_context.rfind("handler:", 0) == 0 &&
-          std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT")) {
-        auto corrupted = *requirement;
-        corrupted.required_access = corrupted.required_access == Effect::Consume
-            ? Effect::Read : Effect::Consume;
-        (void)typed_semantics->find_return_value_fact(corrupted);
-        throw std::runtime_error(
-            "perturbed imported handler Reply fact unexpectedly passed");
-      }
+
       if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
         auto corrupted = *requirement;
         corrupted.provenance.defining_module_id += ":wrong-module";
@@ -1654,28 +1588,25 @@ class Generator {
       if (fact->source_free_checked_body_occurrence) {
         const Function* owner = nullptr;
         std::size_t owner_count = 0;
-        if (callable_context.rfind("fn:", 0) == 0)
-          for (const auto& candidate : checked_program.functions)
-            if (candidate.name == callable_context.substr(3)) {
-              owner = &candidate;
-              ++owner_count;
-            }
+        for (const auto& candidate : checked_program.functions) {
+          bool owns_spec = candidate.spec_id == codegen_body_spec_id_;
+          for (const auto& specialization : candidate.specializations)
+            owns_spec = owns_spec ||
+                specialization.spec_id == codegen_body_spec_id_;
+          if (owns_spec) {
+            owner = &candidate;
+            ++owner_count;
+          }
+        }
         const bool source_free_occurrence_matches = owner && handle
             ? typed_return_value_source_free_occurrence_matches(
                   *fact, *owner, statement, *handle)
             : false;
-        const string source_free_module = owner
-            ? module_name_from_symbol(owner->name) : string();
-        const auto source_free_module_identity =
-            checked_program.module_identities.find(source_free_module);
-        if (owner_count != 1 || !owner || !owner->imported_checked_body_projected ||
-            !handle || source_free_module.empty() ||
-            !checked_program.external_modules.count(source_free_module) ||
-            source_free_module_identity == checked_program.module_identities.end() ||
-            source_free_module_identity->second.empty() ||
+        if (owner_count != 1 || !owner ||
+            !owner->imported_checked_body_projected ||
+            owner_identity.provider_module_identity.empty() || !handle ||
             fact->provenance.defining_module_id !=
-                source_free_module_identity->second ||
-            fact->provenance.enclosing_callable_id != callable_context ||
+                owner_identity.provider_module_identity ||
             !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
@@ -1686,7 +1617,7 @@ class Generator {
         throw std::invalid_argument(
             "return-value fact lacks a closed type for its exact specialized EST occurrence");
       const auto* occurrence = arena.facts(handle->expr,
-                                            fact->est_fact_context);
+                                            fact->specialization_id);
       if (!occurrence || !occurrence->type) {
         if (!fact_is_from_exact_imported_owner(*fact))
           throw std::invalid_argument(
@@ -1696,7 +1627,7 @@ class Generator {
               : occurrence->type->kind != TypeKind::InferenceVar) {
         throw std::invalid_argument(
             "ReturnValue fact does not bind a concrete or generic EST type at its checked context (" +
-            fact->est_fact_context + ":" +
+            std::to_string(fact->specialization_id) + ":" +
             occurrence->type->to_canonical_string() + " != " +
             fact->expression_type->to_canonical_string() + ")");
       }
@@ -1715,9 +1646,6 @@ class Generator {
     if (statement.checked_statement_occurrence_id == UINT32_MAX)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked collection-view statement identity unavailable");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
-    const string specialization = codegen_active_specialization_key_;
     const string method_name = operation == TypedCollectionViewOperationV1::MapKeys
         ? "keys" : "values";
     const auto source_for_handle = [&](const est::Handle& handle)
@@ -1746,8 +1674,8 @@ class Generator {
       if (candidate.operation != operation ||
           candidate.statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != specialization ||
+          candidate.specialization_id != codegen_body_spec_id_ ||
+          candidate.specialization_id != codegen_body_spec_id_ ||
           candidate.est_arena_index >= p_.expression_arenas.size() ||
           !p_.expression_arenas[candidate.est_arena_index])
         return false;
@@ -2098,15 +2026,14 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT Root-ingress copy does not match exact message argument");
     const auto* call = std::get_if<est::Call>(&arena.at(copy_id));
     if (!call || call->arguments.size() != 1) return nullptr;
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
-    const auto* expression_facts = arena.facts(copy_id, context);
+    const auto* expression_facts = arena.facts(copy_id, codegen_body_spec_id_);
     if (!expression_facts ||
         expression_facts->resolved_target != "builtin:copy-v1")
       return nullptr;
     try {
       const auto& requirement = checked_program.typed_semantics
-          ->find_copy_requirement(occurrence.arena_index, copy_id, context);
+          ->find_copy_requirement(occurrence.arena_index, copy_id,
+                                  codegen_body_spec_id_);
       if (requirement.statement_occurrence_id !=
               statement->checked_statement_occurrence_id ||
           requirement.copy_occurrence_id != copy_id ||
@@ -2119,8 +2046,8 @@ class Generator {
           arena, call->arguments.front());
       const auto copy_span = arena.span(copy_id);
       const auto source_span = arena.span(source_id);
-      const auto* copy_expression_facts = arena.facts(copy_id, context);
-      const auto* source_expression_facts = arena.facts(source_id, context);
+      const auto* copy_expression_facts = arena.facts(copy_id, codegen_body_spec_id_);
+      const auto* source_expression_facts = arena.facts(source_id, codegen_body_spec_id_);
       auto same_span = [](const est::SourceSpan& left,
                           const est::SourceSpan& right) {
         return left.line == right.line && left.column == right.column &&
@@ -2178,8 +2105,6 @@ class Generator {
          !std::holds_alternative<est::Literal>(arena.at(argument_id))))
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT fresh Root-ingress payload expression identity unavailable");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     const TypedRootIngressPayloadRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     std::size_t fact_count = 0;
@@ -2193,7 +2118,7 @@ class Generator {
           candidate.argument_index == argument_index &&
           candidate.argument_expression_occurrence_id == argument_id &&
           candidate.source_fingerprint == occurrence.source_fingerprint &&
-          candidate.specialization_context == context) {
+          candidate.specialization_id == codegen_body_spec_id_) {
         requirement = &candidate;
         ++requirement_count;
       }
@@ -2207,7 +2132,7 @@ class Generator {
           candidate.argument_index == argument_index &&
           candidate.argument_expression_occurrence_id == argument_id &&
           candidate.source_fingerprint == occurrence.source_fingerprint &&
-          candidate.specialization_context == context)
+          candidate.specialization_id == codegen_body_spec_id_)
         ++fact_count;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_PAYLOAD_REQUIREMENT"))
@@ -2233,7 +2158,7 @@ class Generator {
         else if (field == "type") corrupted.payload_type.reset();
         else if (field == "action")
           corrupted.action = static_cast<TypedRootIngressPayloadActionV1>(99);
-        else if (field == "context") corrupted.specialization_context += ":wrong-context";
+        else if (field == "context") ++corrupted.specialization_id;
         else if (field == "occurrence") ++corrupted.argument_expression_occurrence_id;
         (void)checked_program.typed_semantics
             ->find_root_ingress_payload_fact(corrupted);
@@ -2244,7 +2169,7 @@ class Generator {
       const auto& fact = checked_program.typed_semantics
           ->find_root_ingress_payload_fact(*requirement);
       const auto actual_type = arena.facts(argument_id,
-          fact.est_fact_context);
+          fact.specialization_id);
       const auto expected = moss::Type::parse_canonical(expected_type);
       if (!actual_type || !actual_type->type || !expected || !*expected ||
           !actual_type->type->structurally_equal(*fact.payload_type) ||
@@ -2286,8 +2211,6 @@ class Generator {
                                         occurrence.owner_expression) != 1)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT Root-ingress argument disposition owner handle missing or ambiguous");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     const TypedRootIngressArgumentDispositionRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     std::size_t fact_count = 0;
@@ -2303,7 +2226,7 @@ class Generator {
           candidate.argument_index == argument_index &&
           candidate.argument_expression_occurrence_id == argument_id &&
           candidate.source_fingerprint == occurrence.source_fingerprint &&
-          candidate.specialization_context == context) {
+          candidate.specialization_id == codegen_body_spec_id_) {
         requirement = &candidate;
         ++requirement_count;
       }
@@ -2319,7 +2242,7 @@ class Generator {
           candidate.argument_index == argument_index &&
           candidate.argument_expression_occurrence_id == argument_id &&
           candidate.source_fingerprint == occurrence.source_fingerprint &&
-          candidate.specialization_context == context)
+          candidate.specialization_id == codegen_body_spec_id_)
         ++fact_count;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_ROOT_INGRESS_ARGUMENT_DISPOSITION_REQUIREMENT"))
@@ -2348,7 +2271,7 @@ class Generator {
         else if (field == "binding") corrupted.source_binding_identity += ":wrong";
         else if (field == "definition") corrupted.source_definition_identity += ":wrong";
         else if (field == "type") corrupted.payload_type.reset();
-        else if (field == "context") corrupted.specialization_context += ":wrong";
+        else if (field == "context") ++corrupted.specialization_id;
         (void)checked_program.typed_semantics
             ->find_root_ingress_argument_disposition_fact(corrupted);
         throw std::runtime_error(
@@ -2357,12 +2280,12 @@ class Generator {
 #endif
       const auto& fact = checked_program.typed_semantics
           ->find_root_ingress_argument_disposition_fact(*requirement);
-      const auto* expression_facts = arena.facts(argument_id, fact.est_fact_context);
+      const auto* expression_facts = arena.facts(argument_id, fact.specialization_id);
       const auto expected = moss::Type::parse_canonical(expected_type);
       if (!expression_facts || !expression_facts->type || !expected || !*expected ||
           !expression_facts->type->structurally_equal(*fact.payload_type) ||
           !fact.payload_type->structurally_equal(**expected) ||
-          fact.specialization_context != context ||
+          fact.specialization_id != codegen_body_spec_id_ ||
           fact.required_access != Effect::Consume || !fact.source_is_owned ||
           !fact.checker_proved_available)
         throw std::invalid_argument(
@@ -2404,9 +2327,6 @@ class Generator {
         message->handler != handler || target->name != receiver)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT active Root-ingress message does not match its exact EST handle");
-
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     const TypedRootIngressDomainCaptureRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     std::size_t fact_count = 0;
@@ -2421,7 +2341,7 @@ class Generator {
               occurrence.receiver_expression &&
           candidate.source_fingerprint == occurrence.source_fingerprint &&
           candidate.origin_id == occurrence.origin_id &&
-          candidate.specialization_context == context &&
+          candidate.specialization_id == codegen_body_spec_id_ &&
           candidate.receiver_binding == receiver) {
         requirement = &candidate;
         ++requirement_count;
@@ -2438,7 +2358,7 @@ class Generator {
               occurrence.receiver_expression &&
           candidate.source_fingerprint == occurrence.source_fingerprint &&
           candidate.origin_id == occurrence.origin_id &&
-          candidate.specialization_context == context &&
+          candidate.specialization_id == codegen_body_spec_id_ &&
           candidate.receiver_binding == receiver)
         ++fact_count;
 #ifdef MOSS_TEST_BUILD
@@ -2519,14 +2439,12 @@ class Generator {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked Echo argument identity unavailable");
     const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
-    string context = functional_context.empty() ? "main" : functional_context;
-    if (!statement.echo_types_by_context.count(context)) {
-      if (!statement.echo_types_by_context.count(string()))
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
-      context.clear();
-    }
-    const auto& checked_types = statement.echo_types_by_context.at(context);
+    const auto checked = statement.echo_types_by_spec_id.find(
+        codegen_body_spec_id_);
+    if (checked == statement.echo_types_by_spec_id.end())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT missing exact Echo specialization SpecId");
+    const auto& checked_types = checked->second;
     if (argument_index >= checked_types.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked Echo argument type missing");
@@ -2543,39 +2461,7 @@ class Generator {
             "MOSS_INTERNAL_INVARIANT duplicate checked Echo argument handle");
       handle = &candidate;
     }
-    if (!handle && statement.checked_statement_occurrence_id != UINT32_MAX) {
-      vector<const est::Handle*> canonical_handles;
-      auto inspect_statement = [&](const Stmt& canonical) {
-        if (canonical.kind != Stmt::Kind::Echo ||
-            canonical.checked_statement_occurrence_id !=
-                statement.checked_statement_occurrence_id ||
-            canonical.line != statement.line ||
-            (!statement.source_file.empty() && !canonical.source_file.empty() &&
-             canonical.source_file != statement.source_file))
-          return;
-        for (const auto& candidate : canonical.expression_handles)
-          if (candidate.slot == est::ExprSlot::Argument &&
-              candidate.argument_index == argument_index)
-            canonical_handles.push_back(&candidate);
-      };
-      if (checked_program.main)
-        for (const auto& candidate : checked_program.main->body)
-          inspect_statement(candidate);
-      string callable = functional_context;
-      const auto suffix = callable.find('<');
-      if (suffix != string::npos) callable.resize(suffix);
-      const string function_name = starts_with(callable, "fn:")
-          ? callable.substr(3) : string();
-      if (!function_name.empty())
-        for (const auto& function : checked_program.functions)
-          if (function.name == function_name)
-            for (const auto& candidate : function.body)
-              inspect_statement(candidate);
-      if (canonical_handles.size() == 1) handle = canonical_handles.front();
-      else if (canonical_handles.size() > 1)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT ambiguous canonical checked Echo argument handle");
-    }
+    (void)functional_context;  // Diagnostic label only; never an identity source.
     if ((!handle || statement.checked_statement_occurrence_id == UINT32_MAX) &&
         primitive_value)
       return nullptr;
@@ -2601,7 +2487,7 @@ class Generator {
             return item.est_arena_index == handle->arena_index &&
                 item.argument_expression_occurrence_id == handle->expr &&
                 item.argument_index == argument_index &&
-                item.specialization_context == context;
+                item.specialization_id == codegen_body_spec_id_;
           });
       const bool borrowed_requirement = req != requirements.end() &&
           req->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
@@ -2617,7 +2503,7 @@ class Generator {
             return item.est_arena_index == handle->arena_index &&
                 item.argument_expression_occurrence_id == handle->expr &&
                 item.argument_index == argument_index &&
-                item.specialization_context == context;
+                item.specialization_id == codegen_body_spec_id_;
           });
       const bool borrowed_fact = fact_it != facts.end() &&
           fact_it->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
@@ -2631,18 +2517,14 @@ class Generator {
                    "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT"))
         fact_it->required_access = Effect::Consume;
 #endif
-      string query_context = context;
-#ifdef MOSS_TEST_BUILD
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT"))
-        query_context += ":wrong-context";
-#endif
       const auto& requirement = typed_semantics->find_echo_argument_requirement(
-          handle->arena_index, handle->expr, argument_index, query_context);
+          handle->arena_index, handle->expr, argument_index,
+          codegen_body_spec_id_);
       auto exact_requirement = requirement;
 #ifdef MOSS_TEST_BUILD
       if (requirement.mode == TypedEchoArgumentModeV1::BorrowedVectorElement &&
-          std::getenv("MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT"))
-        exact_requirement.est_fact_context += ":consumer-perturbed";
+          std::getenv("MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_SPEC_ID"))
+        exact_requirement.specialization_id = InvalidSpecId;
 #endif
       const auto& fact = typed_semantics->find_echo_argument_fact(exact_requirement);
       if (!fact.is_authoritative() || fact.required_access != Effect::Read ||
@@ -2678,6 +2560,7 @@ class Generator {
   resolve_projected_call_argument_read_fact(
       const Stmt& statement, std::uint32_t argument_index,
       const string& functional_context) const {
+    (void)functional_context;
     if (argument_index >= statement.args.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT projected call argument index is invalid");
@@ -2734,9 +2617,7 @@ class Generator {
     if (!member || !index || !receiver || root != handle->expr ||
         member->name != projection_field)
       return nullptr;
-
-    const string context = functional_context.empty() ? "main" : functional_context;
-    const auto* receiver_facts = arena.facts(index->base, context);
+    const auto* receiver_facts = arena.facts(index->base, codegen_body_spec_id_);
     if (!receiver_facts || !receiver_facts->type)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT projected call argument receiver type unavailable");
@@ -2753,8 +2634,8 @@ class Generator {
           candidate.argument_index != argument_index ||
           candidate.est_arena_index != handle->arena_index ||
           candidate.call_argument_expression_occurrence_id != handle->expr ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != specialization)
+          candidate.specialization_id != codegen_body_spec_id_ ||
+          candidate.specialization_id != codegen_body_spec_id_)
         continue;
       requirement = &candidate;
       ++requirement_count;
@@ -2784,8 +2665,8 @@ class Generator {
                 row.call_argument_expression_occurrence_id ==
                     exact_requirement.call_argument_expression_occurrence_id &&
                 row.argument_index == exact_requirement.argument_index &&
-                row.specialization_context == exact_requirement.specialization_context &&
-                row.specialization_identity == exact_requirement.specialization_identity;
+                row.specialization_id == exact_requirement.specialization_id &&
+                row.specialization_id == exact_requirement.specialization_id;
           });
       if (it != requirements.end()) requirements.erase(it);
     }
@@ -2800,8 +2681,8 @@ class Generator {
                 row.call_argument_expression_occurrence_id ==
                     exact_requirement.call_argument_expression_occurrence_id &&
                 row.argument_index == exact_requirement.argument_index &&
-                row.specialization_context == exact_requirement.specialization_context &&
-                row.specialization_identity == exact_requirement.specialization_identity;
+                row.specialization_id == exact_requirement.specialization_id &&
+                row.specialization_id == exact_requirement.specialization_id;
           });
       if (it != requirements.end()) it->required_access = Effect::Consume;
     }
@@ -2814,8 +2695,8 @@ class Generator {
                 row.call_argument_expression_occurrence_id ==
                     exact_requirement.call_argument_expression_occurrence_id &&
                 row.argument_index == exact_requirement.argument_index &&
-                row.specialization_context == exact_requirement.specialization_context &&
-                row.specialization_identity == exact_requirement.specialization_identity;
+                row.specialization_id == exact_requirement.specialization_id &&
+                row.specialization_id == exact_requirement.specialization_id;
           });
       if (it != facts.end()) facts.erase(it);
     }
@@ -2830,8 +2711,8 @@ class Generator {
                 row.call_argument_expression_occurrence_id ==
                     exact_requirement.call_argument_expression_occurrence_id &&
                 row.argument_index == exact_requirement.argument_index &&
-                row.specialization_context == exact_requirement.specialization_context &&
-                row.specialization_identity == exact_requirement.specialization_identity;
+                row.specialization_id == exact_requirement.specialization_id &&
+                row.specialization_id == exact_requirement.specialization_id;
           });
       if (it != facts.end()) it->permits_copy = true;
     }
@@ -2869,6 +2750,7 @@ class Generator {
   resolve_indexed_call_argument_read_fact(
       const Stmt& statement, std::uint32_t argument_index,
       const string& functional_context) const {
+    (void)functional_context;
     if (argument_index >= statement.args.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT indexed call argument index is invalid");
@@ -2914,8 +2796,7 @@ class Generator {
     const auto* index = index_id < arena.size()
         ? std::get_if<est::Index>(&arena.at(index_id)) : nullptr;
     if (!index) return nullptr;
-    const string context = functional_context.empty() ? "main" : functional_context;
-    const auto* receiver_facts = arena.facts(index->base, context);
+    const auto* receiver_facts = arena.facts(index->base, codegen_body_spec_id_);
     if (!receiver_facts || !receiver_facts->type)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT indexed call argument receiver type unavailable");
@@ -2943,8 +2824,8 @@ class Generator {
           candidate.argument_index != argument_index ||
           candidate.est_arena_index != handle->arena_index ||
           candidate.call_argument_expression_occurrence_id != handle->expr ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != specialization)
+          candidate.specialization_id != codegen_body_spec_id_ ||
+          candidate.specialization_id != codegen_body_spec_id_)
         continue;
       requirement = &candidate;
       ++requirement_count;
@@ -2969,8 +2850,8 @@ class Generator {
           row.call_argument_expression_occurrence_id ==
               exact_requirement.call_argument_expression_occurrence_id &&
           row.argument_index == exact_requirement.argument_index &&
-          row.specialization_context == exact_requirement.specialization_context &&
-          row.specialization_identity == exact_requirement.specialization_identity;
+          row.specialization_id == exact_requirement.specialization_id &&
+          row.specialization_id == exact_requirement.specialization_id;
     };
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_CALL_ARGUMENT_READ_REQUIREMENT")) {
       auto it = std::find_if(requirements.begin(), requirements.end(), same_query);
@@ -3069,8 +2950,8 @@ class Generator {
     for (const auto& row : semantics->required_indexed_expression_read_occurrences) {
       if (row.statement_occurrence_id != statement.checked_statement_occurrence_id ||
           row.est_arena_index != handle->arena_index ||
-          row.specialization_context != exact_context ||
-          row.specialization_identity != specialization ||
+          row.specialization_id != codegen_body_spec_id_ ||
+          row.specialization_id != codegen_body_spec_id_ ||
           !reachable.count(row.index_expression_occurrence_id)) continue;
       const auto span = arena.span(row.index_expression_occurrence_id);
       if (span.source_begin > span.source_end || span.source_end > statement.a.size() ||
@@ -3090,8 +2971,8 @@ class Generator {
       return row.statement_occurrence_id == selected.statement_occurrence_id &&
           row.est_arena_index == selected.est_arena_index &&
           row.index_expression_occurrence_id == selected.index_expression_occurrence_id &&
-          row.specialization_context == selected.specialization_context &&
-          row.specialization_identity == selected.specialization_identity;
+          row.specialization_id == selected.specialization_id &&
+          row.specialization_id == selected.specialization_id;
     };
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_REQUIREMENT")) {
       auto it = std::find_if(requirements.begin(), requirements.end(), same);
@@ -3121,8 +3002,8 @@ class Generator {
           index->index != fact.selector_expression_occurrence_id ||
           fact.required_access != Effect::Read || fact.permits_copy ||
           !fact.temporary_nonescaping_borrow ||
-          fact.specialization_context != exact_context ||
-          fact.specialization_identity != specialization)
+          fact.specialization_id != codegen_body_spec_id_ ||
+          fact.specialization_id != codegen_body_spec_id_)
         throw std::invalid_argument("indexed expression-read fact does not match exact checked READ occurrence");
       return &fact;
     } catch (const std::exception& error) {
@@ -3141,8 +3022,6 @@ class Generator {
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT projected collection-read query identity unavailable");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     const string specialization = codegen_active_specialization_key_;
     const TypedProjectedCollectionReadRequirementV1* requirement = nullptr;
     size_t requirement_count = 0;
@@ -3152,8 +3031,8 @@ class Generator {
               statement.checked_statement_occurrence_id ||
           candidate.query_statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != specialization ||
+          candidate.specialization_id != codegen_body_spec_id_ ||
+          candidate.specialization_id != codegen_body_spec_id_ ||
           candidate.est_arena_index >= p_.expression_arenas.size() ||
           !p_.expression_arenas[candidate.est_arena_index])
         continue;
@@ -3220,8 +3099,7 @@ class Generator {
                 requirement->query_source_expression_occurrence_id &&
             candidate.query_statement_occurrence_id ==
                 requirement->query_statement_occurrence_id &&
-            candidate.specialization_context == requirement->specialization_context &&
-            candidate.specialization_identity == requirement->specialization_identity)
+            candidate.specialization_id == requirement->specialization_id)
           ++fact_count;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_PROJECTED_COLLECTION_READ_REQUIREMENT"))
@@ -3266,8 +3144,7 @@ class Generator {
                 requirement->projection_statement_occurrence_id &&
             candidate.query_statement_occurrence_id ==
                 requirement->query_statement_occurrence_id &&
-            candidate.specialization_context == requirement->specialization_context &&
-            candidate.specialization_identity == requirement->specialization_identity) {
+            candidate.specialization_id == requirement->specialization_id) {
           result = &candidate;
           ++exact_matches;
         }
@@ -3291,6 +3168,7 @@ class Generator {
 
   std::optional<CheckedMapWriteThrough> resolve_map_write_through(
       const Stmt& statement, const string& functional_context) const {
+    (void)functional_context;
     if (!p_.typed_semantics ||
         statement.kind != Stmt::Kind::Assign ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
@@ -3312,7 +3190,6 @@ class Generator {
     if (handle->expr >= arena.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT assignment-place EST occurrence is invalid");
-    const string context = functional_context.empty() ? "main" : functional_context;
     std::vector<const TypedConditionalCollectionErrorRequirementV1*> candidates;
     for (const auto& requirement :
          p_.typed_semantics->required_conditional_collection_error_occurrences) {
@@ -3321,9 +3198,7 @@ class Generator {
           requirement.est_arena_index == handle->arena_index &&
           requirement.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          requirement.specialization_context == context &&
-          requirement.specialization_identity ==
-              codegen_active_specialization_key_)
+          requirement.specialization_id == codegen_body_spec_id_)
         candidates.push_back(&requirement);
     }
     std::vector<const TypedConditionalCollectionErrorFactV1*> orphan_facts;
@@ -3333,8 +3208,8 @@ class Generator {
           fact.est_arena_index == handle->arena_index &&
           fact.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          fact.specialization_context == context &&
-          fact.specialization_identity == codegen_active_specialization_key_)
+          fact.specialization_id == codegen_body_spec_id_ &&
+          fact.specialization_id == codegen_body_spec_id_)
         orphan_facts.push_back(&fact);
     }
     if (candidates.empty()) {
@@ -3354,7 +3229,7 @@ class Generator {
             member_projection = true;
             pending.push_back(member->base);
           } else if (const auto* index = std::get_if<est::Index>(&node)) {
-            const auto* semantic = arena.facts(index->base, context);
+            const auto* semantic = arena.facts(index->base, codegen_body_spec_id_);
             if (member_projection && semantic && semantic->type &&
                 semantic->type->kind == TypeKind::Builtin &&
                 semantic->type->name == "map")
@@ -3443,8 +3318,6 @@ class Generator {
       if (!grouped) break;
       operation = grouped->inner;
     }
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     const auto wanted =
         TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead;
     auto same_statement_read = [&](const auto& candidate) {
@@ -3452,8 +3325,8 @@ class Generator {
           candidate.est_arena_index == handle->arena_index &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == codegen_active_specialization_key_;
+          candidate.specialization_id == codegen_body_spec_id_ &&
+          candidate.specialization_id == codegen_body_spec_id_;
     };
     const auto has_unsupported_nested_read = [&](const auto& rows) {
       return std::any_of(rows.begin(), rows.end(), [&](const auto& candidate) {
@@ -3491,8 +3364,8 @@ class Generator {
           candidate.operation_expression_occurrence_id == operation &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == codegen_active_specialization_key_) {
+          candidate.specialization_id == codegen_body_spec_id_ &&
+          candidate.specialization_id == codegen_body_spec_id_) {
         requirement = &candidate;
         ++requirement_count;
       }
@@ -3504,8 +3377,8 @@ class Generator {
           candidate.operation_expression_occurrence_id == operation &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == codegen_active_specialization_key_)
+          candidate.specialization_id == codegen_body_spec_id_ &&
+          candidate.specialization_id == codegen_body_spec_id_)
         ++fact_count;
     }
 #ifdef MOSS_TEST_BUILD
@@ -3520,7 +3393,7 @@ class Generator {
 #endif
     if (requirement_count == 0 && fact_count == 0) {
       const auto* checked_receiver =
-          arena.facts(std::get<est::Index>(arena.at(operation)).base, context);
+          arena.facts(std::get<est::Index>(arena.at(operation)).base, codegen_body_spec_id_);
       if (statement.exceptional_alternatives.count(RaisedIdentity::enum_variant(
               "std__CollectionError", "MissingKey")) && checked_receiver &&
           checked_receiver->type &&
@@ -3661,8 +3534,6 @@ class Generator {
             TypedCollectionOutcomeFactV1::Operation::MapRemove &&
         member->name == "remove" && call->arguments.size() == 1;
     if (!queue_pop && !map_remove) return nullptr;
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     std::string specialization = codegen_active_specialization_key_;
     size_t requirement_count = 0;
     const TypedCollectionOutcomeRequirementV1* requirement = nullptr;
@@ -3680,8 +3551,8 @@ class Generator {
       if (!drop_requirement && candidate.operation == operation &&
           candidate.operation_est_arena_index == handle->arena_index &&
           candidate.operation_expression_occurrence_id == root &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == specialization) {
+          candidate.specialization_id == codegen_body_spec_id_ &&
+          candidate.specialization_id == codegen_body_spec_id_) {
         requirement = &candidate;
         ++requirement_count;
         if (duplicate_requirement) ++requirement_count;
@@ -3692,14 +3563,14 @@ class Generator {
       if (fact.operation == operation &&
           fact.operation_est_arena_index == handle->arena_index &&
           fact.operation_expression_occurrence_id == root &&
-          fact.specialization_context == context &&
-          fact.specialization_identity == specialization)
+          fact.specialization_id == codegen_body_spec_id_ &&
+          fact.specialization_id == codegen_body_spec_id_)
         ++orphan_fact_count;
     if (requirement_count != 1 || !requirement) {
       if (requirement_count || orphan_fact_count)
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT checked collection outcome requirement missing or ambiguous");
-      const auto* tree_facts = arena.facts(root, context);
+      const auto* tree_facts = arena.facts(root, codegen_body_spec_id_);
       if (tree_facts && tree_facts->type &&
           tree_facts->type->kind == TypeKind::Never)
         throw std::runtime_error(
@@ -4648,154 +4519,154 @@ class Generator {
         ? method.parameter_effects[index] : Effect::Read;
   }
 
+  static SpecId checked_method_body_spec_id(const Method& method) {
+    if (method.specializations.size() != 1 ||
+        method.specializations.front().spec_id == InvalidSpecId)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT method body lacks one concrete checked SpecId");
+    return method.specializations.front().spec_id;
+  }
+
   const FunctionSpecialization* call_specialization(
       const Function& function, const vector<string>& arguments,
-      const std::unordered_map<string,string>* types) const {
-    if (codegen_result_specialization_ &&
-        !codegen_result_specialization_->result_call_key.empty()) {
-      string direct_callee;
-      vector<string> direct_arguments;
-      if (tree_parse_simple_call(trim(codegen_result_expression_), direct_callee,
-                            direct_arguments) &&
-          direct_callee == function.name && direct_arguments == arguments) {
-        auto exact = std::find_if(function.specializations.begin(),
-                                  function.specializations.end(),
-                                  [&](const FunctionSpecialization& candidate) {
-          return candidate.stable_type_key ==
-              codegen_result_specialization_->result_call_key;
-        });
-        if (exact == function.specializations.end())
-          throw std::runtime_error(
-              "checked returned-call key is absent from native projection");
-        return &*exact;
-      }
-    }
-    if (phase21_codegen_statement_) {
-      const Stmt& statement = *phase21_codegen_statement_;
-      string nested_expression = function.name + "(";
-      for (size_t index = 0; index < arguments.size(); ++index) {
-        if (index) nested_expression += ", ";
-        nested_expression += arguments[index];
-      }
-      nested_expression += ")";
-      auto nested_context = statement.nested_open_call_keys_by_context.find(
-          codegen_active_specialization_key_);
-      if (nested_context == statement.nested_open_call_keys_by_context.end())
-        nested_context = statement.nested_open_call_keys_by_context.find(
-            codegen_body_context_);
-      if (nested_context != statement.nested_open_call_keys_by_context.end()) {
-        auto nested_key = nested_context->second.find(nested_expression);
-        if (nested_key != nested_context->second.end()) {
-          const auto& keys = nested_key->second;
-          const uint32_t occurrence =
-              codegen_nested_argument_occurrence_.value_or(0);
-          if (occurrence >= keys.size() || keys[occurrence].empty())
-            throw std::runtime_error(
-                "checked nested open-result occurrence has no exact key");
-          auto exact = std::find_if(function.specializations.begin(),
-                                    function.specializations.end(),
-                                    [&](const FunctionSpecialization& candidate) {
-            return candidate.stable_type_key == keys[occurrence];
-          });
-          if (exact == function.specializations.end())
-            throw std::runtime_error(
-                "checked nested open-result key is absent from native projection");
-          return &*exact;
-        }
-      }
-      auto selected = statement.open_call_keys_by_context.find(
-          codegen_active_specialization_key_);
-      if (selected == statement.open_call_keys_by_context.end())
-        selected = statement.open_call_keys_by_context.find(
-            codegen_body_context_);
-      if (selected == statement.open_call_keys_by_context.end())
-        selected = statement.open_call_keys_by_context.find("");
-      string direct_callee;
-      vector<string> direct_arguments;
-      const string& call_expression = statement.kind == Stmt::Kind::Return
-          ? statement.a : statement.b;
-      if (selected != statement.open_call_keys_by_context.end() &&
-          tree_parse_simple_call(trim(call_expression), direct_callee,
-                            direct_arguments) &&
-          direct_callee == function.name &&
-          direct_arguments == arguments) {
-        auto exact = std::find_if(function.specializations.begin(),
-                                  function.specializations.end(),
-                                  [&](const FunctionSpecialization& candidate) {
-          return candidate.stable_type_key == selected->second;
-        });
-        if (exact == function.specializations.end())
-          throw std::runtime_error(
-              "checked open-result specialization key is absent from native projection");
-        return &*exact;
-      }
-    }
-    if (function.static_dispatch) {
-      auto checked = checked_call_edge_specialization(
-          p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
-      if (checked.test_fact_dropped || checked.test_fact_perturbed)
+      const std::unordered_map<string,string>* types,
+      const NativeEstCursor* occurrence = nullptr) const {
+    (void)arguments;
+    (void)types;
+    if (!function.static_dispatch) return nullptr;
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const NativeEstCursor* exact = occurrence ? occurrence : active_native_est_cursor_;
+    if (!exact || !exact->arena || exact->arena_index == UINT32_MAX ||
+        exact->expression == UINT32_MAX ||
+        exact->expression >= exact->arena->size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT static Native call lacks exact EST cursor");
+    const auto call_expression = est::unparenthesized(
+        *exact->arena, exact->expression);
+    if (!std::holds_alternative<est::Call>(exact->arena->at(call_expression)))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT static Native call cursor is not a Call node");
+    if (codegen_body_spec_id_ == InvalidSpecId ||
+        codegen_body_spec_id_ >= checked_program.specialization_table.size() ||
+        checked_program.specialization_table[codegen_body_spec_id_].id !=
+            codegen_body_spec_id_)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Native body SpecId is missing or contradictory");
+    const auto lookup = select_exact_semantic_call_edge(
+        checked_program, codegen_body_spec_id_, exact->arena_index,
+        call_expression);
+    if (lookup.kind != ExactSemanticCallEdgeLookup::Kind::Unique ||
+        !lookup.edge)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT exact Native call edge is missing or duplicated");
+    const auto& edge = *lookup.edge;
+    if (edge.target_kind != SemanticCallTargetKind::Static ||
+        edge.caller_spec_id != codegen_body_spec_id_ ||
+        edge.callee_spec_id == InvalidSpecId ||
+        edge.callee_spec_id >= checked_program.specialization_table.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT exact Native call edge is unresolved or contradictory");
+    const auto& target = checked_program.specialization_table[edge.callee_spec_id];
+    if (target.id != edge.callee_spec_id ||
+        target.semantic_callable_identity != function.semantic_callable_id)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Native call target identity disagrees with declaration");
+    const FunctionSpecialization* selected = nullptr;
+    for (const auto& candidate : function.specializations) {
+      if (candidate.spec_id != edge.callee_spec_id) continue;
+      if (selected)
         throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
-      bool dropped_checked_call_edge = false;
-      if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
-          dropped && string(dropped) == "g1") {
-        checked = {};
-        dropped_checked_call_edge = true;
-      }
-      if (checked.kind == CheckedCallEdgeSelectionKind::Unique) {
-        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-            count && string(count) == "g1")
-          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=unique|line="
-                    << (phase21_codegen_statement_
-                            ? phase21_codegen_statement_->line : 0)
-                    << "|context=" << codegen_body_context_
-                    << "|callee=" << function.name << "\n";
-        return checked.unique;
-      }
-      if (checked.kind == CheckedCallEdgeSelectionKind::None &&
-          dropped_checked_call_edge)
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT missing checked call edge callee=" +
-            function.name + " line=" +
-            std::to_string(phase21_codegen_statement_
-                               ? phase21_codegen_statement_->line : 0) +
-            " context=" + codegen_body_context_);
+            "MOSS_INTERNAL_INVARIANT duplicate FunctionSpecialization SpecId");
+      selected = &candidate;
     }
-    vector<string> concrete_types;
-    for (const auto& argument : arguments)
-      concrete_types.push_back(generated_expr_type(argument, types).value_or(""));
-    if (function.static_dispatch) {
-      auto checked = checked_call_edge_specialization(
-          p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
-      if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous) {
-        if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-            count && string(count) == "g1") {
-          const int line = phase21_codegen_statement_
-              ? phase21_codegen_statement_->line : 0;
-          std::cerr << "MOSS_TEST_FACT_COUNTER|g1|selection=ambiguous|line="
-                    << line << "|context="
-                    << codegen_body_context_ << "|callee=" << function.name
-                    << "\n";
-        }
+    if (!selected && function.spec_id != edge.callee_spec_id)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked callee SpecId is absent from function body");
+    return selected;
+  }
+
+  const Method* checked_method_for_occurrence(
+      std::string_view method_name,
+      const NativeEstCursor* occurrence = nullptr) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const NativeEstCursor* exact = occurrence ? occurrence : active_native_est_cursor_;
+    if (!exact || !exact->arena || exact->arena_index == UINT32_MAX ||
+        exact->expression == UINT32_MAX ||
+        exact->expression >= exact->arena->size() ||
+        codegen_body_spec_id_ == InvalidSpecId)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT static Native method lacks exact caller/EST identity");
+    const auto call_expression = est::unparenthesized(
+        *exact->arena, exact->expression);
+    if (!std::holds_alternative<est::Call>(exact->arena->at(call_expression)))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT static Native method cursor is not a Call node (ExprId=" +
+          std::to_string(call_expression) + ", node-kind=" +
+          std::to_string(exact->arena->at(call_expression).index()) +
+          ", span=" + std::to_string(exact->arena->span(call_expression).source_begin) +
+          ".." + std::to_string(exact->arena->span(call_expression).source_end) +
+          (std::holds_alternative<est::Member>(exact->arena->at(call_expression))
+              ? ", member=" + std::get<est::Member>(exact->arena->at(call_expression)).name +
+                ", base=" + std::to_string(std::get<est::Member>(exact->arena->at(call_expression)).base)
+              : "") + ")");
+    const auto lookup = select_exact_semantic_call_edge(
+        checked_program, codegen_body_spec_id_, exact->arena_index,
+        call_expression);
+    if (lookup.kind != ExactSemanticCallEdgeLookup::Kind::Unique ||
+        !lookup.edge || lookup.edge->target_kind != SemanticCallTargetKind::Static ||
+        lookup.edge->callee_spec_id == InvalidSpecId ||
+        lookup.edge->callee_spec_id >= checked_program.specialization_table.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT exact Native method edge is missing or contradictory");
+    const auto& row = checked_program.specialization_table[
+        lookup.edge->callee_spec_id];
+    if (row.id != lookup.edge->callee_spec_id)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Native method table row is contradictory");
+    const Method* selected = nullptr;
+    std::size_t matches = 0;
+    for (const auto& object : objects_)
+      for (const auto& candidate : object.second->methods) {
+        if (candidate.name != method_name ||
+            candidate.semantic_callable_id != row.semantic_callable_identity)
+          continue;
+        for (const auto& specialization : candidate.specializations)
+          if (specialization.spec_id == lookup.edge->callee_spec_id) {
+            selected = &candidate;
+            ++matches;
+          }
       }
-    }
-    const auto* selected = concrete_specialization(function, concrete_types);
-    if (function.static_dispatch) {
-      auto checked = checked_call_edge_specialization(
-          p_, codegen_body_context_, function.name,
-          phase21_codegen_statement_ ? phase21_codegen_statement_->line : 0);
-      if (checked.kind == CheckedCallEdgeSelectionKind::Ambiguous &&
-          std::find(checked.candidates.begin(), checked.candidates.end(),
-                    selected) == checked.candidates.end())
-        throw std::runtime_error(
-            "MOSS_INTERNAL_INVARIANT emitter specialization is outside "
-            "checked call edge candidates callee=" + function.name +
-            " line=" + std::to_string(phase21_codegen_statement_
-                                           ? phase21_codegen_statement_->line : 0) +
-            " context=" + codegen_body_context_);
-    }
+    if (matches != 1 || !selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked Native method SpecId has no unique body");
+    return selected;
+  }
+
+  const Method* checked_method_body_for_spec_id(SpecId spec_id) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (spec_id == InvalidSpecId ||
+        spec_id >= checked_program.specialization_table.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked method body SpecId is invalid");
+    const auto& row = checked_program.specialization_table[spec_id];
+    if (row.id != spec_id)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked method body table row is contradictory");
+    const Method* selected = nullptr;
+    std::size_t matches = 0;
+    for (const auto& object : objects_)
+      for (const auto& candidate : object.second->methods) {
+        if (candidate.semantic_callable_id != row.semantic_callable_identity)
+          continue;
+        for (const auto& specialization : candidate.specializations)
+          if (specialization.spec_id == spec_id) {
+            selected = &candidate;
+            ++matches;
+          }
+      }
+    if (matches != 1 || !selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT method body SpecId has no unique declaration");
     return selected;
   }
 
@@ -5012,7 +4883,18 @@ class Generator {
                                 const std::set<string>& locals,
                                 const std::unordered_map<string,string>* types,
                                 size_t functional_pipeline_id = 0,
-                                const FunctionSpecialization* specialization = nullptr) const {
+                                const FunctionSpecialization* specialization = nullptr,
+                                const NativeEstCursor* occurrence = nullptr) const {
+    struct NativeEstCursorScope {
+      const NativeEstCursor*& slot;
+      const NativeEstCursor* prior;
+      NativeEstCursorScope(const NativeEstCursor*& target,
+                           const NativeEstCursor* current)
+          : slot(target), prior(target) { slot = current; }
+      ~NativeEstCursorScope() { slot = prior; }
+    } native_est_cursor_scope(active_native_est_cursor_,
+                              occurrence ? occurrence
+                                         : active_native_est_cursor_);
     if (index >= function.params.size())
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
@@ -5048,6 +4930,19 @@ class Generator {
       return nominal_domain_handle_argument(argument, "", d, locals, types,
                                             functional_pipeline_id);
     Effect effect = method_effect(method, index);
+#ifdef MOSS_TEST_BUILD
+    if (std::getenv("MOSS_TEST_TRACE_NATIVE_METHOD_ABI")) {
+      std::cerr << "NATIVE_METHOD_ARG method=" << method.semantic_callable_id
+                << " index=" << index << " effect="
+                << static_cast<unsigned>(effect) << " effects=";
+      for (const auto item : method.parameter_effects)
+        std::cerr << static_cast<unsigned>(item) << ",";
+      std::cerr << " spec-rows=";
+      for (const auto& row : method.specializations)
+        std::cerr << row.spec_id << ",";
+      std::cerr << "\n";
+    }
+#endif
     const auto argument_binding = tree_identifier_name(argument);
     if (effect == Effect::Consume &&
         argument_binding && phase21_option_slots_.count(*argument_binding))
@@ -5138,91 +5033,53 @@ class Generator {
 
   std::optional<string> generated_callable_result(
       const string& callable, const vector<string>& input_types,
-      const std::unordered_map<string,string>* types) const {
-    if (generated_expression_uses(callable, "_")) {
-      if (input_types.size() != 1) return std::nullopt;
-      std::unordered_map<string,string> placeholder_types = types
-          ? *types : std::unordered_map<string,string>{};
-      placeholder_types["_"] = input_types.front();
-      return generated_expr_type(callable, &placeholder_types);
-    }
-    string bound_receiver, bound_method;
-    if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
-      auto receiver_type = generated_expr_type(bound_receiver, types);
-      const Method* method = receiver_type
-          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                  bound_method, input_types, false, nullptr)
-          : nullptr;
-      if (method && method->return_type)
-        return canonical_type_name(*method->return_type);
+      const std::unordered_map<string,string>* types,
+      const ParsedFunctionalStage* checked_stage = nullptr) const {
+    (void)callable;
+    (void)input_types;
+    (void)types;
+    if (!checked_stage || checked_stage->arena_index == UINT32_MAX ||
+        checked_stage->expression_id == UINT32_MAX)
       return std::nullopt;
+    const FunctionalNode* node = nullptr;
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    for (const auto& pipeline : checked_program.functional_pipelines) {
+      if (pipeline.specialization_id != codegen_body_spec_id_) continue;
+      for (const auto& candidate : pipeline.nodes) {
+        if (candidate.est_arena_index != checked_stage->arena_index ||
+            candidate.est_expression_id != checked_stage->expression_id)
+          continue;
+        if (node)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT duplicate checked functional stage identity");
+        node = &candidate;
+      }
     }
-    string identity = resolved_callable_identity(callable, types);
-    const Function* fn = nullptr;
-    if (starts_with(identity, "callable-v1:")) {
-      fn = find_function_by_callable_id(identity);
-    } else {
-      auto function = functions_.find(identity);
-      if (function != functions_.end()) fn = function->second;
-    }
-    if (!fn) return std::nullopt;
-    if (fn->static_dispatch) {
-      if (const auto* specialization =
-              functional_specialization(*fn, input_types))
-        return specialization->return_type;
-      return std::nullopt;
-    }
-    if (fn->return_type &&
-        !contains_internal_placeholder(*fn->return_type))
-      return canonical_type_name(*fn->return_type);
-    return std::nullopt;
+    if (!node || node->output_type.empty()) return std::nullopt;
+    return node->output_type;
   }
 
   std::optional<ParsedFunctionalPipeline> functional_pipeline_from_est(
       std::string_view expression,
       const vector<est::Handle>* handles = nullptr) const {
-    if (!est::functional_pipeline_candidate(expression))
-      return std::nullopt;
+    (void)handles;
     const auto resolve_stage = [](std::string_view name)
         -> std::optional<FunctionalNodeKind> {
       for (const auto& operation : functional_operations())
         if (name == operation.name) return operation.kind;
       return std::nullopt;
     };
-#ifdef MOSS_TEST_BUILD
-    est::record_expression_text_lookup();
-#endif
-    const auto fingerprint = est::fingerprint(string(expression));
-    auto convert = [&](std::uint32_t arena_index, est::ExprId root)
-        -> std::optional<ParsedFunctionalPipeline> {
-      if (arena_index >= p_.expression_arenas.size() ||
-          !p_.expression_arenas[arena_index]) return std::nullopt;
-      return est::functional_pipeline(*p_.expression_arenas[arena_index], root,
-                                      expression, resolve_stage);
-    };
-    const auto* selected_handles = handles ? handles
-        : active_functional_expression_handles_;
-    if (selected_handles) {
-      for (const auto& handle : *selected_handles)
-        if (handle.source_fingerprint == fingerprint)
-          if (auto parsed = convert(handle.arena_index, handle.expr))
-            return parsed;
-    }
-
-    // Optimizer-created and nested expression occurrences may not retain a
-    // root handle. Parse into EST and consume the Pipeline node.
-#ifdef MOSS_TEST_BUILD
-    est::record_consumer_reparse(
-        est::ConsumerReparseSite::NativeFunctionalPipeline);
-#endif
-    est::Arena temporary;
-    try {
-      const auto root = est::parse_expression(temporary, expression);
-      return est::functional_pipeline(temporary, root, expression,
-                                      resolve_stage);
-    } catch (const std::invalid_argument&) {
+    const NativeEstCursor* cursor = active_native_est_cursor_;
+    if (!cursor || !cursor->arena || cursor->arena_index == UINT32_MAX ||
+        cursor->expression == UINT32_MAX ||
+        cursor->expression >= cursor->arena->size()) {
       return std::nullopt;
     }
+    const auto root = est::unparenthesized(*cursor->arena, cursor->expression);
+    if (!std::holds_alternative<est::Pipeline>(cursor->arena->at(root)))
+      return std::nullopt;
+    return est::functional_pipeline(*cursor->arena, root, expression,
+                                    resolve_stage);
   }
 
   std::optional<string> generated_functional_pipeline_type(
@@ -5241,7 +5098,7 @@ class Generator {
         case FunctionalNodeKind::Map: {
           if (stage.arguments.size() != 1) return std::nullopt;
           auto result = generated_callable_result(stage.arguments.front(),
-                                                  {current}, types);
+                                                  {current}, types, &stage);
           if (!result) return std::nullopt;
           current = *result;
           output = "vector[" + current + "]";
@@ -5309,12 +5166,7 @@ class Generator {
             return;
           }
         }
-        std::string checker_context;
-        if (!codegen_active_specialization_key_.empty())
-          checker_context = "specialization:" + codegen_active_specialization_key_;
-        else
-          checker_context = codegen_body_context_;
-        const auto* facts = arena->facts(root, checker_context);
+        const auto* facts = arena->facts(root, codegen_body_spec_id_);
         const bool present = facts && facts->type;
         const auto& node = arena->at(root);
         const char* kind = std::visit([](const auto& value) -> const char* {
@@ -5474,12 +5326,10 @@ class Generator {
         if (auto result = builtin_operation_result(concrete_receiver, method_name,
                                                     method_args.size()))
           return result;
-        vector<string> argument_types;
-        for (const auto& argument : method_args)
-          argument_types.push_back(nominalized_generated_argument_type(
-              argument, generated_expr_type(argument, types).value_or("")));
-        auto match = resolve_object_method(objects_, *receiver_type, method_name,
-                                           argument_types, false, nullptr);
+        const auto call_occurrence =
+            native_member_method_call_cursor(active_native_est_cursor_);
+        auto match = checked_method_for_occurrence(
+            method_name, call_occurrence ? &*call_occurrence : nullptr);
         if (match && match->return_type)
           return canonical_type_name(*match->return_type);
       }
@@ -5538,11 +5388,19 @@ class Generator {
       }
       if (function_target && function_target->return_type) {
         vector<string> argument_types;
-        for (const auto& argument : call_args)
+        for (std::size_t index = 0; index < call_args.size(); ++index) {
+          auto child_cursor = native_call_argument_cursor(
+              active_native_est_cursor_, index);
+          NativeEstCursorScope child_cursor_scope(
+              active_native_est_cursor_,
+              child_cursor ? &*child_cursor : nullptr);
+          const auto& argument = call_args[index];
           argument_types.push_back(generated_expr_type(argument, types).value_or(""));
+        }
         if (function_target->static_dispatch) {
           const auto* specialization = call_specialization(
-              *function_target, call_args, types);
+              *function_target, call_args, types,
+              active_native_est_cursor_);
           if (specialization)
             return specialization->return_type;
           return std::nullopt;
@@ -5656,8 +5514,10 @@ class Generator {
   string render_known_function_call(
       const Function& function, const string& name, const vector<string>& arguments,
       const Domain* domain, const std::set<string>& locals,
-      const std::unordered_map<string,string>* types) const {
-    const auto* specialization = call_specialization(function, arguments, types);
+      const std::unordered_map<string,string>* types,
+      const NativeEstCursor* occurrence = nullptr) const {
+    const auto* specialization = call_specialization(
+        function, arguments, types, occurrence);
     const auto external_module = function.static_dispatch ? std::nullopt :
         phase21_external_module_for_symbol(name);
     const bool cross_crate = external_module.has_value();
@@ -5725,6 +5585,12 @@ class Generator {
     };
     size_t emitted_arguments = 0;
     for (size_t index = 0; index < arguments.size(); ++index) {
+      const NativeEstCursor* parent_cursor = occurrence
+          ? occurrence : active_native_est_cursor_;
+      auto child_cursor = native_call_argument_cursor(parent_cursor, index);
+      if (parent_cursor && !child_cursor)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT Native call argument lacks exact EST child");
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
       bool compile_time_callable = is_compile_time_callable(
@@ -5734,7 +5600,8 @@ class Generator {
       {
         string rendered = temporaries[index].empty()
             ? function_call_argument(function, index, arguments[index], domain,
-                                     locals, types, 0, specialization)
+                                     locals, types, 0, specialization,
+                                     child_cursor ? &*child_cursor : nullptr)
             : temporaries[index];
         if (cross_crate && index < function.params.size() &&
             !standard_error_variants(
@@ -5839,7 +5706,8 @@ class Generator {
     }
     if (!fn || !fn->static_dispatch)
       return fn ? fn->name : name;
-    const auto* specialization = call_specialization(*fn, arguments, types);
+    const auto* specialization = call_specialization(
+        *fn, arguments, types, active_native_est_cursor_);
     if (!specialization)
       throw std::runtime_error("missing static specialization for function '" + (fn ? fn->name : name) +
                                "' at its checked call site");
@@ -5921,12 +5789,76 @@ class Generator {
     return pipeline.stages.back().operations.front();
   }
 
+  const FunctionalNode& checked_functional_stage_node(
+      const ParsedFunctionalStage& stage) const {
+    if (stage.arena_index == UINT32_MAX || stage.expression_id == UINT32_MAX)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callback lacks exact EST stage identity");
+    const FunctionalNode* selected = nullptr;
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    for (const auto& pipeline : checked_program.functional_pipelines) {
+      if (pipeline.specialization_id != codegen_body_spec_id_) continue;
+      for (const auto& node : pipeline.nodes) {
+        if (node.est_arena_index != stage.arena_index ||
+            node.est_expression_id != stage.expression_id)
+          continue;
+        if (selected)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT duplicate checked functional stage identity");
+        selected = &node;
+      }
+    }
+    if (!selected)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT checked functional stage identity is missing");
+    return *selected;
+  }
+
+  SpecId checked_functional_callback_spec_id(
+      const ParsedFunctionalStage& stage) const {
+    const auto& node = checked_functional_stage_node(stage);
+    if (node.callable_argument_index == UINT32_MAX ||
+        node.callable_argument_index >= node.est_argument_expression_ids.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callback argument slot is missing or contradictory");
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const auto lookup = select_exact_semantic_call_edge(
+        checked_program, codegen_body_spec_id_, stage.arena_index,
+        stage.expression_id);
+    if (lookup.kind != ExactSemanticCallEdgeLookup::Kind::Unique ||
+        !lookup.edge)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callback Call edge is missing or duplicated");
+    const auto& edge = *lookup.edge;
+    if (edge.caller_spec_id != codegen_body_spec_id_ ||
+        edge.call_est_arena_index != stage.arena_index ||
+        edge.call_expression_occurrence_id != stage.expression_id ||
+        edge.callback_argument_index != node.callable_argument_index ||
+        edge.argument_callable_spec_ids.size() !=
+            node.est_argument_expression_ids.size())
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callback Call edge contradicts checked stage identity");
+    if (edge.target_kind != SemanticCallTargetKind::Static)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT Native functional callback lacks a static checked target");
+    const SpecId callback_spec_id =
+        edge.argument_callable_spec_ids[node.callable_argument_index];
+    if (callback_spec_id == InvalidSpecId ||
+        callback_spec_id >= checked_program.specialization_table.size() ||
+        checked_program.specialization_table[callback_spec_id].id !=
+            callback_spec_id)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callback argument SpecId is missing or contradictory");
+    return callback_spec_id;
+  }
+
   string render_functional_callable(
       const string& callable, const vector<FunctionalValue>& arguments,
       const Domain* domain, const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
       bool propagate_raises = true,
-      bool checked_placeholder_result = false) const {
+      bool checked_placeholder_result = false,
+      const ParsedFunctionalStage* checked_stage = nullptr) const {
     if (generated_expression_uses(callable, "_")) {
       if (arguments.size() != 1)
         throw std::runtime_error("internal error: placeholder functional arity");
@@ -5956,18 +5888,27 @@ class Generator {
 
     string bound_receiver, bound_method;
     if (tree_parse_bound_method_callable(callable, bound_receiver, bound_method)) {
-      auto receiver_type = generated_expr_type(bound_receiver, types);
-      vector<string> argument_types;
-      for (const auto& argument : arguments)
-        argument_types.push_back(argument.type);
-      const Method* method = receiver_type
-          ? resolve_object_method(objects_, canonical_type_name(*receiver_type),
-                                  bound_method, argument_types, false, nullptr)
-          : nullptr;
+      if (!checked_stage)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT bound functional method lacks checked stage identity");
+      const SpecId target_spec_id =
+          checked_functional_callback_spec_id(*checked_stage);
+      const Method* method = nullptr;
+      for (const auto& object : objects_)
+        for (const auto& candidate : object.second->methods)
+          for (const auto& specialization : candidate.specializations)
+            if (specialization.spec_id == target_spec_id) {
+              if (method)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT duplicate checked functional method SpecId");
+              method = &candidate;
+            }
       if (!method)
         throw std::runtime_error(
-            "missing statically resolved functional bound method '" +
-            trim(callable) + "'");
+            "MOSS_INTERNAL_INVARIANT checked functional method SpecId has no declaration");
+      if (method->name != bound_method)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked functional method identity contradicts the callable syntax");
       std::ostringstream rendered;
       rendered << expr(bound_receiver, domain, locals, types) << "."
                << bound_method << "(";
@@ -5999,31 +5940,35 @@ class Generator {
       return rendered.str();
     }
 
-    string identity = resolved_callable_identity(callable, types);
-    const Function* function_target = nullptr;
-    if (starts_with(identity, "callable-v1:")) {
-      function_target = find_function_by_callable_id(identity);
-    } else {
-      auto function = functions_.find(identity);
-      if (function != functions_.end()) function_target = function->second;
-    }
+    if (!checked_stage)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callable lacks exact checked stage identity");
+    const SpecId target_spec_id = checked_functional_callback_spec_id(*checked_stage);
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    const auto& target_row = checked_program.specialization_table[target_spec_id];
+    const Function* function_target = find_function_by_callable_id(
+        target_row.semantic_callable_identity);
     if (!function_target)
-      throw std::runtime_error("missing statically resolved functional callable '" +
-                               identity + "'");
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional callback SpecId has no function declaration");
     string emitted = function_target->name;
-    vector<string> argument_types;
-    for (const auto& argument : arguments) argument_types.push_back(argument.type);
     const FunctionSpecialization* concrete = nullptr;
-    if (function_target->static_dispatch) {
-      // Functional callbacks register the key with no receiver or open-result
-      // binding. Select that exact checked key even when a separate ordinary
-      // call of the same callable and arguments has a bound result key.
-      concrete = functional_specialization(*function_target, argument_types);
+    if (target_spec_id != function_target->spec_id) {
+      for (const auto& candidate : function_target->specializations)
+        if (candidate.spec_id == target_spec_id) {
+          if (concrete)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT duplicate functional callback specialization SpecId");
+          concrete = &candidate;
+        }
       if (!concrete)
-        throw std::runtime_error("missing functional specialization for '" +
-                                 identity + "'");
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT functional callback SpecId has no specialization body");
       emitted = concrete->generated_name;
-    } else concrete = concrete_specialization(*function_target, argument_types);
+    } else if (function_target->static_dispatch) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT static functional callback has no checked specialization SpecId");
+    }
     std::ostringstream rendered;
     rendered << emitted << "(";
     for (size_t index = 0; index < arguments.size(); ++index) {
@@ -6133,7 +6078,7 @@ class Generator {
         if (stage.kind != FunctionalNodeKind::Map) continue;
         for (const auto& operation : stage.operations) {
           auto result = generated_callable_result(
-              operation.arguments.front(), {element_type}, &types);
+              operation.arguments.front(), {element_type}, &types, &operation);
           if (!result)
             throw std::runtime_error(
                 "internal error: untyped shared functional map");
@@ -6243,10 +6188,10 @@ class Generator {
                 out << statement_indent << "let " << next << " = "
                     << render_functional_callable(
                            operation.arguments.front(), {current}, domain,
-                           locals, &types)
+                           locals, &types, true, false, &operation)
                     << ";\n";
                 auto mapped_type = generated_callable_result(
-                    operation.arguments.front(), {current.type}, &types);
+              operation.arguments.front(), {current.type}, &types, &operation);
                 if (!mapped_type)
                   throw std::runtime_error(
                       "internal error: untyped shared functional map result");
@@ -6262,7 +6207,8 @@ class Generator {
                 out << "("
                     << render_functional_callable(
                            stage.operations[predicate].arguments.front(),
-                           {current}, domain, locals, &types)
+                           {current}, domain, locals, &types, true, false,
+                           &stage.operations[predicate])
                     << ")";
               }
               out << ") { break " << label << "; }\n";
@@ -6276,7 +6222,7 @@ class Generator {
                   << render_functional_callable(
                          operation.arguments[1],
                          {{result, accumulator_type, false}, current},
-                         domain, locals, &types)
+                         domain, locals, &types, true, false, &operation)
                   << ";\n";
               break;
             }
@@ -6298,7 +6244,7 @@ class Generator {
                   ? current.expression
                   : render_functional_callable(
                         operation.arguments.front(), {current}, domain,
-                        locals, &types);
+                        locals, &types, true, false, &operation);
               out << statement_indent << "if " << predicate << " { "
                   << result << " = true; }\n";
               break;
@@ -6309,7 +6255,7 @@ class Generator {
                   ? current.expression
                   : render_functional_callable(
                         operation.arguments.front(), {current}, domain,
-                        locals, &types);
+                        locals, &types, true, false, &operation);
               out << statement_indent << "if !(" << predicate << ") { "
                   << result << " = false; }\n";
               break;
@@ -6384,16 +6330,18 @@ class Generator {
       FunctionalValue input{value, current_type, !item_copy};
       if (stage.kind == FunctionalNodeKind::Map) {
         string mapped = render_functional_callable(
-            stage.arguments.front(), {input}, domain, locals, types);
+            stage.arguments.front(), {input}, domain, locals, types,
+            true, false, &stage);
         out << "            " << output << ".push(" << mapped << ");\n";
         auto result = generated_callable_result(stage.arguments.front(),
-                                                {current_type}, types);
+                                                {current_type}, types, &stage);
         if (!result)
           throw std::runtime_error("internal error: untyped eager map result");
         current_type = *result;
       } else {
         string predicate = render_functional_callable(
-            stage.arguments.front(), {input}, domain, locals, types);
+            stage.arguments.front(), {input}, domain, locals, types,
+            true, false, &stage);
         out << "            if " << predicate << " { " << output << ".push("
             << value << "); }\n";
       }
@@ -6445,7 +6393,7 @@ class Generator {
           << render_functional_callable(
                  terminal.arguments[1],
                  {{accumulator, accumulator_type, false}, input},
-                 domain, locals, types)
+                 domain, locals, types, true, false, &terminal)
           << ";\n";
     } else if (terminal.kind == FunctionalNodeKind::Sum) {
       if (canonical_type_name(current_type) == "int")
@@ -6460,7 +6408,8 @@ class Generator {
       string predicate = terminal.arguments.empty()
           ? value
           : render_functional_callable(terminal.arguments.front(), {input},
-                                       domain, locals, types);
+                                       domain, locals, types, true, false,
+                                       &terminal);
       if (terminal.kind == FunctionalNodeKind::Any)
         out << "            if " << predicate << " { " << accumulator
             << " = true; }\n";
@@ -6488,7 +6437,8 @@ class Generator {
       if (stage.kind != FunctionalNodeKind::Map) continue;
       for (const auto& operation : stage.operations) {
         auto result = generated_callable_result(
-            operation.arguments.front(), {final_element_type}, types);
+              operation.arguments.front(), {final_element_type}, types,
+              &operation);
         if (!result)
           throw std::runtime_error("internal error: untyped fused map result");
         final_element_type = *result;
@@ -6538,10 +6488,11 @@ class Generator {
             out << "            let " << next << " = "
                 << render_functional_callable(
                        operation.arguments.front(), {current}, domain,
-                       locals, types)
+                       locals, types, true, false, &operation)
                 << ";\n";
             auto result = generated_callable_result(
-                operation.arguments.front(), {current.type}, types);
+                operation.arguments.front(), {current.type}, types,
+                &operation);
             if (!result)
               throw std::runtime_error(
                   "internal error: untyped fused map result");
@@ -6557,7 +6508,8 @@ class Generator {
             out << "("
                 << render_functional_callable(
                        stage.operations[predicate].arguments.front(),
-                       {current}, domain, locals, types)
+                       {current}, domain, locals, types, true, false,
+                       &stage.operations[predicate])
                 << ")";
           }
           out << ") { continue; }\n";
@@ -6571,7 +6523,7 @@ class Generator {
               << render_functional_callable(
                      operation.arguments[1],
                      {{"__moss_result", accumulator_type, false}, current},
-                     domain, locals, types)
+                     domain, locals, types, true, false, &operation)
               << ";\n";
           break;
         }
@@ -6591,7 +6543,7 @@ class Generator {
               ? current.expression
               : render_functional_callable(
                     operation.arguments.front(), {current}, domain, locals,
-                    types);
+                    types, true, false, &operation);
           out << "            if " << predicate
               << " { __moss_result = true;";
           if (planned && planned->short_circuit_terminal) out << " break;";
@@ -6604,7 +6556,7 @@ class Generator {
               ? current.expression
               : render_functional_callable(
                     operation.arguments.front(), {current}, domain, locals,
-                    types);
+                    types, true, false, &operation);
           out << "            if !(" << predicate
               << ") { __moss_result = false;";
           if (planned && planned->short_circuit_terminal) out << " break;";
@@ -6627,6 +6579,9 @@ class Generator {
       const std::unordered_map<string,string>* types,
       size_t functional_pipeline_id) const {
     auto pipeline = functional_pipeline_from_est(expression);
+    if (!pipeline && expression.find("|>") != string::npos)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT functional pipeline lacks exact EST cursor");
     if (!pipeline) return std::nullopt;
     if (auto chunk_lowering = gen_fileio_chunk_pipeline(
             *pipeline, domain, locals, types, functional_pipeline_id))
@@ -6693,7 +6648,18 @@ class Generator {
               size_t functional_pipeline_id = 0,
               const vector<size_t>* message_argument_plans = nullptr,
               std::optional<RootIngressExpressionOccurrence>
-                  root_ingress_occurrence = std::nullopt) const {
+                  root_ingress_occurrence = std::nullopt,
+              const NativeEstCursor* occurrence = nullptr) const {
+    struct NativeEstCursorScope {
+      const NativeEstCursor*& slot;
+      const NativeEstCursor* prior;
+      NativeEstCursorScope(const NativeEstCursor*& target,
+                           const NativeEstCursor* current)
+          : slot(target), prior(target) { slot = current; }
+      ~NativeEstCursorScope() { slot = prior; }
+    } native_est_cursor_scope(active_native_est_cursor_,
+                              occurrence ? occurrence
+                                         : active_native_est_cursor_);
     if (!root_ingress_statement_ || !root_ingress_occurrence)
       return expr_lower(std::move(e), d, locals, types,
                         functional_pipeline_id, message_argument_plans);
@@ -7144,7 +7110,7 @@ class Generator {
             map_types && !copy_type(map_types->second)) {
           const auto* ownership = phase21_codegen_statement_
               ? resolve_local_ownership_fact(*phase21_codegen_statement_,
-                    codegen_body_context_)
+                    "")
               : nullptr;
           if (!ownership || ownership->access != Effect::Read)
             throw std::runtime_error(
@@ -7162,7 +7128,7 @@ class Generator {
       if (indexed_type && !copy_type(*indexed_type)) {
         const auto* ownership = phase21_codegen_statement_
             ? resolve_local_ownership_fact(*phase21_codegen_statement_,
-                  codegen_body_context_)
+                  "")
             : nullptr;
         if (ownership && (ownership->access == Effect::Read ||
                           ownership->access == Effect::Write))
@@ -7171,7 +7137,7 @@ class Generator {
             (phase21_codegen_statement_->kind == Stmt::Kind::If ||
              phase21_codegen_statement_->kind == Stmt::Kind::While)) {
           const auto* authority = resolve_indexed_expression_read_fact(
-              *phase21_codegen_statement_, e, codegen_body_context_);
+              *phase21_codegen_statement_, e, "");
           const auto checked_receiver_type = generated_expr_type(ib, types);
           if (!authority || !checked_receiver_type ||
               canonical_type_name(authority->result_type) !=
@@ -7237,6 +7203,20 @@ class Generator {
     string member_receiver, member_name;
     vector<string> member_arguments;
     if (tree_parse_member_call(e, member_receiver, member_name, member_arguments)) {
+      const std::optional<NativeEstCursor> member_call_occurrence =
+          native_member_method_call_cursor(active_native_est_cursor_);
+      const auto member_receiver_occurrence =
+          native_member_receiver_cursor(active_native_est_cursor_);
+      struct NativeMemberReceiverScope {
+        const NativeEstCursor*& slot;
+        const NativeEstCursor* prior;
+        NativeMemberReceiverScope(const NativeEstCursor*& target,
+                                  const NativeEstCursor* current)
+            : slot(target), prior(target) { slot = current; }
+        ~NativeMemberReceiverScope() { slot = prior; }
+      } member_receiver_scope(active_native_est_cursor_,
+          member_receiver_occurrence ? &*member_receiver_occurrence
+                                     : active_native_est_cursor_);
       string canon_recv = canonical_type_name(member_receiver);
       if (canon_recv == "int" || canon_recv == "float" || canon_recv == "char" || canon_recv == "string" || canon_recv == "bool") {
         if ((member_name == "less" || member_name == "isequal") &&
@@ -7733,13 +7713,14 @@ class Generator {
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
           member_name = member_name == "push" ? "push_back" : member_name == "pop" ? "pop_front" : member_name;
-        if (auto method = resolve_object_method(objects_, concrete, member_name == "push_back" ? "push" : member_name == "pop_front" ? "pop" : member_name,
-                                                [&]() {
-                                                  vector<string> result;
-                                                  for (const auto& argument : member_arguments)
-                                                    result.push_back(generated_expr_type(argument, types).value_or(""));
-                                                  return result;
-                                                }(), true, nullptr)) {
+        const string source_method_name =
+            member_name == "push_back" ? "push" :
+            member_name == "pop_front" ? "pop" : member_name;
+        const Method* checked_method = objects_.count(concrete)
+            ? checked_method_for_occurrence(source_method_name,
+                member_call_occurrence ? &*member_call_occurrence : nullptr)
+            : nullptr;
+        if (const Method* method = checked_method) {
           const auto external_method_module =
               phase21_external_module_for_symbol(concrete);
           // A consuming concrete method cannot be invoked through either a
@@ -8064,13 +8045,9 @@ class Generator {
           return render_known_function_call(*function_target, function_target->name, call_args,
                                             d, locals, types);
         const Method* sibling_method = nullptr;
-        if (d && objects_.count(d->name) && !known_function) {
-          vector<string> arg_types;
-          for (const auto& argument : call_args)
-            arg_types.push_back(nominalized_generated_argument_type(
-                argument, generated_expr_type(argument, types).value_or("")));
-          sibling_method = resolve_object_method(objects_, d->name, head, arg_types, true, nullptr);
-        }
+        if (d && objects_.count(d->name) && !known_function)
+          sibling_method = checked_method_for_occurrence(
+              head, active_native_est_cursor_);
         if (!known_function && !sibling_method && head == "take") {
           throw std::runtime_error(
               "MOSS_INTERNAL_INVARIANT unhandled take expression in native lowering");
@@ -8080,16 +8057,17 @@ class Generator {
           for (size_t i = 0; i < call_args.size(); ++i) {
             string nested_name; vector<string> nested_args;
             if (tree_parse_simple_call(call_args[i], nested_name, nested_args) &&
-                objects_.count(d->name) &&
-                resolve_object_method(objects_, d->name, nested_name,
-                    [&]() {
-                      vector<string> result;
-                      for (const auto& argument : nested_args)
-                        result.push_back(generated_expr_type(argument, types).value_or(""));
-                      return result;
-                    }(), true, nullptr))
-              sibling_temporaries[i] = "__moss_call_argument_" +
-                  std::to_string(call_argument_temp_++);
+                objects_.count(d->name)) {
+              auto nested_cursor = native_call_argument_cursor(
+                  active_native_est_cursor_, i);
+              const auto* nested_method = nested_cursor
+                  ? checked_method_for_occurrence(nested_name, &*nested_cursor)
+                  : nullptr;
+              if (nested_method &&
+                  nested_method->receiver_effect != Effect::Read)
+                sibling_temporaries[i] = "__moss_call_argument_" +
+                    std::to_string(call_argument_temp_++);
+            }
           }
         }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
@@ -8476,10 +8454,11 @@ class Generator {
       for (const auto& p : method.params) { locals.insert(p.name); types[p.name] = p.type; }
       const bool saved_phase21_result_context = phase21_result_context_;
       phase21_result_context_ = raises;
-      gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
+      gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2,
+                false, true, functional_method_context(t, method),
+                checked_method_body_spec_id(method));
       if (method.result_expression) {
-        string context = functional_method_context(t, method);
-        auto plan = method.result_functional_pipeline_ids.find(context);
+        auto plan = method.result_functional_pipeline_ids.find(method.spec_id);
         FunctionalExpressionHandlesScope result_handles_scope(
             active_functional_expression_handles_,
             &method.expression_handles);
@@ -8697,10 +8676,11 @@ class Generator {
       else if (function_effect(f, index, types.at(f.params[index].name), specialization) == Effect::Write)
         write_through_parameters_.insert(f.params[index].name);
     }
-    string functional_context = functional_function_context(f, specialization);
     const bool saved_phase21_result_context = phase21_result_context_;
     phase21_result_context_ = raises;
-    gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false, true, functional_context);
+    gen_stmts(o, f.body, nullptr, nullptr, "", locals, types, 1, false,
+              true, "",
+              specialization ? specialization->spec_id : f.spec_id);
     if (f.result_expression) {
       struct ResultCodegenScope {
         const FunctionSpecialization*& specialization_slot;
@@ -8725,7 +8705,9 @@ class Generator {
       FunctionalExpressionHandlesScope result_handles_scope(
           active_functional_expression_handles_, &f.expression_handles);
       source_comment(o, 4, f.result_line, *f.result_expression);
-      auto plan = f.result_functional_pipeline_ids.find(functional_context);
+      const SpecId result_spec_id = specialization
+          ? specialization->spec_id : f.spec_id;
+      auto plan = f.result_functional_pipeline_ids.find(result_spec_id);
       string rendered = expr(*f.result_expression, nullptr, locals, &types,
                             plan == f.result_functional_pipeline_ids.end()
                                 ? 0 : plan->second);
@@ -9024,7 +9006,7 @@ class Generator {
       phase21_result_context_ = typed_outcomes;
       gen_stmts(o, test.body, nullptr, nullptr, "", locals, types, 1,
                 false, false,
-                "test:" + test.name);
+                "test:" + test.name, test.spec_id);
       phase21_result_context_ = saved_result_context;
       if (typed_outcomes) o << "    Ok(())\n";
       o << "}\n";
@@ -9101,7 +9083,7 @@ class Generator {
       phase21_result_context_ = typed_outcomes;
       gen_stmts(o, benchmark.body, nullptr, nullptr, "", locals, types, 1,
                 false, false,
-                "bench:" + benchmark.name);
+                "bench:" + benchmark.name, benchmark.spec_id);
       benchmark_body_ = previous_benchmark_body;
       phase21_result_context_ = saved_result_context;
       std::set<string> consumed_locals;
@@ -9198,20 +9180,26 @@ class Generator {
                      });
     domain_instance_bindings_.clear();
     ambiguous_domain_instance_bindings_.clear();
+    const SpecId previous_main_spec_id = codegen_body_spec_id_;
+    codegen_body_spec_id_ = m.spec_id;
     size_t construction_index = 0;
     gen_block(o, constructions, construction_index, 0, nullptr, nullptr, "", locals, types, 1,
               false, false, {}, "main");
     size_t index = 0;
     gen_block(o, executable, index, 0, nullptr, nullptr, "", locals, types, 1,
               false, false, {}, "main");
+    codegen_body_spec_id_ = previous_main_spec_id;
     o << "}\n";
     tooling_end(o, 0, semantic_identity);
   }
 
-  static size_t statement_functional_pipeline_id(
-      const Stmt& statement, const string& context, size_t slot) {
-    auto plans = statement.functional_pipeline_ids.find(context);
-    if (plans == statement.functional_pipeline_ids.end() ||
+  size_t statement_functional_pipeline_id(
+      const Stmt& statement, const string& diagnostic_context,
+      size_t slot) const {
+    (void)diagnostic_context;
+    auto plans = statement.functional_pipeline_ids_by_spec_id.find(
+        codegen_body_spec_id_);
+    if (plans == statement.functional_pipeline_ids_by_spec_id.end() ||
         slot >= plans->second.size())
       return 0;
     return plans->second[slot];
@@ -9219,6 +9207,7 @@ class Generator {
 
   const TypedLocalOwnershipFactV1* resolve_local_ownership_fact(
       const Stmt& s, const string& functional_context) const {
+    (void)functional_context;
     const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
     if (!checked_program.typed_semantics) return nullptr;
 
@@ -9235,14 +9224,13 @@ class Generator {
     }
     if (!matched_handle) return nullptr;
 
-    const string context = functional_context.empty() ? "main" : functional_context;
-
     // Resolve requirement and validated fact through Team A's typed API:
     const TypedLocalOwnershipRequirementV1* requirement = nullptr;
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
     try {
       requirement = checked_program.typed_semantics->find_local_ownership_requirement(
-          matched_handle->arena_index, matched_handle->expr, context);
+          matched_handle->arena_index, matched_handle->expr,
+          codegen_body_spec_id_);
       if (!requirement) {
         return nullptr;
       }
@@ -9283,7 +9271,7 @@ class Generator {
     }
 
     const auto* tree_facts = arena->facts(found_fact->expression_occurrence_id,
-                                          found_fact->specialization_context);
+                                          found_fact->specialization_id);
     if (!tree_facts || !tree_facts->inferred_effect ||
         *tree_facts->inferred_effect != found_fact->access) {
       throw std::runtime_error(
@@ -9295,29 +9283,18 @@ class Generator {
 
   const TypedTryContinuationFactV1& resolve_try_continuation_fact(
       const Stmt& statement, const string& functional_context) const {
+    (void)functional_context;  // Diagnostic label only.
     const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
     if (!checked_program.typed_semantics ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked Try continuation identity unavailable");
-    string context = functional_context.empty()
-        ? "main" : functional_context;
-    const auto failure_arm = context.find(":on_fail:");
-    if (failure_arm != string::npos) {
-      const auto arm_index = failure_arm + std::string(":on_fail:").size();
-      const bool numeric_arm = arm_index < context.size() &&
-          std::all_of(context.begin() + arm_index, context.end(),
-                      [](unsigned char ch) { return std::isdigit(ch); });
-      if (numeric_arm) context.resize(failure_arm);
-    }
-    const string specialization = codegen_active_specialization_key_;
     const TypedTryContinuationRequirementV1* requirement = nullptr;
     for (const auto& candidate : checked_program.typed_semantics
              ->required_try_continuation_occurrences) {
       if (candidate.statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != specialization)
+          candidate.specialization_id != codegen_body_spec_id_)
         continue;
       if (requirement)
         throw std::runtime_error(
@@ -9329,7 +9306,7 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT required Try continuation fact missing "
           "(statement=" +
           std::to_string(statement.checked_statement_occurrence_id) +
-          ", context=" + context + ", specialization=" + specialization + ")");
+          ", SpecId=" + std::to_string(codegen_body_spec_id_) + ")");
     try {
       return checked_program.typed_semantics->find_try_continuation_fact(
           *requirement);
@@ -9341,6 +9318,7 @@ class Generator {
 
   const TypedLocalTransferFactV1* resolve_local_transfer_fact(
       const Stmt& statement, const string& functional_context) const {
+    (void)functional_context;
     if (statement.kind != Stmt::Kind::Assign ||
         !tree_plain_identifier(statement.a) ||
         !tree_plain_identifier(statement.b))
@@ -9367,17 +9345,14 @@ class Generator {
         !checked_program.expression_arenas[rhs_handle->arena_index])
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local transfer EST arena unavailable");
-
-    const string context = functional_context.empty() ? "main" : functional_context;
-    const string specialization = codegen_active_specialization_key_;
     auto& required = checked_program.typed_semantics->required_local_transfer_occurrences;
     auto same_query = [&](const TypedLocalTransferFactV1& candidate) {
       return candidate.est_arena_index == rhs_handle->arena_index &&
           candidate.rhs_expression_occurrence_id == rhs_handle->expr &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == specialization;
+          candidate.specialization_id == codegen_body_spec_id_ &&
+          candidate.specialization_id == codegen_body_spec_id_;
     };
 #ifdef MOSS_TEST_BUILD
     auto& facts = checked_program.typed_semantics->local_transfer_facts;
@@ -9429,7 +9404,8 @@ class Generator {
     try {
       fact = checked_program.typed_semantics->find_local_transfer_fact(
           rhs_handle->arena_index, rhs_handle->expr,
-          statement.checked_statement_occurrence_id, context, specialization);
+          statement.checked_statement_occurrence_id,
+          codegen_body_spec_id_);
     } catch (const std::exception& error) {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local transfer fact " +
@@ -9441,8 +9417,8 @@ class Generator {
         fact->rhs_expression_occurrence_id != rhs_handle->expr ||
         fact->statement_occurrence_id !=
             statement.checked_statement_occurrence_id ||
-        fact->specialization_context != context ||
-        fact->specialization_identity != specialization)
+        fact->specialization_id != codegen_body_spec_id_ ||
+        fact->specialization_id != codegen_body_spec_id_)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local transfer fact missing or contradictory");
 
@@ -9456,13 +9432,14 @@ class Generator {
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local transfer RHS span mismatch");
     const auto* expression_facts =
-        arena.facts(rhs_handle->expr, fact->est_fact_context);
+        arena.facts(rhs_handle->expr, fact->specialization_id);
     if (!expression_facts || !expression_facts->type ||
         !fact->source_type->structurally_equal(*expression_facts->type) ||
         !fact->target_type->structurally_equal(*expression_facts->type))
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT local transfer type contradicts exact EST facts");
-    const auto* ownership = resolve_local_ownership_fact(statement, context);
+    const auto* ownership = resolve_local_ownership_fact(statement,
+                                                          "");
     if (ownership &&
         (ownership->source_binding_identity != fact->source_binding_identity ||
          ownership->definition_identity != fact->target_definition_identity ||
@@ -9503,11 +9480,9 @@ class Generator {
     if (!matched)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT explicit copy occurrence is not an exact checked EST handle");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     try {
       const auto& requirement = checked_program.typed_semantics->find_copy_requirement(
-          matched->arena_index, matched->expr, context);
+          matched->arena_index, matched->expr, codegen_body_spec_id_);
       const auto* fact = checked_program.typed_semantics->find_copy_fact(requirement);
       if (!fact)
         throw std::runtime_error("required checked copy fact missing");
@@ -9610,6 +9585,7 @@ class Generator {
 
   std::vector<const TypedLoopOwnershipFactV1*> resolve_loop_ownership_facts(
       const Stmt& s, const string& functional_context) const {
+    (void)functional_context;
     if (!p_.typed_semantics) return {};
 
     const est::ExprSlot wanted = (s.kind == Stmt::Kind::For)
@@ -9623,14 +9599,12 @@ class Generator {
     }
     if (!matched_handle) return {};
 
-    const string context = functional_context.empty() ? "main" : functional_context;
-
     std::vector<const TypedLoopOwnershipFactV1*> facts;
     for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
       if (req.loop_est_arena_index == matched_handle->arena_index &&
           req.loop_expression_occurrence_id == matched_handle->expr &&
-          req.specialization_context == context &&
-          req.specialization_identity == codegen_active_specialization_key_) {
+          req.specialization_id == codegen_body_spec_id_ &&
+          req.specialization_id == codegen_body_spec_id_) {
         if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -9647,16 +9621,16 @@ class Generator {
     for (const auto& fact : p_.typed_semantics->loop_ownership_facts) {
       if (fact.loop_est_arena_index == matched_handle->arena_index &&
           fact.loop_expression_occurrence_id == matched_handle->expr &&
-          fact.specialization_context == context &&
-          fact.specialization_identity == codegen_active_specialization_key_) {
+          fact.specialization_id == codegen_body_spec_id_ &&
+          fact.specialization_id == codegen_body_spec_id_) {
         if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : p_.typed_semantics->required_loop_ownership_occurrences) {
           if (req.loop_est_arena_index == fact.loop_est_arena_index &&
               req.loop_expression_occurrence_id == fact.loop_expression_occurrence_id &&
-              req.specialization_context == fact.specialization_context &&
-              req.specialization_identity == fact.specialization_identity &&
+              req.specialization_id == fact.specialization_id &&
+              req.specialization_id == fact.specialization_id &&
               req.definition_identity == fact.definition_identity &&
               req.edge_kind == fact.edge_kind) {
             found_req = true;
@@ -9673,14 +9647,14 @@ class Generator {
 
   std::vector<const TypedExceptionalOwnershipFactV1*> resolve_exceptional_ownership_facts(
       const Stmt& s, const string& functional_context) const {
+    (void)functional_context;
     if (!p_.typed_semantics) return {};
     (void)s;
-    const string context = functional_context.empty() ? "main" : functional_context;
 
     std::vector<const TypedExceptionalOwnershipFactV1*> facts;
     for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
-      if (req.specialization_context == context &&
-          req.specialization_identity == codegen_active_specialization_key_) {
+      if (req.specialization_id == codegen_body_spec_id_ &&
+          req.specialization_id == codegen_body_spec_id_) {
         if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -9692,15 +9666,15 @@ class Generator {
       }
     }
     for (const auto& fact : p_.typed_semantics->exceptional_ownership_facts) {
-      if (fact.specialization_context == context &&
-          fact.specialization_identity == codegen_active_specialization_key_) {
+      if (fact.specialization_id == codegen_body_spec_id_ &&
+          fact.specialization_id == codegen_body_spec_id_) {
         if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : p_.typed_semantics->required_exceptional_ownership_occurrences) {
           if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
-              req.specialization_context == fact.specialization_context &&
-              req.specialization_identity == fact.specialization_identity &&
+              req.specialization_id == fact.specialization_id &&
+              req.specialization_id == fact.specialization_id &&
               req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
               req.raised_variant_identity == fact.raised_variant_identity) {
             found_req = true;
@@ -9720,21 +9694,19 @@ class Generator {
       const TypedExceptionalOwnershipFactV1& source_edge,
       const RaisedIdentity& identity,
       const string& functional_context) const {
+    (void)functional_context;
     if (!p_.typed_semantics ||
         raise.checked_statement_occurrence_id == UINT32_MAX ||
         recovery.checked_statement_occurrence_id == UINT32_MAX)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT bare raise transfer identity unavailable");
-    const string context = functional_context.empty() ? "main" : functional_context;
     try {
       const auto& requirement =
           p_.typed_semantics->find_bare_raise_transfer_requirement(
               raise.checked_statement_occurrence_id,
               recovery.checked_statement_occurrence_id, source_edge,
               identity.type);
-      if (requirement.specialization_context != context ||
-          requirement.specialization_identity !=
-              codegen_active_specialization_key_ ||
+      if (requirement.specialization_id != codegen_body_spec_id_ ||
           requirement.raised_variant_identity != identity.canonical())
         throw std::invalid_argument(
             "bare raise transfer edge/context mismatch");
@@ -9748,6 +9720,7 @@ class Generator {
       const Stmt& s, const string& functional_context,
       std::uint32_t* out_arena_index = nullptr,
       est::ExprId* out_expr_id = nullptr) const {
+    (void)functional_context;
     if (!p_.typed_semantics) return nullptr;
 
     est::ExprSlot slot = est::ExprSlot::Expression;
@@ -9779,23 +9752,12 @@ class Generator {
     if (out_arena_index) *out_arena_index = matched_handle->arena_index;
     if (out_expr_id) *out_expr_id = matched_handle->expr;
 
-    const string context = functional_context.empty() ? "main" : functional_context;
     const TypedTakeRequirementV1* requirement = nullptr;
     const TypedTakeFactV1* found_fact = nullptr;
     try {
-      if (!codegen_active_specialization_key_.empty()) {
-        requirement = &p_.typed_semantics->find_take_requirement(
-            matched_handle->arena_index, matched_handle->expr, context,
-            codegen_active_specialization_key_);
-      } else {
-        requirement = &p_.typed_semantics->find_take_requirement(
-            matched_handle->arena_index, matched_handle->expr, context);
-        if (!requirement->specialization_identity.empty()) {
-          throw std::invalid_argument(
-              "take requirement expects specialization identity '" +
-              requirement->specialization_identity + "' but active context has none");
-        }
-      }
+      requirement = &p_.typed_semantics->find_take_requirement(
+          matched_handle->arena_index, matched_handle->expr,
+          codegen_body_spec_id_);
       found_fact = p_.typed_semantics->find_take_fact(*requirement);
     } catch (const std::exception& e) {
       throw std::runtime_error(
@@ -9832,26 +9794,24 @@ class Generator {
     if (!matched_handle)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT checked match scrutinee occurrence is missing");
-    const string context = functional_context.empty() ? "main" : functional_context;
-    string active_specialization_identity = codegen_active_specialization_key_;
+    (void)functional_context;  // Diagnostic label only.
     const TypedMatchOwnershipRequirementV1* requirement = nullptr;
 #ifdef MOSS_TEST_BUILD
     const bool drop_match_requirement =
         std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_REQUIREMENT") != nullptr;
-    if (std::getenv("MOSS_TEST_CONSUMER_COLLIDE_MATCH_SPECIALIZATION_IDENTITY")) {
-      const auto delimiter = context.find('<');
-      active_specialization_identity = context.substr(0, delimiter);
-    }
+    const bool perturb_match_spec_id = std::getenv(
+        "MOSS_TEST_CONSUMER_PERTURB_MATCH_SPEC_ID") != nullptr;
 #else
     constexpr bool drop_match_requirement = false;
+    constexpr bool perturb_match_spec_id = false;
 #endif
     size_t requirement_count = 0;
     for (const auto& req : checked_program.typed_semantics->required_match_occurrences) {
       if (!drop_match_requirement &&
           req.est_arena_index == matched_handle->arena_index &&
           req.scrutinee_occurrence_id == matched_handle->expr &&
-          req.specialization_context == context &&
-          req.specialization_identity == active_specialization_identity) {
+          req.specialization_id == (perturb_match_spec_id
+              ? InvalidSpecId : codegen_body_spec_id_)) {
         requirement = &req;
         ++requirement_count;
       }
@@ -9881,8 +9841,7 @@ class Generator {
             return candidate.est_arena_index == requirement->est_arena_index &&
                 candidate.scrutinee_occurrence_id == requirement->scrutinee_occurrence_id &&
                 candidate.statement_occurrence_id == requirement->statement_occurrence_id &&
-                candidate.specialization_identity == requirement->specialization_identity &&
-                candidate.specialization_context == requirement->specialization_context;
+                candidate.specialization_id == requirement->specialization_id;
           });
       if (fact == corrupted.match_ownership_facts.end())
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT cannot drop absent checked match fact");
@@ -9904,6 +9863,7 @@ class Generator {
 
   const TypedLocalOwnershipFactV1* resolve_vector_element_ownership_fact(
       const Stmt& s, const string& functional_context) const {
+    (void)functional_context;
     if (!p_.typed_semantics) return nullptr;
     const est::Handle* matched_handle = nullptr;
     for (const auto& handle : s.expression_handles) {
@@ -9913,10 +9873,10 @@ class Generator {
       }
     }
     if (!matched_handle) return nullptr;
-    const string context = functional_context.empty() ? "main" : functional_context;
     try {
       const auto* requirement = p_.typed_semantics->find_local_ownership_requirement(
-          matched_handle->arena_index, matched_handle->expr, context);
+          matched_handle->arena_index, matched_handle->expr,
+          codegen_body_spec_id_);
       if (!requirement) return nullptr;
       const auto& fact = p_.typed_semantics->find_local_ownership_fact(*requirement);
       if (fact.source_kind != TypedLocalOwnershipFactV1::SourceKind::VectorElement)
@@ -9932,25 +9892,48 @@ class Generator {
 
   struct SelectorNodeFacts {
     TypeRef type;
-    std::string resolved_target;
-    std::string specialization_result;
+    SpecId callee_spec_id = InvalidSpecId;
     std::optional<Effect> inferred_effect;
   };
 
   std::optional<SelectorNodeFacts> lookup_selector_facts(
       const est::Arena& arena, est::ExprId id,
-      const string& fact_context) const {
-    if (fact_context.empty()) {
+      SpecId specialization_id) const {
+    if (specialization_id == InvalidSpecId) {
       throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector fact lookup missing primary checker context");
     }
-    const auto* facts = arena.facts(id, fact_context);
-    if (!facts) return std::nullopt;
-
+    const auto* facts = arena.facts(id, specialization_id);
     SelectorNodeFacts result;
-    if (facts->type) result.type = facts->type;
-    if (!facts->resolved_target.empty()) result.resolved_target = facts->resolved_target;
-    if (!facts->specialization_result.empty()) result.specialization_result = facts->specialization_result;
-    if (facts->inferred_effect) result.inferred_effect = facts->inferred_effect;
+    if (facts) {
+      if (facts->type) result.type = facts->type;
+      if (facts->inferred_effect) result.inferred_effect = facts->inferred_effect;
+    }
+    if (std::holds_alternative<est::Call>(arena.at(id))) {
+      const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+      std::uint32_t arena_index = UINT32_MAX;
+      for (std::uint32_t index = 0;
+           index < checked_program.expression_arenas.size(); ++index)
+        if (checked_program.expression_arenas[index].get() == &arena) {
+          if (arena_index != UINT32_MAX)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT selector arena identity is ambiguous");
+          arena_index = index;
+        }
+      if (arena_index == UINT32_MAX)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT selector Call arena is not checker-owned");
+      const auto lookup = select_exact_semantic_call_edge(
+          checked_program, specialization_id, arena_index, id);
+      if (lookup.kind != ExactSemanticCallEdgeLookup::Kind::Unique ||
+          !lookup.edge ||
+          lookup.edge->target_kind != SemanticCallTargetKind::Static ||
+          lookup.edge->callee_spec_id == InvalidSpecId ||
+          lookup.edge->callee_spec_id >=
+              checked_program.specialization_table.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT selector exact checked call edge is missing or contradictory");
+      result.callee_spec_id = lookup.edge->callee_spec_id;
+    }
     return result;
   }
 
@@ -9960,8 +9943,8 @@ class Generator {
       const Domain* d,
       const std::set<string>& locals,
       const std::unordered_map<string,string>* types,
-      const string& fact_context) const {
-    const auto facts = lookup_selector_facts(arena, node_id, fact_context);
+      SpecId specialization_id) const {
+    const auto facts = lookup_selector_facts(arena, node_id, specialization_id);
     const auto& node = arena.at(node_id);
     return std::visit([&](const auto& value) -> string {
       using T = std::decay_t<decltype(value)>;
@@ -9994,13 +9977,13 @@ class Generator {
         }
         return value.spelling;
       } else if constexpr (std::is_same_v<T, est::Parenthesized>) {
-        return "(" + lower_est_selector(arena, value.inner, d, locals, types, fact_context) + ")";
+        return "(" + lower_est_selector(arena, value.inner, d, locals, types, specialization_id) + ")";
       } else if constexpr (std::is_same_v<T, est::Unary>) {
-        const auto operand_facts = lookup_selector_facts(arena, value.operand, fact_context);
+        const auto operand_facts = lookup_selector_facts(arena, value.operand, specialization_id);
         if (!facts || !facts->type || !operand_facts || !operand_facts->type) {
           throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector unary operator missing checker-issued type facts");
         }
-        string operand = lower_est_selector(arena, value.operand, d, locals, types, fact_context);
+        string operand = lower_est_selector(arena, value.operand, d, locals, types, specialization_id);
         if (value.op == "-") {
           if (operand_facts->type->kind == TypeKind::Primitive && operand_facts->type->name == "int") {
             return "(" + operand + ").wrapping_neg()";
@@ -10016,13 +9999,13 @@ class Generator {
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector unary operator '" + value.op +
                                  "' for type " + operand_facts->type->to_canonical_string());
       } else if constexpr (std::is_same_v<T, est::Binary>) {
-        const auto left_facts = lookup_selector_facts(arena, value.left, fact_context);
-        const auto right_facts = lookup_selector_facts(arena, value.right, fact_context);
+        const auto left_facts = lookup_selector_facts(arena, value.left, specialization_id);
+        const auto right_facts = lookup_selector_facts(arena, value.right, specialization_id);
         if (!facts || !facts->type || !left_facts || !left_facts->type || !right_facts || !right_facts->type) {
           throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector binary operator missing checker-issued type facts");
         }
-        string left = lower_est_selector(arena, value.left, d, locals, types, fact_context);
-        string right = lower_est_selector(arena, value.right, d, locals, types, fact_context);
+        string left = lower_est_selector(arena, value.left, d, locals, types, specialization_id);
+        string right = lower_est_selector(arena, value.right, d, locals, types, specialization_id);
 
         // Respect checker-issued operator and operand types:
         if (left_facts->type->kind == TypeKind::Primitive && left_facts->type->name == "int") {
@@ -10061,52 +10044,45 @@ class Generator {
         throw std::runtime_error("MOSS_INTERNAL_INVARIANT unsupported selector binary operator '" + value.op +
                                  "' for type " + left_facts->type->to_canonical_string());
       } else if constexpr (std::is_same_v<T, est::Member>) {
-        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context);
+        string base = lower_est_selector(arena, value.base, d, locals, types, specialization_id);
         return base + "." + rust_identifier(value.name);
       } else if constexpr (std::is_same_v<T, est::Index>) {
-        string base = lower_est_selector(arena, value.base, d, locals, types, fact_context);
-        string idx = lower_est_selector(arena, value.index, d, locals, types, fact_context);
-        const auto base_facts = lookup_selector_facts(arena, value.base, fact_context);
+        string base = lower_est_selector(arena, value.base, d, locals, types, specialization_id);
+        string idx = lower_est_selector(arena, value.index, d, locals, types, specialization_id);
+        const auto base_facts = lookup_selector_facts(arena, value.base, specialization_id);
         if (base_facts && base_facts->type && base_facts->type->kind == TypeKind::Builtin && base_facts->type->name == "map") {
           return "(" + base + ").get(&(" + idx + ")).expect(\"Moss missing map key\")";
         }
         return "(" + base + ")[(" + idx + ") as usize]";
       } else if constexpr (std::is_same_v<T, est::Call>) {
-        // Enforce exact checker semantic authority:
-        if (!facts || facts->resolved_target.empty()) {
-          throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call missing checker-issued target identity");
-        }
-        const Function* fn = find_function_by_callable_id(facts->resolved_target);
-        if (!fn) {
-          throw std::runtime_error("MOSS_INTERNAL_INVARIANT checker target callable not found: " + facts->resolved_target);
-        }
-
-        // Validate and resolve specialization identity to existing generated function name:
+        const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+        if (!facts || facts->callee_spec_id == InvalidSpecId ||
+            facts->callee_spec_id >= checked_program.specialization_table.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT selector Call lacks checked callee SpecId");
+        const auto& target_identity =
+            checked_program.specialization_table[facts->callee_spec_id];
+        if (target_identity.id != facts->callee_spec_id)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT selector callee SpecId table row is contradictory");
+        const Function* fn = find_function_by_callable_id(
+            target_identity.semantic_callable_identity);
+        if (!fn)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked selector callee has no function body");
         string fn_name;
         const std::vector<Effect>* callee_parameter_effects = nullptr;
-        if (!facts->specialization_result.empty()) {
-          if (!p_.typed_semantics) {
-            throw std::runtime_error("MOSS_INTERNAL_INVARIANT typed semantics unavailable for selector specialization");
-          }
-          auto spec_it = p_.typed_semantics->specializations.find(facts->specialization_result);
-          if (spec_it == p_.typed_semantics->specializations.end()) {
-            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization identity not found in typed semantics: " +
-                                     facts->specialization_result);
-          }
-          if (spec_it->second.callable_id != facts->resolved_target) {
-            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization callable mismatch: expected " +
-                                     facts->resolved_target + " but specialization belongs to " + spec_it->second.callable_id);
-          }
+        if (facts->callee_spec_id != fn->spec_id) {
           auto exact_fn_spec = std::find_if(
               fn->specializations.begin(), fn->specializations.end(),
               [&](const FunctionSpecialization& cand) {
-                return cand.stable_type_key == facts->specialization_result;
+                return cand.spec_id == facts->callee_spec_id;
               });
           if (exact_fn_spec == fn->specializations.end() || exact_fn_spec->generated_name.empty()) {
-            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call specialization missing generated function name: " +
-                                     facts->specialization_result);
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT selector call specialization SpecId has no generated function");
           }
-          callee_parameter_effects = &spec_it->second.parameter_access;
+          callee_parameter_effects = &exact_fn_spec->parameter_effects;
           bool is_view_fn = false;
           for (const auto& p : fn->params) {
             if (view_object_type(p.type)) { is_view_fn = true; break; }
@@ -10114,8 +10090,8 @@ class Generator {
           fn_name = is_view_fn ? "__moss_view_" + exact_fn_spec->generated_name : exact_fn_spec->generated_name;
         } else {
           if (fn->generic || fn->static_dispatch) {
-            throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call to generic function requires specialization identity: " +
-                                     facts->resolved_target);
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT selector call to generic function has no checked specialization SpecId");
           }
           callee_parameter_effects = &fn->parameter_effects;
           bool is_view_fn = false;
@@ -10128,7 +10104,7 @@ class Generator {
         string call_str = fn_name + "(";
         for (size_t i = 0; i < value.arguments.size(); ++i) {
           if (i) call_str += ", ";
-          const auto arg_facts = lookup_selector_facts(arena, value.arguments[i], fact_context);
+          const auto arg_facts = lookup_selector_facts(arena, value.arguments[i], specialization_id);
           if (!arg_facts || !arg_facts->inferred_effect) {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument missing checker-issued effect");
           }
@@ -10138,7 +10114,7 @@ class Generator {
             throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector call argument effect mismatch with callee parameter effect");
           }
           const auto* arg_id = std::get_if<est::Identifier>(&arena.at(value.arguments[i]));
-          string arg_rendered = lower_est_selector(arena, value.arguments[i], d, locals, types, fact_context);
+          string arg_rendered = lower_est_selector(arena, value.arguments[i], d, locals, types, specialization_id);
 
           if (eff == Effect::Write) {
             if (arg_id && view_parameters_.count(arg_id->name)) {
@@ -10183,7 +10159,7 @@ class Generator {
     }
     const auto& arena = *p_.expression_arenas[fact.est_arena_index];
     (void)s;
-    const string fact_context = fact.est_fact_context;
+    const SpecId specialization_id = fact.specialization_id;
 
     string current_place;
     bool is_view_root = false;
@@ -10231,7 +10207,7 @@ class Generator {
         case TypedTakeProjectionKindV1::QueueIndex: {
           string rendered_selector = lower_est_selector(
               arena, proj.selector_occurrence_id, d, locals, types,
-              fact_context);
+              specialization_id);
           current_place = "(" + current_place + ")[" + "(" + rendered_selector + ") as usize]";
           ends_with_mut_accessor = false;
           current_is_view = false;
@@ -10240,7 +10216,7 @@ class Generator {
         case TypedTakeProjectionKindV1::MapIndex: {
           string rendered_selector = lower_est_selector(
               arena, proj.selector_occurrence_id, d, locals, types,
-              fact_context);
+              specialization_id);
           current_place = "(" + current_place + ").get_mut(&(" + rendered_selector + ")).expect(\"Moss missing map key\")";
           ends_with_mut_accessor = false;
           current_is_view = false;
@@ -10261,7 +10237,16 @@ class Generator {
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler,
                  bool in_function = false,
-                 const string& functional_context = "") {
+                 const string& functional_context = "",
+                 SpecId body_spec_id = InvalidSpecId) {
+    (void)functional_context;
+    struct BodySpecScope {
+      SpecId& slot;
+      SpecId prior;
+      BodySpecScope(SpecId& target, SpecId current)
+          : slot(target), prior(target) { slot = current; }
+      ~BodySpecScope() { slot = prior; }
+    } body_spec_scope(codegen_body_spec_id_, body_spec_id);
     // Binding metadata is lexical to this generated Moss body.  Keeping it
     // separate from Rust type strings prevents a local/backend name collision
     // from being mistaken for a specialization relationship.
@@ -10270,7 +10255,7 @@ class Generator {
     size_t i = 0;
     gen_block(o, ss, i, 0, d, current_handler, reply_slot, locals, types, base,
               in_handler, in_function, {},
-              functional_context);
+              "");
     if (i != ss.size()) throw std::runtime_error("internal error: statement indentation tree not fully consumed");
   }
 
@@ -10279,7 +10264,8 @@ class Generator {
                  std::set<string>& locals, std::unordered_map<string,string>& types,
                  int base, bool in_handler, bool in_function,
                  std::set<string> join_assignments = {},
-                 const string& functional_context = "") {
+                 const string& unused_context = "") {
+    (void)unused_context;
     struct RecoverySlotScope {
       std::set<string>& slot;
       std::set<string> prior;
@@ -10290,8 +10276,8 @@ class Generator {
     auto indent = [&](int lev){ return string((base + lev) * 4, ' '); };
     while (i < ss.size()) {
       const auto& s = ss[i];
-      auto concrete_binding = s.semantic_types_by_context.find(functional_context);
-      string statement_type = concrete_binding == s.semantic_types_by_context.end()
+      auto concrete_binding = s.semantic_types_by_spec_id.find(codegen_body_spec_id_);
+      string statement_type = concrete_binding == s.semantic_types_by_spec_id.end()
           ? s.semantic_type : concrete_binding->second;
       if (const char* dropped = std::getenv("MOSS_TEST_DROP_FACT");
           dropped && string(dropped) == "g2")
@@ -10309,14 +10295,46 @@ class Generator {
       } codegen_statement_scope(phase21_codegen_statement_, &s);
       FunctionalExpressionHandlesScope expression_handles_scope(
           active_functional_expression_handles_, &s.expression_handles);
-      struct CodegenContextScope {
-        string& slot;
-        string prior;
-        CodegenContextScope(string& target, const string& current)
-            : slot(target), prior(target) { slot = current; }
-        ~CodegenContextScope() { slot = std::move(prior); }
-      } codegen_context_scope(codegen_body_context_, functional_context);
-
+      std::optional<NativeEstCursor> statement_est_cursor;
+      std::optional<est::ExprSlot> statement_est_slot;
+      switch (s.kind) {
+        case Stmt::Kind::Let:
+        case Stmt::Kind::Var: statement_est_slot = est::ExprSlot::Initializer; break;
+        case Stmt::Kind::Assign: statement_est_slot = est::ExprSlot::RhsValue; break;
+        case Stmt::Kind::Return:
+        case Stmt::Kind::Reply: statement_est_slot = est::ExprSlot::ReturnValue; break;
+        case Stmt::Kind::If:
+        case Stmt::Kind::While: statement_est_slot = est::ExprSlot::Condition; break;
+        case Stmt::Kind::For: statement_est_slot = est::ExprSlot::Iterable; break;
+        case Stmt::Kind::Match: statement_est_slot = est::ExprSlot::Scrutinee; break;
+        case Stmt::Kind::Raise: statement_est_slot = est::ExprSlot::RaisedValue; break;
+        case Stmt::Kind::Call: statement_est_slot = est::ExprSlot::Expression; break;
+        case Stmt::Kind::Message: statement_est_slot = est::ExprSlot::Receiver; break;
+        default: break;
+      }
+      if (statement_est_slot) {
+        const est::Handle* selected = nullptr;
+        for (const auto& handle : s.expression_handles) {
+          if (handle.slot != *statement_est_slot || handle.argument_index != 0)
+            continue;
+          if (selected)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT duplicate Native statement root EST handle");
+          selected = &handle;
+        }
+        const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+        if (selected && selected->arena_index <
+                checked_program.expression_arenas.size() &&
+            checked_program.expression_arenas[selected->arena_index] &&
+            selected->expr < checked_program.expression_arenas[
+                selected->arena_index]->size())
+          statement_est_cursor = NativeEstCursor{
+              checked_program.expression_arenas[selected->arena_index].get(),
+              selected->arena_index, selected->expr};
+      }
+      NativeEstCursorScope statement_est_scope(
+          active_native_est_cursor_,
+          statement_est_cursor ? &*statement_est_cursor : nullptr);
       source_comment(o, (base + level) * 4, s.line, s.text);
 
       struct RootIngressScope {
@@ -10365,7 +10383,7 @@ class Generator {
           phase21_capture_alternatives_, checked_exceptional_alternatives);
 
       size_t direct_functional_id = statement_functional_pipeline_id(
-          s, functional_context, 0);
+          s, "", 0);
       const FunctionalPipeline* direct_functional =
           planned_functional_pipeline(direct_functional_id);
       if (direct_functional &&
@@ -10391,7 +10409,7 @@ class Generator {
               "its first consumer");
         gen_shared_functional_traversal(
             o, *group, ss, i, d, locals, types, (base + level) * 4,
-            functional_context);
+            "");
         i += group->consumers.size();
         continue;
       }
@@ -10412,8 +10430,8 @@ class Generator {
       switch (s.kind) {
         case Stmt::Kind::Try: {
           const auto& try_continuation =
-              resolve_try_continuation_fact(s, functional_context);
-          auto ex_facts = resolve_exceptional_ownership_facts(s, functional_context);
+              resolve_try_continuation_fact(s, "");
+          auto ex_facts = resolve_exceptional_ownership_facts(s, "");
           (void)ex_facts;
           // Rust cannot infer that a move on one exceptional variant leaves
           // an owned local available on another. The checker has already
@@ -10461,9 +10479,9 @@ class Generator {
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
           const auto exact_join =
-              s.joined_types_by_context.find(functional_context);
+              s.joined_types_by_spec_id.find(codegen_body_spec_id_);
           const auto& joined_types = exact_join ==
-                  s.joined_types_by_context.end()
+                  s.joined_types_by_spec_id.end()
               ? s.joined_types
               : exact_join->second;
           vector<string> joined_bindings;
@@ -10511,7 +10529,7 @@ class Generator {
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       attempt_locals, attempt_types, base, in_handler,
                       in_function, attempt_join_assignments,
-                      functional_context);
+                      "");
             while (i < ss.size() && ss[i].indent == level &&
                    ss[i].kind == Stmt::Kind::Recover) {
               ++i;
@@ -10555,7 +10573,7 @@ class Generator {
           gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                     attempt_locals, attempt_types, base, in_handler,
                     in_function, attempt_join_assignments,
-                    functional_context);
+                    "");
           phase21_result_context_ = saved_result_context;
           phase21_try_label_ = saved_try_label;
           o << indent(level + 1) << "break '" << done_label << ";\n";
@@ -10598,7 +10616,7 @@ class Generator {
                       continue;
                     ++edge_count;
                     require_bare_raise_transfer(
-                        nested, arm, *edge, identity, functional_context);
+                        nested, arm, *edge, identity, "");
                   }
                   if (!edge_count)
                     throw std::runtime_error(
@@ -10714,7 +10732,7 @@ class Generator {
               gen_block(o, ss, rendered_end, level + 1, d, current_handler,
                         reply_slot, arm_locals, arm_types, base + 1,
                         in_handler, in_function, arm_join_assignments,
-                        functional_context);
+                        "");
               phase21_selected_error_ = saved_selected_error;
               phase21_selected_carrier_ = saved_selected_carrier;
               if (rendered_end != body_end)
@@ -10772,12 +10790,12 @@ class Generator {
               throw std::runtime_error(
                   "internal error: raise lacks a checked error value type");
             const string concrete = canonical_type_name(*type);
-            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* take_fact = resolve_take_fact(s, "");
             const string value = take_fact
                 ? emit_take_expression(*take_fact, s, d, locals, &types)
                 : expr(s.a, d, locals, &types,
                     statement_functional_pipeline_id(
-                        s, functional_context, 0));
+                        s, "", 0));
             if (enums_.count(concrete)) {
               const string raised_value = "__moss_error_value_" +
                   std::to_string(phase21_try_temp_++);
@@ -10826,7 +10844,7 @@ class Generator {
           break;
         }
         case Stmt::Kind::Match: {
-          const auto* match_fact = resolve_match_ownership_fact(s, functional_context);
+          const auto* match_fact = resolve_match_ownership_fact(s, "");
           if (!match_fact || !match_fact->scrutinee_type)
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked match fact lacks its scrutinee type");
@@ -10867,8 +10885,9 @@ class Generator {
           if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
-          const auto exact_join = s.joined_types_by_context.find(functional_context);
-          const auto& joined_types = exact_join == s.joined_types_by_context.end()
+          const auto exact_join =
+              s.joined_types_by_spec_id.find(codegen_body_spec_id_);
+          const auto& joined_types = exact_join == s.joined_types_by_spec_id.end()
               ? s.joined_types : exact_join->second;
           vector<string> joined_bindings;
           for (const auto& entry : joined_types)
@@ -11038,7 +11057,7 @@ class Generator {
             branch_join.insert(joined_bindings.begin(), joined_bindings.end());
             gen_block(o, ss, i, level + 2, d, current_handler, reply_slot,
                       branch_locals, branch_types, base, in_handler, in_function,
-                      branch_join, functional_context);
+                      branch_join, "");
             borrowed_function_parameters_ = std::move(saved_borrowed);
             mutable_match_primitive_values_ =
                 std::move(saved_match_primitive_values);
@@ -11053,13 +11072,9 @@ class Generator {
           if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
-          const auto exact_join = s.joined_types_by_context.find(functional_context);
-          if (functional_context.find('<') != string::npos &&
-              exact_join == s.joined_types_by_context.end())
-            throw std::runtime_error(
-                "internal error: missing checked control-flow join for " +
-                functional_context);
-          const auto& joined_types = exact_join == s.joined_types_by_context.end()
+          const auto exact_join =
+              s.joined_types_by_spec_id.find(codegen_body_spec_id_);
+          const auto& joined_types = exact_join == s.joined_types_by_spec_id.end()
               ? s.joined_types : exact_join->second;
           vector<string> joined_bindings;
           for (const auto& entry : joined_types)
@@ -11101,7 +11116,7 @@ class Generator {
           o << indent(level) << "if "
             << expr(s.a, d, locals, &types,
                     statement_functional_pipeline_id(
-                        s, functional_context, 0), nullptr,
+                        s, "", 0), nullptr,
                     root_ingress_expression_occurrence(
                         s, est::ExprSlot::Condition, 0))
             << " {\n";
@@ -11112,7 +11127,7 @@ class Generator {
           child_join_assignments.insert(joined_bindings.begin(), joined_bindings.end());
           gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                     child_locals, child_types, base, in_handler, in_function, child_join_assignments,
-                    functional_context);
+                    "");
           o << indent(level) << "}";
           if (i < ss.size() && ss[i].indent == level && ss[i].kind == Stmt::Kind::Else) {
             o << " else {\n";
@@ -11122,7 +11137,7 @@ class Generator {
             auto else_types = types;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       else_locals, else_types, base, in_handler, in_function, child_join_assignments,
-                      functional_context);
+                      "");
             o << indent(level) << "}\n";
           } else {
             o << "\n";
@@ -11132,12 +11147,12 @@ class Generator {
           break;
         }
         case Stmt::Kind::While: {
-          auto loop_facts = resolve_loop_ownership_facts(s, functional_context);
+          auto loop_facts = resolve_loop_ownership_facts(s, "");
           (void)loop_facts;
           o << indent(level) << "while "
             << expr(s.a, d, locals, &types,
                     statement_functional_pipeline_id(
-                        s, functional_context, 0), nullptr,
+                        s, "", 0), nullptr,
                     root_ingress_expression_occurrence(
                         s, est::ExprSlot::Condition, 0))
             << " {\n";
@@ -11146,12 +11161,12 @@ class Generator {
           auto child_types = types;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                     child_locals, child_types, base, in_handler, in_function, join_assignments,
-                    functional_context);
+                    "");
           o << indent(level) << "}\n";
           break;
         }
         case Stmt::Kind::For: {
-          auto loop_facts = resolve_loop_ownership_facts(s, functional_context);
+          auto loop_facts = resolve_loop_ownership_facts(s, "");
           string source = trim(s.b);
           string range_name;
           vector<string> range_args;
@@ -11191,7 +11206,7 @@ class Generator {
             ++i;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       child_locals, child_types, base, in_handler, in_function, join_assignments,
-                      functional_context);
+                      "");
             o << indent(level) << "}\n";
             break;
           }
@@ -11211,7 +11226,7 @@ class Generator {
             ++i;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       child_locals, child_types, base, in_handler, in_function,
-                      join_assignments, functional_context);
+                      join_assignments, "");
             o << indent(level) << "}\n";
             break;
           }
@@ -11226,7 +11241,7 @@ class Generator {
             ++i;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       child_locals, child_types, base, in_handler, in_function,
-                      join_assignments, functional_context);
+                      join_assignments, "");
             o << indent(level) << "}\n";
             break;
           }
@@ -11242,7 +11257,7 @@ class Generator {
             if (canonical_type_name(element_type) == "seq[Range]") {
               traversal = collection_expression;
             } else {
-              const auto* vector_element_fact = resolve_vector_element_ownership_fact(s, functional_context);
+              const auto* vector_element_fact = resolve_vector_element_ownership_fact(s, "");
               if (vector_element_fact && vector_element_fact->access == Effect::Write) {
                 write_iteration = true;
               }
@@ -11274,7 +11289,7 @@ class Generator {
             ++i;
             gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                       child_locals, child_types, base, in_handler, in_function, join_assignments,
-                      functional_context);
+                      "");
             write_through_parameters_ = std::move(saved_write_through);
             o << indent(level) << "}\n";
             break;
@@ -11283,15 +11298,48 @@ class Generator {
           if (!source_type)
             throw std::runtime_error("internal error: unresolved static iterator source");
           string concrete = canonical_type_name(*source_type);
-          const Method* next = resolve_object_method(objects_, concrete, "next", {}, true, nullptr);
-          bool direct_iterator = next != nullptr;
+          const auto iterator_ids = s.iterator_method_spec_ids_by_spec_id.find(
+              codegen_body_spec_id_);
+          const vector<SpecId>* checked_iterator_ids =
+              iterator_ids == s.iterator_method_spec_ids_by_spec_id.end()
+                  ? nullptr : &iterator_ids->second;
+          const bool custom_iterator = objects_.count(concrete) != 0;
+          if (custom_iterator && !checked_iterator_ids)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT custom iterator lacks checked per-For method SpecIds");
+          if (!custom_iterator && checked_iterator_ids)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT built-in iterator has contradictory custom method SpecIds");
+          if (checked_iterator_ids &&
+              checked_iterator_ids->size() != 1 &&
+              checked_iterator_ids->size() != 2)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT custom iterator method SpecId sequence has invalid arity");
           const Method* iterator_factory = nullptr;
-          if (!direct_iterator) {
-            iterator_factory = resolve_object_method(objects_, concrete, "iter", {}, true, nullptr);
-            if (iterator_factory && iterator_factory->return_type)
-              next = resolve_object_method(
-                  objects_, canonical_type_name(*iterator_factory->return_type),
-                  "next", {}, true, nullptr);
+          const Method* next = nullptr;
+          bool direct_iterator = false;
+          if (checked_iterator_ids) {
+            if (checked_iterator_ids->size() == 1) {
+              next = checked_method_body_for_spec_id(
+                  checked_iterator_ids->front());
+              direct_iterator = true;
+              if (next->name != "next" ||
+                  canonical_type_name(next->owner) != concrete)
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT direct iterator SpecId owner/name is contradictory");
+            } else {
+              iterator_factory = checked_method_body_for_spec_id(
+                  checked_iterator_ids->at(0));
+              next = checked_method_body_for_spec_id(
+                  checked_iterator_ids->at(1));
+              if (iterator_factory->name != "iter" || next->name != "next" ||
+                  canonical_type_name(iterator_factory->owner) != concrete ||
+                  !iterator_factory->return_type ||
+                  canonical_type_name(next->owner) !=
+                      canonical_type_name(*iterator_factory->return_type))
+                throw std::runtime_error(
+                    "MOSS_INTERNAL_INVARIANT iter()/next() SpecId sequence owner/name is contradictory");
+            }
           }
           string iterator_expression;
           if (direct_iterator && next->receiver_effect == Effect::Consume)
@@ -11316,7 +11364,7 @@ class Generator {
           ++i;
           gen_block(o, ss, i, level + 1, d, current_handler, reply_slot,
                     child_locals, child_types, base, in_handler, in_function, join_assignments,
-                    functional_context);
+                    "");
           o << indent(level + 2) << "}\n";
           o << indent(level + 2) << "None => break,\n";
           o << indent(level + 1) << "}\n";
@@ -11331,11 +11379,16 @@ class Generator {
             for (size_t k = 0; k < s.args.size(); ++k) { if (k) o << " "; o << "{}"; }
             o << "\"";
             for (size_t argument = 0; argument < s.args.size(); ++argument) {
+              const auto argument_cursor = checked_statement_cursor(
+                  s, est::ExprSlot::Argument,
+                  static_cast<std::uint32_t>(argument));
+              NativeEstCursorScope argument_cursor_scope(
+                  active_native_est_cursor_, &argument_cursor);
               const auto* echo_fact = resolve_echo_argument_fact(
-                  s, static_cast<std::uint32_t>(argument), functional_context);
+                  s, static_cast<std::uint32_t>(argument), "");
               string proj_base, proj_field, idx_b, idx_i;
               const bool is_indexed_member =
-                  statement_functional_pipeline_id(s, functional_context, argument) == 0 &&
+                  statement_functional_pipeline_id(s, "", argument) == 0 &&
                   tree_parse_member_access(trim(s.args[argument]), proj_base, proj_field) &&
                   tree_parse_index(proj_base, idx_b, idx_i);
               const bool checked_vector_borrow = echo_fact &&
@@ -11345,12 +11398,13 @@ class Generator {
                   ? read_call_place(s.args[argument], d, locals, &types)
                   : expr(
                       s.args[argument], d, locals, &types,
-                      statement_functional_pipeline_id(s, functional_context,
+                      statement_functional_pipeline_id(s, "",
                                                        argument),
                       nullptr,
                       root_ingress_expression_occurrence(
                           s, est::ExprSlot::Argument,
-                          static_cast<std::uint32_t>(argument)));
+                          static_cast<std::uint32_t>(argument)),
+                      &argument_cursor);
               auto type = generated_expr_type(s.args[argument], &types);
               auto resolved = [](const std::optional<string>& t) {
                 if (!t) return false;
@@ -11360,10 +11414,8 @@ class Generator {
               if (!resolved(type)) {
                 // e.g. `[[], [1]]`: the backend's local typing cannot see the
                 // element type; use the type the checker accepted instead.
-                auto checked = s.echo_types_by_context.find(functional_context);
-                if (checked == s.echo_types_by_context.end())
-                  checked = s.echo_types_by_context.find(string());
-                if (checked != s.echo_types_by_context.end() &&
+                auto checked = s.echo_types_by_spec_id.find(codegen_body_spec_id_);
+                if (checked != s.echo_types_by_spec_id.end() &&
                     argument < checked->second.size() &&
                     resolved(checked->second[argument]))
                   type = checked->second[argument];
@@ -11387,10 +11439,8 @@ class Generator {
                 if (!element) {
                   // The backend saw a partially open element type; use the
                   // complete type the checker accepted for this context.
-                  auto checked = s.echo_types_by_context.find(functional_context);
-                  if (checked == s.echo_types_by_context.end())
-                    checked = s.echo_types_by_context.find(string());
-                  if (checked != s.echo_types_by_context.end() &&
+                auto checked = s.echo_types_by_spec_id.find(codegen_body_spec_id_);
+                if (checked != s.echo_types_by_spec_id.end() &&
                       argument < checked->second.size() &&
                       starts_with(checked->second[argument], "vector[")) {
                     const string& full = checked->second[argument];
@@ -11411,12 +11461,16 @@ class Generator {
           break;
         }
         case Stmt::Kind::Assign: {
+          const auto rhs_cursor = checked_statement_cursor(
+              s, est::ExprSlot::RhsValue);
+          NativeEstCursorScope rhs_cursor_scope(
+              active_native_est_cursor_, &rhs_cursor);
           bool joined_assignment = join_assignments.erase(s.a) != 0;
           if (s.a == "_") {
             o << indent(level) << "let _ = "
               << expr(s.b, d, locals, &types,
                       statement_functional_pipeline_id(
-                          s, functional_context, 0), nullptr,
+                          s, "", 0), nullptr,
                       root_ingress_expression_occurrence(
                           s, est::ExprSlot::RhsValue, 0))
               << ";\n";
@@ -11427,7 +11481,7 @@ class Generator {
             o << indent(level) << "__moss_recovery_slot_" << s.a
               << " = Some(" << expr(s.b, d, locals, &types,
                      statement_functional_pipeline_id(
-                         s, functional_context, 0), nullptr,
+                         s, "", 0), nullptr,
                      root_ingress_expression_occurrence(
                          s, est::ExprSlot::RhsValue, 0)) << ");\n";
             ++i;
@@ -11447,10 +11501,10 @@ class Generator {
             ++i;
             break;
           }
-          if (auto map_write = resolve_map_write_through(s, functional_context)) {
+          if (auto map_write = resolve_map_write_through(s, "")) {
             o << indent(level) << emit_checked_map_write_through(
                 *map_write, s, d, locals, &types,
-                statement_functional_pipeline_id(s, functional_context, 0))
+                statement_functional_pipeline_id(s, "", 0))
               << ";\n";
             ++i;
             break;
@@ -11504,7 +11558,7 @@ class Generator {
             if (statement_type.empty())
               throw std::runtime_error(
                   "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
-                  std::to_string(s.line) + " context=" + functional_context);
+                  std::to_string(s.line) + " SpecId=" + std::to_string(codegen_body_spec_id_));
             backend_comment(o, (base + level) * 4,
                             "LOCAL assignment: introduce an inferred Moss binding");
             string annotation;
@@ -11537,8 +11591,8 @@ class Generator {
               annotation = rust_type(statement_type);
             else if (canonical_type_name(statement_type) == "float")
               annotation = "f64";
-            const auto* take_fact = resolve_take_fact(s, functional_context);
-            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+            const auto* take_fact = resolve_take_fact(s, "");
+            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, "");
             if (take_fact) {
               string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
               o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
@@ -11553,11 +11607,14 @@ class Generator {
                           const bool prior = checked_map_get_write_through_;
                           checked_map_get_write_through_ =
                               ownership_fact->access == Effect::Write;
+                          const auto rhs_cursor = checked_statement_cursor(
+                              s, est::ExprSlot::RhsValue);
                           string rendered = expr(s.b, d, locals, &types,
                               statement_functional_pipeline_id(
-                                  s, functional_context, 0), nullptr,
+                                  s, "", 0), nullptr,
                               root_ingress_expression_occurrence(
-                                  s, est::ExprSlot::RhsValue, 0));
+                                  s, est::ExprSlot::RhsValue, 0),
+                              &rhs_cursor);
                           checked_map_get_write_through_ = prior;
                           return rendered;
                         }();
@@ -11580,14 +11637,17 @@ class Generator {
                 o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
               }
             } else {
+              const auto rhs_cursor = checked_statement_cursor(
+                  s, est::ExprSlot::RhsValue);
               o << indent(level) << "let mut " << rust_identifier(s.a);
               if (!annotation.empty()) o << ": " << annotation;
               o << " = "
                 << expr(s.b, d, locals, &types,
                         statement_functional_pipeline_id(
-                            s, functional_context, 0), nullptr,
+                            s, "", 0), nullptr,
                         root_ingress_expression_occurrence(
-                            s, est::ExprSlot::RhsValue, 0))
+                            s, est::ExprSlot::RhsValue, 0),
+                        &rhs_cursor)
                 << ";\n";
             }
             locals.insert(s.a);
@@ -11628,7 +11688,7 @@ class Generator {
                   !string_key)
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0),
+                  statement_functional_pipeline_id(s, "", 0),
                   nullptr, root_ingress_expression_occurrence(
                       s, est::ExprSlot::RhsValue, 0));
               const auto source_binding = tree_identifier_name(s.b);
@@ -11651,7 +11711,7 @@ class Generator {
             }
             else if (is_object_view(s.a, d, locals, &types) && (!tree_plain_identifier(s.a) || !locals.count(s.a))) {
               string assigned = expr(s.b, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0),
+                  statement_functional_pipeline_id(s, "", 0),
                   nullptr, root_ingress_expression_occurrence(
                       s, est::ExprSlot::RhsValue, 0));
               o << indent(level) << "{ let __moss_assigned = " << assigned << "; "
@@ -11659,11 +11719,11 @@ class Generator {
             }
             else {
               const auto* transfer_fact =
-                  resolve_local_transfer_fact(s, functional_context);
+                  resolve_local_transfer_fact(s, "");
               const auto* take_fact = transfer_fact
-                  ? nullptr : resolve_take_fact(s, functional_context);
+                  ? nullptr : resolve_take_fact(s, "");
               const auto* ownership_fact = (take_fact || transfer_fact)
-                  ? nullptr : resolve_local_ownership_fact(s, functional_context);
+                  ? nullptr : resolve_local_ownership_fact(s, "");
               string assigned;
               vector<string> concat_operands;
               std::function<void(string)> collect_concat = [&](string source) {
@@ -11728,7 +11788,7 @@ class Generator {
                 checked_map_get_write_through_ =
                     ownership_fact && ownership_fact->access == Effect::Write;
                 assigned = expr(s.b, d, locals, &types,
-                    statement_functional_pipeline_id(s, functional_context, 0),
+                    statement_functional_pipeline_id(s, "", 0),
                     nullptr, root_ingress_expression_occurrence(
                         s, est::ExprSlot::RhsValue, 0));
                 checked_map_get_write_through_ = prior;
@@ -11778,10 +11838,8 @@ class Generator {
           break;
         }
         case Stmt::Kind::Call: {
-          auto checked_receiver = s.receiver_types_by_context.find(functional_context);
-          if (checked_receiver == s.receiver_types_by_context.end())
-            checked_receiver = s.receiver_types_by_context.find("");
-          if (checked_receiver != s.receiver_types_by_context.end() && types.count(s.a))
+          auto checked_receiver = s.receiver_types_by_spec_id.find(codegen_body_spec_id_);
+          if (checked_receiver != s.receiver_types_by_spec_id.end() && types.count(s.a))
             types[s.a] = checked_receiver->second;
           string statement_receiver_type = !s.b.empty()
               ? canonical_type_name(generated_expr_type(s.a, &types).value_or("")) : "";
@@ -11814,7 +11872,8 @@ class Generator {
               }
               const est::SemanticFacts* arg_facts = nullptr;
               if (arg_handle && arena) {
-                arg_facts = arena->facts(arg_handle->expr, functional_context);
+                arg_facts = arena->facts(arg_handle->expr,
+                                         codegen_body_spec_id_);
               }
               if (arg_facts && is_primitive_copy_type(arg_facts->type)) {
                 string arg_val = expr(s.args[0], d, locals, &types);
@@ -11842,7 +11901,7 @@ class Generator {
             o << indent(level) << "if !("
               << expr(s.args.front(), d, locals, &types,
                       statement_functional_pipeline_id(
-                          s, functional_context, 0))
+                          s, "", 0))
               << ") { panic!(\"{}\", "
               << rust_string_literal(
                      "Moss assertion failed at line " +
@@ -11857,31 +11916,31 @@ class Generator {
             string expected = "__moss_assert_expected_" + std::to_string(id);
             const auto* actual_indexed_read =
                 resolve_indexed_call_argument_read_fact(
-                    s, 0, functional_context);
+                    s, 0, "");
             const auto* actual_projected_read =
                 resolve_projected_call_argument_read_fact(
-                    s, 0, functional_context);
+                    s, 0, "");
             const auto* expected_indexed_read = s.args.size() > 1
                 ? resolve_indexed_call_argument_read_fact(
-                      s, 1, functional_context)
+                      s, 1, "")
                 : nullptr;
             const auto* expected_projected_read = s.args.size() > 1
                 ? resolve_projected_call_argument_read_fact(
-                      s, 1, functional_context)
+                      s, 1, "")
                 : nullptr;
             o << indent(level) << "let " << actual << " = &("
               << (actual_indexed_read || actual_projected_read
                       ? read_call_place(s.args[0], d, locals, &types)
                       : expr(s.args[0], d, locals, &types,
                              statement_functional_pipeline_id(
-                                 s, functional_context, 0)))
+                                 s, "", 0)))
               << ");\n";
             o << indent(level) << "let " << expected << " = &("
               << (expected_indexed_read || expected_projected_read
                       ? read_call_place(s.args[1], d, locals, &types)
                       : expr(s.args[1], d, locals, &types,
                              statement_functional_pipeline_id(
-                                 s, functional_context, 1)))
+                                 s, "", 1)))
               << ");\n";
             string escaped_text;
             for (char ch : s.text) {
@@ -11915,9 +11974,16 @@ class Generator {
           }
           bool known_function = (function_target != nullptr);
           if (s.b.empty() && known_function && !benchmark_body_) {
+            NativeEstCursor call_cursor;
+            if (function_target->static_dispatch)
+              call_cursor = checked_statement_cursor(
+                  s, est::ExprSlot::Expression);
             o << indent(level)
               << render_known_function_call(*function_target, function_target->name, s.args,
-                                           d, locals, &types)
+                                           d, locals, &types,
+                                           function_target->static_dispatch
+                                               ? &call_cursor
+                                               : nullptr)
               << ";\n";
             ++i;
             break;
@@ -11930,15 +11996,8 @@ class Generator {
                              : std::optional<string>{};
           const Method* call_method = nullptr;
           if (call_receiver_type && (!s.b.empty() || implicit_method))
-            call_method = resolve_object_method(
-                objects_, canonical_type_name(*call_receiver_type),
-                implicit_method ? s.a : s.b, [&]() {
-                  vector<string> result;
-                  for (const auto& argument : s.args)
-                    result.push_back(nominalized_generated_argument_type(
-                        argument, generated_expr_type(argument, &types).value_or("")));
-                  return result;
-                }(), true, nullptr);
+            call_method = checked_method_for_occurrence(
+                implicit_method ? s.a : s.b, active_native_est_cursor_);
           const auto external_method_module = call_method && call_receiver_type
               ? phase21_external_module_for_symbol(
                     canonical_type_name(*call_receiver_type))
@@ -11959,21 +12018,30 @@ class Generator {
               if (!s.b.empty()) {
                 string nested_receiver, nested_method;
                 vector<string> nested_args;
-                same_receiver_mutating_argument =
-                    tree_parse_member_call(s.args[k], nested_receiver, nested_method,
-                                      nested_args) &&
-                    tree_expressions_equal(nested_receiver, s.a);
+                if (tree_parse_member_call(s.args[k], nested_receiver,
+                                           nested_method, nested_args) &&
+                    tree_expressions_equal(nested_receiver, s.a)) {
+                  auto nested_cursor = native_call_argument_cursor(
+                      active_native_est_cursor_, k);
+                  const auto* nested_target = nested_cursor
+                      ? checked_method_for_occurrence(nested_method,
+                                                      &*nested_cursor)
+                      : nullptr;
+                  same_receiver_mutating_argument = nested_target &&
+                      nested_target->receiver_effect != Effect::Read;
+                }
               } else if (implicit_method) {
                 string nested_name;
                 vector<string> nested_args;
                 if (tree_parse_simple_call(s.args[k], nested_name, nested_args)) {
-                  vector<string> nested_types;
-                  for (const auto& argument : nested_args)
-                    nested_types.push_back(nominalized_generated_argument_type(
-                        argument, generated_expr_type(argument, &types).value_or("")));
-                  same_receiver_mutating_argument =
-                      resolve_object_method(objects_, d->name, nested_name,
-                                            nested_types, true, nullptr) != nullptr;
+                  auto nested_cursor = native_call_argument_cursor(
+                      active_native_est_cursor_, k);
+                  const auto* nested_target = nested_cursor
+                      ? checked_method_for_occurrence(nested_name,
+                                                      &*nested_cursor)
+                      : nullptr;
+                  same_receiver_mutating_argument = nested_target &&
+                      nested_target->receiver_effect != Effect::Read;
                 }
               }
               if (!same_receiver_mutating_argument) continue;
@@ -11984,7 +12052,7 @@ class Generator {
               o << indent(level) << "let " << argument_temporaries[k] << " = "
                 << expr(s.args[k], d, locals, &types,
                         statement_functional_pipeline_id(
-                            s, functional_context, k))
+                            s, "", k))
                 << ";\n";
               locals.insert(argument_temporaries[k]);
               types[argument_temporaries[k]] = temporary_type;
@@ -12019,15 +12087,16 @@ class Generator {
               call_output << function_call_argument(*function_target, k, argument_expression, d,
                                           locals, &types,
                                           statement_functional_pipeline_id(
-                                              s, functional_context, k),
+                                              s, "", k),
                                           call_specialization(*function_target,
-                                                              s.args, &types));
+                                                              s.args, &types,
+                                                              active_native_est_cursor_));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
                 string rendered = method_call_argument(
                     *call_method, k, argument_expression, d, locals, &types,
                     statement_functional_pipeline_id(
-                        s, functional_context, k));
+                        s, "", k));
                 bool standard_write_argument = false;
                 if (external_method_module && k < call_method->params.size() &&
                     !standard_error_variants(canonical_type_name(
@@ -12067,11 +12136,11 @@ class Generator {
               } else
                 call_output << expr(argument_expression, d, locals, &types,
                           statement_functional_pipeline_id(
-                              s, functional_context, k));
+                              s, "", k));
             } else {
               call_output << expr(s.args[k], d, locals, &types,
                         statement_functional_pipeline_id(
-                            s, functional_context, k));
+                            s, "", k));
             }
             if (benchmark_body_) call_output << ")";
           }
@@ -12112,7 +12181,7 @@ class Generator {
           if (statement_type.empty())
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT missing checked statement type line=" +
-                std::to_string(s.line) + " context=" + functional_context);
+                std::to_string(s.line) + " SpecId=" + std::to_string(codegen_body_spec_id_));
           bool joined_assignment = join_assignments.erase(s.a) != 0;
           auto sd = domain_construction(s.b);
           if (sd) {
@@ -12148,8 +12217,8 @@ class Generator {
                 }
               }
             }
-            const auto* take_fact = resolve_take_fact(s, functional_context);
-            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, functional_context);
+            const auto* take_fact = resolve_take_fact(s, "");
+            const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, "");
             o << indent(level);
             if (!joined_assignment) {
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);
@@ -12201,7 +12270,7 @@ class Generator {
                 o << ": " << rust_type(statement_type);
               string rhs_val = expr(s.b, d, locals, &types,
                                     statement_functional_pipeline_id(
-                                        s, functional_context, 0), nullptr,
+                                        s, "", 0), nullptr,
                                     root_ingress_expression_occurrence(
                                         s, est::ExprSlot::RhsValue, 0));
               if (ownership_fact) {
@@ -12272,7 +12341,7 @@ class Generator {
           }
           vector<size_t> argument_plans;
           for (size_t argument = 0; argument < s.args.size(); ++argument)
-            argument_plans.push_back(statement_functional_pipeline_id(s, functional_context, argument));
+            argument_plans.push_back(statement_functional_pipeline_id(s, "", argument));
           o << expr(call, d, locals, &types, 0, &argument_plans,
                     root_ingress_expression_occurrence(
                         s, est::ExprSlot::Receiver, 0))
@@ -12288,16 +12357,16 @@ class Generator {
         case Stmt::Kind::Reply: {
           if (!current_handler || !current_handler->reply_type || reply_slot.empty())
             throw std::runtime_error("internal error: unchecked reply reached code generation");
-          const auto* take_fact = resolve_take_fact(s, functional_context);
+          const auto* take_fact = resolve_take_fact(s, "");
           const auto* return_fact = resolve_return_value_fact(
-              s, functional_context);
+              s, "");
           if (take_fact) {
             o << indent(level) << reply_slot << " = Some("
               << emit_take_expression(*take_fact, s, d, locals, &types) << ");\n";
           } else {
             o << indent(level) << reply_slot << " = Some("
               << message_arg(s.a, *current_handler->reply_type, d, locals, &types,
-                  statement_functional_pipeline_id(s, functional_context, 0),
+                  statement_functional_pipeline_id(s, "", 0),
                   return_fact) << ");\n";
           }
           o << indent(level) << "break 'handler;\n";
@@ -12312,16 +12381,16 @@ class Generator {
         }
         case Stmt::Kind::Return:
           if (in_function && !s.a.empty()) {
-            const auto* take_fact = resolve_take_fact(s, functional_context);
+            const auto* take_fact = resolve_take_fact(s, "");
             const auto* return_fact = resolve_return_value_fact(
-                s, functional_context);
+                s, "");
             string rendered;
             if (take_fact) {
               rendered = emit_take_expression(*take_fact, s, d, locals, &types);
             } else {
               rendered = expr(s.a, d, locals, &types,
                         statement_functional_pipeline_id(
-                            s, functional_context, 0));
+                            s, "", 0));
               const auto returned_binding = tree_identifier_name(s.a);
               if (return_fact->action ==
                   TypedReturnValueActionV1::ReadCopyPrimitive) {
@@ -12366,7 +12435,7 @@ class Generator {
           if (benchmark_body_) o << "std::hint::black_box(";
           o << expr(s.text, d, locals, &types,
                     statement_functional_pipeline_id(
-                        s, functional_context, 0));
+                        s, "", 0));
           if (benchmark_body_) o << ")";
           o << ";\n";
           ++i;

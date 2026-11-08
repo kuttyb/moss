@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import re
 import shutil
@@ -21,6 +22,7 @@ EXPECTED = {
     "dead_tail2": "1\n0",
     "o15b": "3",
     "field_read": "3",
+    "nested_method_member": "9",
 }
 CALLBACK_CORPUS = (
     "examples/functional_dataflow.moss",
@@ -35,8 +37,9 @@ CALLBACK_CORPUS = (
 )
 
 
-def run(args: list[str], *, env=None, expected=0) -> subprocess.CompletedProcess[str]:
-    result = subprocess.run(args, cwd=ROOT, env=env, text=True,
+def run(args: list[str], *, env=None, expected=0,
+        cwd=ROOT) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(args, cwd=cwd, env=env, text=True,
                             capture_output=True, timeout=90)
     if expected == 0 and result.returncode != 0:
         raise RuntimeError(
@@ -68,6 +71,70 @@ def main() -> int:
     out.mkdir()
     failures: list[str] = []
     try:
+        provider = out / "mossi_provider"
+        consumer = out / "mossi_consumer"
+        (provider / "src").mkdir(parents=True)
+        (consumer / "src").mkdir(parents=True)
+        package = ('[project]\nname = "phase28_identity_provider"\n'
+                   'version = "0.1.0"\n')
+        (provider / "moss.toml").write_text(package, encoding="utf-8")
+        (consumer / "moss.toml").write_text(
+            '[project]\nname = "phase28_identity_consumer"\n'
+            'version = "0.1.0"\n', encoding="utf-8")
+        (provider / "src" / "provider.moss").write_text(
+            "module Provider\nexport fn normalize(x):\n  return x\n",
+            encoding="utf-8")
+        imported_call = consumer / "src" / "main.moss"
+        imported_call.write_text(
+            "module App\nimport Provider\n"
+            "fn pair(first, second):\n  echo first\n  echo second\n"
+            "fn main():\n"
+            "  pair(Provider.normalize(10), Provider.normalize(3.5))\n",
+            encoding="utf-8")
+        margo = str(ROOT / "margo")
+        staged_env = {**os.environ, "MOSS": compiler,
+                      "MOSS_STAGED_ABI": "v10"}
+        try:
+            provider_build = run([margo, "build", "--json"], env=staged_env,
+                                 cwd=provider)
+        except RuntimeError as error:
+            provider_build = None
+            failures.append(f"imported identity provider .mossi build failed: {error}")
+        provider_artifacts = provider / "build" / "debug"
+        provider_interface = provider_artifacts / "Provider.mossi"
+        if provider_build is None or provider_build.returncode or not provider_interface.exists():
+            failures.append("imported identity provider .mossi build failed: "
+                            f"{provider_build.stdout if provider_build else ''}\n"
+                            f"{provider_build.stderr if provider_build else ''}")
+        else:
+            imported_env = {**staged_env, "MOSS_MODULE_PATH":
+                            str(provider_artifacts)}
+            try:
+                consumer_build = run([margo, "build", "--json"],
+                                     env=imported_env, cwd=consumer)
+            except RuntimeError as error:
+                consumer_build = None
+                failures.append(f"imported identity consumer build failed: {error}")
+            if consumer_build is None or consumer_build.returncode:
+                failures.append("imported identity consumer build failed: "
+                                f"{consumer_build.stdout if consumer_build else ''}\n"
+                                f"{consumer_build.stderr if consumer_build else ''}")
+            else:
+                build_info = json.loads(consumer_build.stdout)
+                executable = Path(
+                    build_info["artifacts"]["artifacts"]["executable"])
+                imported_native = run([str(executable)], env=imported_env,
+                                      cwd=consumer).stdout.strip()
+                imported_fast = run([margo, "debug"], env=imported_env,
+                                    cwd=consumer).stdout.strip()
+                if imported_native != "10\n3.5" or imported_fast != "10\n3.5":
+                    failures.append(
+                        "imported nested-call identity output mismatch: "
+                        f"Fast={imported_fast!r}, Native={imported_native!r}")
+                else:
+                    print("PASS imported nested-call identity: "
+                          "Fast=Native='10\\n3.5'")
+
         for name, expected in EXPECTED.items():
             source = FIXTURES / f"{name}.moss"
             fast = native = None
@@ -112,24 +179,38 @@ def main() -> int:
             print("PASS field_consume: rejected at line 9 in both engines")
 
         callback = FIXTURES / "cb_spec.moss"
-        for hook, marker in (
-            ("MOSS_TEST_CONSUMER_DROP_DYNAMIC_CALLBACK_FACT",
-             "checked pipeline callback classification is missing"),
-            ("MOSS_TEST_CONSUMER_PERTURB_DYNAMIC_CALLBACK_FACT",
-             "static callback fact contradicts its checked value"),
-        ):
+        nested_method_member = FIXTURES / "nested_method_member.moss"
+        call_edge_mutations = (
+            "MOSS_TEST_CONSUMER_DROP_SEMANTIC_CALL_EDGE",
+            "MOSS_TEST_CONSUMER_STALE_SEMANTIC_CALL_EDGE",
+            "MOSS_TEST_CONSUMER_DUPLICATE_SEMANTIC_CALL_EDGE",
+            "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE",
+            "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_TARGET",
+            "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_SPEC_ID",
+            "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_ARGUMENT_SPEC_ID",
+        )
+        for hook in call_edge_mutations:
             env = os.environ.copy()
             env[hook] = "1"
-            try:
-                result = run([compiler, "run", "--interp", str(callback)],
-                             env=env, expected=1)
-                if "MOSS_INTERNAL_INVARIANT" not in result.stderr + result.stdout or \
-                        marker not in result.stderr + result.stdout:
-                    failures.append(f"{hook} did not fail closed with expected invariant")
-                else:
-                    print(f"PASS {hook}: fail closed")
-            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
-                failures.append(f"{hook}: {error}")
+            for mode, command in (
+                ("Fast Debug", [compiler, "run", "--interp", str(callback)]),
+                ("Native", [compiler, str(callback), "-o",
+                            str(out / f"{hook}.rs")]),
+                ("Fast Debug nested method", [compiler, "run", "--interp",
+                                                str(nested_method_member)]),
+                ("Native nested method", [compiler, str(nested_method_member),
+                                           "-o", str(out / f"{hook}-method.rs")]),
+            ):
+                try:
+                    result = run(command, env=env, expected=1)
+                    output = result.stderr + result.stdout
+                    if "MOSS_INTERNAL_INVARIANT" not in output:
+                        failures.append(
+                            f"{hook} {mode} did not fail closed with an invariant")
+                    else:
+                        print(f"PASS {hook} {mode}: fail closed")
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                    failures.append(f"{hook} {mode}: {error}")
 
         for relative in CALLBACK_CORPUS:
             source = ROOT / relative

@@ -19039,3 +19039,121 @@ untouched.
   have been removed. Forced `semantic_checker.o` build, SpecId remap Werror
   harness, feedback validation, and diff-check pass. Consumer object build and
   full identity/domain-instance gates remain pending Team B synchronization.
+## Phase 28 R7-011 Team B consumer branch — 2026-11-07
+
+- Isolated branch `phase28-r7-011-team-b-dynamic-fastdebug` is at
+  `f80bf846` plus uncommitted consumer edits; this is not a frozen SHA and is
+  not integrated. Preserved the branch's prior seven commits and added codec
+  checkpoints `be6a21a7`, `dc84f98f`, `8e2973c6`, `dbd5c829`, `87337a37`, and
+  `f80bf846`
+  from Team B serialization, plus producer checkpoint `cfe0313f`.
+- `make --jobs=2 MOSS_LDFLAGS= moss-dev` passes. The build emits only existing
+  `type_ir.hpp` missing-field initializer warnings.
+- First executable identity gate is NO-GO. On this exact source state,
+  `nest_spec` passes both engines (`10`, `3.5`) and `field_consume` rejects at
+  line 9 in both. Native also passes `try_spec`, `dead_tail2`, `o15b`, and
+  `field_read`. Fast Debug remains blocked on call-edge/body resolution for
+  these cases; the full failure list is in the command output and was sent to
+  the coordinator. The imported pair test fails source-free consumer build at
+  parameter-return EST projection: after `8e2973c6` adds Function/Function-
+  Specialization owner IDs, this advances to a missing/ambiguous checked
+  ReturnValue fact at provider line 3. All seven call-edge corruption hooks (drop,
+  stale, duplicate, perturb, target, SpecId, argument SpecId) fail closed in
+  both Fast Debug and Native.
+- Consumer root-cause finding sent to Team A and L7: the producer currently
+  prefixes `ProgramSpecializationIdentity.semantic_callable_identity` with
+  module identity while Function body records retain the canonical callable
+  identity. Exact equality then fails in both consumers. Keep callable identity
+  canonical and module identity in its separate table field; do not add
+  consumer suffix parsing or fallback selection.
+- Remaining blockers: producer owner-ID/call-edge population for main,
+  handler, generic method and callback stage contexts; distinct concrete
+  `MethodSpecializationIdentity` rows; source-free parameter-return SpecId
+  restoration; and deletion of the AST name/line matcher plus four checker
+  callers. Team A owns the producer/matcher paths, codec worker owns
+  `src/moss.cpp`, and this branch owns Fast Debug/Native consumers. No broad
+  suites or staging integration have been run from this source state.
+- Codec trace on `8e2973c6` plus temporary diagnostic commit `dbd5c829` confirms
+  the imported generic provider has no matching ReturnValue fact or
+  requirement rows at all: callable `fn:Provider__normalize`, statement 0,
+  arena 0, ExprId 0, followed by zero candidate and requirement lines. This is
+  missing producer authority, not a serializer key mismatch. Trace was run
+  with `MOSS_TEST_TRACE_RETURN_VALUE_ARTIFACT_LOOKUP=1` and remains
+  test-build-only.
+- After producer checkpoint `cfe0313f` added canonical callable identities,
+  separate Method body SpecIds and exact checker lookups, `make moss-dev`
+  passed, but the full identity repro gate regressed `nest_spec`: both engines
+  now fail in checker ownership analysis at `wrap` line 5 because the exact
+  static call edge is missing, duplicated, or contradictory. `meth_spec`
+  still lacks the nested `normalize(n)` call edge in both engines. This points
+  to remaining producer call-row ownership/population mismatch; no consumer
+  fallback was added. The exact failures were sent to Team A and L7.
+- Team A traced this producer gap further: `check_stmts` Return visits
+  ownership/inferred-type handling instead of `check_expression`'s exact EST
+  Call traversal. This explains absent call rows in `wrap` and method returns,
+  and likely the zero ReturnValue candidates for imported `normalize(x)`. A is
+  wiring return expressions through exact result handles/cursors under body
+  SpecId; consumer-side workarounds remain out of scope.
+- The source-free imported method-return gate, run with the temporary
+  `MOSS_TEST_TRACE_MOSSI_CALL_EDGE_OWNER=1` hook, found the specific bad edge:
+  caller SpecId `4294967295` (`InvalidSpecId`), table size 3, source `main`,
+  target `method:provider__Carrier.Echo`, line 6. Table row 2 is `program:main`
+  and row 1 is the concrete Echo body; its ReturnValue fact is correctly
+  present at `(SpecId 1, arena 1, ExprId 0)`. The importer rejects the missing
+  caller ID as required. This is another checker call-edge producer gap, now
+  traced to main-body caller ownership.
+- Native user-method dispatch no longer calls `resolve_object_method` using
+  receiver/argument types in statement calls, sibling calls, member-call result
+  typing, or nested mutable-receiver sequencing. Those paths now require the
+  exact call edge and MethodSpecializationIdentity. `moss-dev` rebuild passes;
+  `meth_spec` still stops on the missing nested `normalize(n)` call edge. The
+  initial selector inventory also found custom user `for` protocol calls
+  being selected by type. These are now wired to the producer-planned
+  `Stmt::iterator_method_spec_ids_by_spec_id` sequence (one `next` ID or ordered
+  `iter`, `next` IDs) with owner/name validation and fail-closed behavior. This
+  field is pending Team A's producer checkpoint, so the current tree does not
+  yet build after this last edit. Built-in collection loops use Rust `.iter()`
+  syntax without user method selection. `resolve_object_method` has zero
+  remaining calls in Native.
+
+## Phase 28 R7-011 Team B consumer continuation — 2026-11-07
+
+- Current branch head is `4f5a9fd50959` (`4f5a9fd5`), including Team A producer
+  checkpoint `495106c7` and codec v5 iterator transport `4f5a9fd5`. The branch
+  has uncommitted consumer changes and is not frozen or integrated. Preserve
+  all prior work.
+- `make --jobs=2 MOSS_LDFLAGS= moss-dev` passes on HEAD plus the then-current
+  dirty diff. Existing warnings are in `type_ir.hpp` and a C++20 structured
+  binding capture in `moss.cpp`.
+- The method-parameter source-free test now gets through Native provider build
+  after Native traverses the exact EST Member base edge to the nested Echo Call
+  in `carrier.Echo(payload).value`. Fast Debug fails closed in the imported
+  consumer at `main.moss:4`, caller SpecId 2, arena 0, ExprId 16, node kind Call,
+  span 0..19: the expression is `provider.Carrier()`. The same missing authority
+  occurs for local `Carrier()` at line 9 in the newly added
+  `nested_method_member.moss` identity fixture. No imported object spelling
+  fallback was added; Team A/root were asked to provide the exact constructor
+  authority API.
+- `tests/tooling/check_phase28_method_parameter_return.py` is currently NO-GO:
+  after cursor traversal, Native progresses; Fast Debug raises
+  `MOSS_INTERNAL_INVARIANT exact checked call fact is missing, duplicated, or
+  contradictory` for constructor ExprId 16. The new
+  `tests/tooling/fixtures/phase28_l8/nested_method_member.moss` expects output
+  `9`, and the identity gate now runs it in both engines plus call-edge
+  corruption hooks. This is pending the checker authority response and has not
+  yet passed.
+- The prior full identity gate on `4f5a9fd5` plus dirty consumer edits was
+  NO-GO: `dead_tail2` passes both; `field_consume` rejects at line 9 in both;
+  all seven call-edge drop/stale/duplicate/perturb hooks fail closed in both.
+  Other cases remain blocked by exact call/ReturnValue/callback producer rows
+  (`nest_spec`, `dom_spec`, `meth_spec`, `try_spec`, `cb_spec`, `o15b`,
+  `field_read`, and imported pair). The field-control grid is also NO-GO from
+  that same source state. Do not run broad suites until identity and field
+  gates are green.
+- Codec follow-ups `e324e1f6` and `8c477839` have been announced but not yet
+  cherry-picked; wait until the producer constructor/ReturnValue authority is
+  resolved, then include them before final source-free importer and custom
+  iterator verification.
+- `git diff --check` passes. Feedback JSONL includes the updated body-mapping
+  finding and the new exact nested-cursor/constructor-authority observation;
+  validate feedback before any integration checkpoint.

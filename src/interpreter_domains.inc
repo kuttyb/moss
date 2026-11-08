@@ -157,8 +157,13 @@
       std::ostream& output, const std::vector<std::string>* concrete_types = nullptr,
       const ExpressionTreeView* tree = nullptr,
       const std::vector<est::ExprId>* argument_nodes = nullptr,
-      const std::vector<Value>* argument_values = nullptr) {
+      const std::vector<Value>* argument_values = nullptr,
+      const std::vector<SpecId>* argument_callable_spec_ids = nullptr) {
     frame.domain = caller.domain; frame.handler = caller.handler;
+    if (argument_callable_spec_ids &&
+        argument_callable_spec_ids->size() != arguments.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked callable argument SpecId arity mismatch");
     // Domain context is trace provenance only in helpers; state names remain
     // lexically resolved through explicit actual/formal bindings.
     for (size_t i = 0; i < arguments.size(); ++i) {
@@ -170,8 +175,40 @@
       }
       if (!type.empty()) frame.local_types[parameters[i].name] = type;
       Effect effect = i < effects.size() ? effects[i] : Effect::Read;
+      auto bind_callable_id = [&](Value& value) {
+        const SpecId id = argument_callable_spec_ids &&
+                i < argument_callable_spec_ids->size()
+            ? argument_callable_spec_ids->at(i) : InvalidSpecId;
+        if (value.kind != Value::Kind::Callable) {
+          if (id != InvalidSpecId)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT non-callable argument has a callable SpecId");
+          return;
+        }
+        if (!value.callable_target || id == InvalidSpecId ||
+            id >= program_.specialization_table.size())
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable argument lacks checked SpecId authority");
+        const auto& identity = program_.specialization_table[id];
+        if (identity.id != id ||
+            identity.semantic_callable_identity !=
+                value.callable_target->semantic_callable_id)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable argument SpecId is contradictory");
+        std::size_t specialization_count = 0;
+        for (const auto& candidate : value.callable_target->specializations)
+          specialization_count += candidate.spec_id == id;
+        if (value.callable_target->static_dispatch
+                ? specialization_count != 1
+                : (specialization_count != 0 ||
+                   value.callable_target->spec_id != id))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT callable argument SpecId does not identify a checked specialization");
+        value.callable_spec_id = id;
+      };
       if (argument_values && i < argument_values->size()) {
         frame.locals[parameters[i].name] = independent(argument_values->at(i));
+        bind_callable_id(frame.locals[parameters[i].name]);
         continue;
       }
       const bool has_node = tree && argument_nodes &&
@@ -185,6 +222,7 @@
             ? evaluate_tree_node(*tree, argument_nodes->at(i), caller, line,
                                  output)
             : evaluate_expression_source(arguments[i], caller, line, output);
+        bind_callable_id(frame.locals[parameters[i].name]);
         if (effect == Effect::Consume && place.value) {
           if (place.domain) state_event("state_consume", caller, line, place, summary(*place.value), "<moved>");
           *place.value = Value::unit();
@@ -311,9 +349,7 @@
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT Root-ingress argument query identity unavailable");
 
-    const auto context = caller.functional_context.empty()
-        ? std::string("main") : caller.functional_context;
-    if (context != "main")
+    if (!program_.main || caller.spec_id != program_.main->spec_id)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT Root-ingress argument context is not main");
     est::ExprId exact_message_expression = message_expression;
@@ -369,7 +405,7 @@
           candidate.message_expression_occurrence_id == exact_message_expression &&
           candidate.source_fingerprint == message_handle->source_fingerprint &&
           candidate.origin_id == message_handle->origin_id &&
-          candidate.specialization_context == context) {
+          candidate.specialization_id == caller.spec_id) {
         capture_requirement = &candidate;
         ++capture_requirement_count;
       }
@@ -406,7 +442,7 @@
           candidate.argument_expression_occurrence_id == argument_expression &&
           candidate.source_fingerprint == message_handle->source_fingerprint &&
           candidate.selected_handler_identity == handler_identity &&
-          candidate.specialization_context == context) {
+          candidate.specialization_id == caller.spec_id) {
         argument_type_requirement = &candidate;
         ++argument_type_requirements;
       }
@@ -422,7 +458,7 @@
           candidate.argument_expression_occurrence_id == argument_expression &&
           candidate.source_fingerprint == message_handle->source_fingerprint &&
           candidate.selected_handler_identity == handler_identity &&
-          candidate.specialization_context == context)
+          candidate.specialization_id == caller.spec_id)
         ++argument_type_facts;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv(
@@ -457,8 +493,8 @@
         else if (field == "source") ++corrupted.source_fingerprint;
         else if (field == "handler") corrupted.selected_handler_identity += ":wrong";
         else if (field == "type") corrupted.argument_type.reset();
-        else if (field == "context") corrupted.specialization_context += ":wrong";
-        else if (field == "est-context") corrupted.est_fact_context += ":wrong";
+        else if (field == "context" || field == "est-context")
+          ++corrupted.specialization_id;
         (void)program_.typed_semantics
             ->find_root_ingress_argument_type_fact(corrupted);
         throw std::runtime_error(
@@ -468,14 +504,13 @@
       checked_argument_type = &program_.typed_semantics
           ->find_root_ingress_argument_type_fact(*argument_type_requirement);
       if (checked_argument_type->selected_handler_identity != handler_identity ||
-          checked_argument_type->est_fact_context !=
-              argument_type_requirement->est_fact_context ||
+          checked_argument_type->specialization_id != caller.spec_id ||
           !checked_argument_type->argument_type ||
           !checked_argument_type->argument_type->is_closed())
         throw std::invalid_argument(
             "Root-ingress argument type contradicts selected handler/context");
       if (const auto* expression_facts = tree.arena->facts(
-              argument_expression, checked_argument_type->est_fact_context);
+              argument_expression, caller.spec_id);
           expression_facts && expression_facts->type &&
           !expression_facts->type->structurally_equal(
               *checked_argument_type->argument_type))
@@ -490,14 +525,15 @@
     const auto* argument_call = std::get_if<est::Call>(
         &tree.arena->at(argument_expression));
     if (argument_call) {
-      const auto* call_facts = tree.arena->facts(argument_expression, context);
+      const auto* call_facts = tree.arena->facts(argument_expression,
+                                                 caller.spec_id);
       if (call_facts && call_facts->resolved_target == "builtin:copy-v1") {
         if (argument_call->arguments.size() != 1)
           throw RuntimeError(line,
               "MOSS_INTERNAL_INVARIANT checked Root-ingress copy arity mismatch");
         try {
           const auto& requirement = program_.typed_semantics->find_copy_requirement(
-              tree.arena_index, argument_expression, context);
+              tree.arena_index, argument_expression, caller.spec_id);
           if (requirement.statement_occurrence_id !=
                   statement->checked_statement_occurrence_id ||
               requirement.est_arena_index != tree.arena_index ||
@@ -508,7 +544,7 @@
                 "Root-ingress explicit copy does not match exact statement/message argument/source");
           const auto* fact = program_.typed_semantics->find_copy_fact(requirement);
           if (!fact || !fact->is_authoritative() ||
-              fact->specialization_context != context ||
+              fact->specialization_id != caller.spec_id ||
               !fact->result_type->structurally_equal(*checked_type))
             throw std::invalid_argument(
                 "Root-ingress explicit copy fact contradicts checked argument type/context");
@@ -559,7 +595,7 @@
             candidate.argument_expression_occurrence_id ==
                 argument_expression &&
             candidate.source_fingerprint == message_handle->source_fingerprint &&
-            candidate.specialization_context == context) {
+            candidate.specialization_id == caller.spec_id) {
           disposition = &candidate;
           ++disposition_requirements;
         }
@@ -575,7 +611,7 @@
             candidate.argument_expression_occurrence_id ==
                 argument_expression &&
             candidate.source_fingerprint == message_handle->source_fingerprint &&
-            candidate.specialization_context == context)
+            candidate.specialization_id == caller.spec_id)
           ++disposition_facts;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv(
@@ -609,7 +645,7 @@
             else if (field == "binding") corrupted.source_binding_identity += ":wrong";
             else if (field == "definition") corrupted.source_definition_identity += ":wrong";
             else if (field == "type") corrupted.payload_type.reset();
-            else if (field == "context") corrupted.specialization_context += ":wrong";
+            else if (field == "context") ++corrupted.specialization_id;
             (void)program_.typed_semantics
                 ->find_root_ingress_argument_disposition_fact(corrupted);
             throw std::runtime_error(
@@ -621,7 +657,7 @@
           const std::string expected_type = target.params.at(argument_index).type;
           if (!fact.payload_type->structurally_equal(*checked_type) ||
               fact.payload_type->to_canonical_string() != expected_type ||
-              fact.specialization_context != context ||
+              fact.specialization_id != caller.spec_id ||
               fact.action != TypedRootIngressArgumentDispositionFactV1::Action::TransferOwnedBinding ||
               fact.required_access != Effect::Consume || !fact.source_is_owned ||
               !fact.checker_proved_available)
@@ -646,7 +682,7 @@
           candidate.argument_index == argument_index &&
           candidate.argument_expression_occurrence_id == argument_expression &&
           candidate.source_fingerprint == message_handle->source_fingerprint &&
-          candidate.specialization_context == context) {
+          candidate.specialization_id == caller.spec_id) {
         payload_requirement = &candidate;
         ++payload_requirement_count;
       }
@@ -918,13 +954,23 @@
     const bool root_ingress = caller.domain == nullptr;
     Frame frame; frame.handler_scope = true; frame.domain = &instance; frame.handler = target->name;
     frame.function = instance.definition->name + "." + target->name;
-    frame.functional_context = functional_handler_context(*instance.definition, *target);
     frame.source_file = target->execution_source_file.empty()
         ? instance.definition->source_file : target->execution_source_file;
     frame.semantic_identity = "handler:" + instance.definition->name + "." +
         target->name + "@" + std::to_string(target->line);
     const auto& specialization =
         program_.domain_specializations.at(*instance.concrete->specialization_index);
+    const auto handler_position = static_cast<std::size_t>(
+        target - instance.definition->handlers.data());
+    if (handler_position >= specialization.handler_spec_ids.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT domain handler SpecId table is incomplete");
+    frame.spec_id = specialization.handler_spec_ids[handler_position];
+    if (frame.spec_id == InvalidSpecId ||
+        frame.spec_id >= program_.specialization_table.size() ||
+        program_.specialization_table[frame.spec_id].id != frame.spec_id)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT domain handler SpecId is missing or contradictory");
     auto parameter_types = specialization.handler_parameter_types.find(target->name);
     std::string payload;
     for (size_t i = 0; i < call.arguments.size(); ++i) {
@@ -951,12 +997,10 @@
       } catch (const RaisedSignal& raised) {
         if (!root_ingress || target->failure_arms.empty()) throw;
         const FailureArm* selected = nullptr;
-        size_t selected_index = 0;
         for (size_t index = 0; index < target->failure_arms.size(); ++index)
           if (target->failure_arms[index].exceptional_alternatives.count(
                   raised.identity)) {
             selected = &target->failure_arms[index];
-            selected_index = index;
             break;
           }
         if (!selected)
@@ -969,8 +1013,6 @@
         // immutable incoming payloads, rather than exposing every old local.
         Frame failure = frame;
         failure.function += "$fail";
-        failure.functional_context += ":on_fail:" +
-            std::to_string(selected_index);
         failure.locals.clear();
         failure.local_types.clear();
         failure.aliases.clear();

@@ -1,0 +1,11 @@
+type Payload:
+  value: Int
+
+type Carrier:
+  fn Echo(payload: Payload) -> Payload:
+    return payload
+
+fn main():
+  carrier = Carrier()
+  payload = Payload(value = 9)
+  echo carrier.Echo(payload).value

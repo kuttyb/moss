@@ -144,22 +144,31 @@ class FastInterpreter {
     auto* semantics = program_.typed_semantics.get();
     if (!semantics) return;
 
-    const char* target_spec = std::getenv("MOSS_TEST_TARGET_SPECIALIZATION");
+    std::optional<SpecId> target_spec_id;
+    if (const char* raw = std::getenv("MOSS_TEST_TARGET_SPEC_ID")) {
+      char* end = nullptr;
+      const auto parsed = std::strtoul(raw, &end, 10);
+      if (!raw[0] || !end || *end || parsed >= InvalidSpecId)
+        throw std::invalid_argument("invalid MOSS_TEST_TARGET_SPEC_ID");
+      target_spec_id = static_cast<SpecId>(parsed);
+    }
+    const SpecId main_spec_id = program_.main
+        ? program_.main->spec_id : InvalidSpecId;
     auto first_main_copy_fact = [&]() -> TypedCopyFactV1* {
       for (auto& fact : semantics->copy_facts)
-        if (fact.specialization_context == "main") return &fact;
+        if (fact.specialization_id == main_spec_id) return &fact;
       return nullptr;
     };
     auto first_main_root_payload_fact =
         [&]() -> TypedRootIngressPayloadFactV1* {
       for (auto& fact : semantics->root_ingress_payload_facts)
-        if (fact.specialization_context == "main") return &fact;
+        if (fact.specialization_id == main_spec_id) return &fact;
       return nullptr;
     };
     auto first_main_root_argument_disposition =
         [&]() -> TypedRootIngressArgumentDispositionFactV1* {
       for (auto& fact : semantics->root_ingress_argument_disposition_facts)
-        if (fact.specialization_context == "main") return &fact;
+        if (fact.specialization_id == main_spec_id) return &fact;
       return nullptr;
     };
     if (std::getenv("MOSS_TEST_INTERP_DROP_ROOT_INGRESS_COPY_FACT"))
@@ -198,12 +207,13 @@ class FastInterpreter {
         else if (field == "binding") fact->source_binding_identity += ":wrong";
         else if (field == "definition") fact->source_definition_identity += ":wrong";
         else if (field == "type") fact->payload_type.reset();
-        else if (field == "context") fact->specialization_context += ":wrong";
+        else if (field == "context" || field == "spec_id")
+          fact->specialization_id = InvalidSpecId;
       }
     auto find_target_fact = [&](std::vector<TypedLocalOwnershipFactV1>& facts) -> TypedLocalOwnershipFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -211,8 +221,8 @@ class FastInterpreter {
     };
     auto find_target_req = [&](std::vector<TypedLocalOwnershipRequirementV1>& reqs) -> TypedLocalOwnershipRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -235,10 +245,10 @@ class FastInterpreter {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_OWNERSHIP_RECORD")) {
       if (!semantics->local_ownership_facts.empty()) {
-        if (target_spec) {
+        if (target_spec_id) {
           for (auto it = semantics->local_ownership_facts.begin();
                it != semantics->local_ownership_facts.end(); ++it) {
-            if (it->specialization_context.find(target_spec) != std::string::npos) {
+            if (it->specialization_id == *target_spec_id) {
               semantics->local_ownership_facts.erase(it);
               break;
             }
@@ -252,7 +262,7 @@ class FastInterpreter {
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_SPECIALIZATION_ID")) {
       if (!semantics->local_ownership_facts.empty()) {
         if (auto* fact = find_target_fact(semantics->local_ownership_facts)) {
-          fact->specialization_identity = "perturbed-specialization-id";
+          fact->specialization_id = InvalidSpecId;
         }
       }
     }
@@ -280,8 +290,8 @@ class FastInterpreter {
 
     auto find_target_loop_fact = [&](std::vector<TypedLoopOwnershipFactV1>& facts) -> TypedLoopOwnershipFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -289,8 +299,8 @@ class FastInterpreter {
     };
     auto find_target_loop_req = [&](std::vector<TypedLoopOwnershipRequirementV1>& reqs) -> TypedLoopOwnershipRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -313,10 +323,10 @@ class FastInterpreter {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_LOOP_RECORD")) {
       if (!semantics->loop_ownership_facts.empty()) {
-        if (target_spec) {
+        if (target_spec_id) {
           for (auto it = semantics->loop_ownership_facts.begin();
                it != semantics->loop_ownership_facts.end(); ++it) {
-            if (it->specialization_context.find(target_spec) != std::string::npos) {
+            if (it->specialization_id == *target_spec_id) {
               semantics->loop_ownership_facts.erase(it);
               break;
             }
@@ -350,15 +360,15 @@ class FastInterpreter {
     if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_LOOP_SPECIALIZATION_ID")) {
       if (!semantics->loop_ownership_facts.empty()) {
         if (auto* fact = find_target_loop_fact(semantics->loop_ownership_facts)) {
-          fact->specialization_identity = "perturbed-loop-spec-id";
+        fact->specialization_id = InvalidSpecId;
         }
       }
     }
 
     auto find_target_ex_fact = [&](std::vector<TypedExceptionalOwnershipFactV1>& facts) -> TypedExceptionalOwnershipFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -366,8 +376,8 @@ class FastInterpreter {
     };
     auto find_target_ex_req = [&](std::vector<TypedExceptionalOwnershipRequirementV1>& reqs) -> TypedExceptionalOwnershipRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -390,10 +400,10 @@ class FastInterpreter {
     }
     if (std::getenv("MOSS_TEST_CONSUMER_DELETE_EXCEPTIONAL_RECORD")) {
       if (!semantics->exceptional_ownership_facts.empty()) {
-        if (target_spec) {
+        if (target_spec_id) {
           for (auto it = semantics->exceptional_ownership_facts.begin();
                it != semantics->exceptional_ownership_facts.end(); ++it) {
-            if (it->specialization_context.find(target_spec) != std::string::npos) {
+            if (it->specialization_id == *target_spec_id) {
               semantics->exceptional_ownership_facts.erase(it);
               break;
             }
@@ -452,8 +462,8 @@ class FastInterpreter {
 
     auto find_target_take_fact = [&](std::vector<TypedTakeFactV1>& facts) -> TypedTakeFactV1* {
       for (auto& f : facts) {
-        if (!f.specialization_identity.empty()) {
-          if (!target_spec || f.specialization_context.find(target_spec) != std::string::npos)
+        if (f.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || f.specialization_id == *target_spec_id)
             return &f;
         }
       }
@@ -461,8 +471,8 @@ class FastInterpreter {
     };
     auto find_target_take_req = [&](std::vector<TypedTakeRequirementV1>& reqs) -> TypedTakeRequirementV1* {
       for (auto& r : reqs) {
-        if (!r.specialization_identity.empty()) {
-          if (!target_spec || r.specialization_context.find(target_spec) != std::string::npos)
+        if (r.specialization_id != InvalidSpecId) {
+          if (!target_spec_id || r.specialization_id == *target_spec_id)
             return &r;
         }
       }
@@ -517,33 +527,36 @@ class FastInterpreter {
     }
     if (auto* target_arena_env = std::getenv("MOSS_TEST_TARGET_ARENA")) {
       auto* target_expr_env = std::getenv("MOSS_TEST_TARGET_EXPR");
-      auto* target_context_env = std::getenv("MOSS_TEST_TARGET_CONTEXT");
+      auto* target_spec_env = std::getenv("MOSS_TEST_TARGET_SPEC_ID");
       auto* mutation_env = std::getenv("MOSS_TEST_TARGET_MUTATION");
-      if (target_expr_env && target_context_env && mutation_env) {
+      if (target_expr_env && target_spec_env && mutation_env) {
         size_t arena_idx = std::stoull(target_arena_env);
         est::ExprId expr_id = std::stoull(target_expr_env);
-        string ctx = target_context_env;
+        const auto parsed_spec = std::stoul(target_spec_env);
+        if (parsed_spec >= InvalidSpecId)
+          throw std::runtime_error("MOSS_TEST_TARGET_SPEC_ID is out of range");
+        const SpecId spec_id = static_cast<SpecId>(parsed_spec);
         string mut = mutation_env;
         if (arena_idx < program_.expression_arenas.size() && program_.expression_arenas[arena_idx]) {
           auto& arena = *program_.expression_arenas[arena_idx];
           if (mut == "drop_fact") {
-            arena.test_drop_occurrence_fact(expr_id, ctx);
+            arena.test_drop_occurrence_fact(expr_id, spec_id);
           } else if (mut == "drop_effect") {
-            arena.test_drop_occurrence_effect(expr_id, ctx);
+            arena.test_drop_occurrence_effect(expr_id, spec_id);
           } else if (mut == "perturb_effect") {
-            arena.test_perturb_occurrence_effect(expr_id, ctx);
+            arena.test_perturb_occurrence_effect(expr_id, spec_id);
           } else if (mut == "drop_target") {
-            arena.test_mutate_occurrence_target(expr_id, ctx, "");
+            arena.test_mutate_occurrence_target(expr_id, spec_id, "");
           } else if (mut == "perturb_target") {
-            arena.test_mutate_occurrence_target(expr_id, ctx, "fn:__moss_test_perturbed_target__");
+            arena.test_mutate_occurrence_target(expr_id, spec_id, "fn:__moss_test_perturbed_target__");
           } else if (mut == "corrupt_type") {
-            arena.test_mutate_occurrence_type(expr_id, ctx, Type::primitive("bool"));
+            arena.test_mutate_occurrence_type(expr_id, spec_id, Type::primitive("bool"));
           } else if (mut == "corrupt_specialization") {
-            arena.test_mutate_occurrence_specialization(expr_id, ctx, "fn:__moss_test_wrong_spec__");
+            arena.test_mutate_occurrence_specialization(expr_id, spec_id, "fn:__moss_test_wrong_spec__");
           }
           if (auto* sibling_env = std::getenv("MOSS_TEST_ISOLATION_SIBLING_EXPR")) {
             est::ExprId sibling_id = std::stoull(sibling_env);
-            const auto* sibling_facts = arena.facts(sibling_id, ctx);
+            const auto* sibling_facts = arena.facts(sibling_id, spec_id);
             if (!sibling_facts || !sibling_facts->inferred_effect) {
               throw std::runtime_error("MOSS_INTERNAL_INVARIANT selector isolation violated: sibling facts corrupted");
             }
@@ -602,9 +615,8 @@ class FastInterpreter {
       }
     }
     if (std::getenv("MOSS_TEST_CONSUMER_WRONG_SELECTOR_SPECIALIZATION")) {
-      for (const auto& arena : program_.expression_arenas) {
-        if (arena) arena->test_perturb_specialization_identity("specialization-v2:sha256:corrupted_wrong_key");
-      }
+      throw RuntimeError(0,
+          "MOSS_INTERNAL_INVARIANT selector specialization perturbation requires an exact call-edge mutation hook");
     }
   }
 #endif
@@ -650,7 +662,7 @@ class FastInterpreter {
     prepare_domains();
     Frame frame;
     frame.function = "main";
-    frame.functional_context = "main";
+    frame.spec_id = program_.main->spec_id;
     frame.source_file = program_.main->source_file;
     frame.semantic_identity = "main@" + std::to_string(program_.main->line);
     execute(program_.main->body, frame, output);
@@ -692,7 +704,7 @@ class FastInterpreter {
       }
       Frame frame;
       frame.function = "test:" + test.name;
-      frame.functional_context = frame.function;
+      frame.spec_id = test.spec_id;
       frame.source_file = test.source_file;
       frame.semantic_identity = test.semantic_identity;
       std::ostringstream test_output;
@@ -750,6 +762,8 @@ class FastInterpreter {
     double floating = 0.0;
     uint32_t codepoint = 0;
     std::string string;
+    SpecId callable_spec_id = InvalidSpecId;
+    const Function* callable_target = nullptr;
     DomainValue* domain = nullptr;
     std::shared_ptr<StructValue> object;
     std::shared_ptr<std::vector<Value>> vector;
@@ -774,7 +788,9 @@ class FastInterpreter {
     static Value float_value(double value);
     static Value char_value(uint32_t cp);
     static Value string_value(std::string value);
-    static Value callable_value(std::string name);
+    static Value callable_value(std::string name,
+                                const Function* target,
+                                SpecId spec_id = InvalidSpecId);
     static Value struct_value(std::string type);
     static Value vector_value(std::vector<Value> values, std::string element_type = {});
     static Value borrowed_map_view_value(
@@ -852,11 +868,9 @@ class FastInterpreter {
   struct Place { Value* value = nullptr; DomainValue* domain = nullptr; std::string path; };
   struct Frame {
     std::string function;
-    std::string functional_context;
-    std::string specialization_key;
+    SpecId spec_id = InvalidSpecId;
     std::string source_file;
     std::string semantic_identity;
-    std::string specialization_identity;
     std::unordered_map<std::string, Value> locals;
     std::unordered_map<std::string, std::string> local_types;
     std::unordered_map<std::string, Place> aliases;
@@ -1069,8 +1083,8 @@ class FastInterpreter {
 
   static std::string checked_binding_type(const Stmt& statement,
                                           const Frame& frame) {
-    auto specialized = statement.semantic_types_by_context.find(frame.functional_context);
-    return specialized == statement.semantic_types_by_context.end()
+    auto specialized = statement.semantic_types_by_spec_id.find(frame.spec_id);
+    return specialized == statement.semantic_types_by_spec_id.end()
         ? statement.semantic_type : specialized->second;
   }
 
@@ -1099,7 +1113,7 @@ class FastInterpreter {
     event.depth = static_cast<int>(event_stack_.size());
     event.kind = kind; event.function = frame.function; event.source_file = frame.source_file.empty() ? options_.source_file : frame.source_file;
     event.semantic_identity = frame.semantic_identity;
-    event.specialization = frame.specialization_identity;
+    event.specialization = std::to_string(frame.spec_id);
     event.line = line;
     event.detail = detail.substr(0, 256);
     if (frame.domain) { event.instance = frame.domain->concrete->identity;
@@ -1165,6 +1179,9 @@ class FastInterpreter {
     std::string source;
     mutable std::unordered_map<est::ExprId, std::string> derived_text;
     std::uint32_t arena_index = 0;
+    std::uint64_t handle_owner = 0;
+    est::ExprSlot handle_slot = est::ExprSlot::Expression;
+    std::uint32_t handle_argument_index = 0;
   };
 
   struct RootIngressCopyAuthorityOccurrence {
@@ -1197,6 +1214,9 @@ class FastInterpreter {
           view.arena = program_.expression_arenas[handle.arena_index].get();
           view.root = handle.expr;
           view.arena_index = handle.arena_index;
+          view.handle_owner = handle.owner;
+          view.handle_slot = handle.slot;
+          view.handle_argument_index = handle.argument_index;
           return view;
         }
       }
@@ -1834,107 +1854,119 @@ class FastInterpreter {
     return nullptr;
   }
 
+  SemanticCallEdge checked_call_fact_for_occurrence(
+      const Frame& caller, const ExpressionTreeView* tree,
+      std::optional<est::ExprId> call_expr, int line) const {
+    if (caller.spec_id == InvalidSpecId ||
+        caller.spec_id >= program_.specialization_table.size() || !tree ||
+        !tree->arena || !call_expr || *call_expr >= tree->arena->size() ||
+        !std::holds_alternative<est::Call>(tree->arena->at(*call_expr)))
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT call lacks an exact SpecId/EST occurrence");
+    const auto& owner = program_.specialization_table[caller.spec_id];
+    if (owner.id != caller.spec_id)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT caller SpecId table row is contradictory");
+    const auto lookup = select_exact_semantic_call_edge(
+        program_, caller.spec_id, tree->arena_index, *call_expr);
+    if (lookup.kind != ExactSemanticCallEdgeLookup::Kind::Unique ||
+        !lookup.edge) {
+      const auto* facts = tree->arena->facts(*call_expr, caller.spec_id);
+#ifdef MOSS_TEST_BUILD
+      std::string fact_ids;
+      for (const auto id : tree->arena->test_fact_specialization_ids(*call_expr)) {
+        if (!fact_ids.empty()) fact_ids += ",";
+        fact_ids += std::to_string(id);
+      }
+#endif
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT exact checked call fact is missing, duplicated, or contradictory (caller=" +
+          std::to_string(caller.spec_id) + ", arena=" +
+          std::to_string(tree->arena_index) + ", ExprId=" +
+          std::to_string(*call_expr) + ", node-kind=" +
+          std::to_string(tree->arena->at(*call_expr).index()) + ", span=" +
+          std::to_string(tree->arena->span(*call_expr).source_begin) + ".." +
+          std::to_string(tree->arena->span(*call_expr).source_end) +
+          (facts ? ", resolved=" + facts->resolved_target + ", type=" +
+              (facts->type ? facts->type->to_canonical_string() +
+                  ",kind=" + std::to_string(static_cast<unsigned>(facts->type->kind)) +
+                  (facts->type->declaration
+                      ? ",decl=" + facts->type->declaration->id +
+                        ",module=" + facts->type->declaration->module_id
+                      : ",no-decl") : "<none>")
+              + ",fact-spec=" + std::to_string(facts->specialization_id)
+              : ", no-occurrence-facts") +
+          ", arena-ptr=" + std::to_string(reinterpret_cast<std::uintptr_t>(tree->arena)) +
+          ", handle-owner=" + std::to_string(tree->handle_owner) +
+          ", handle-slot=" + std::to_string(static_cast<unsigned>(tree->handle_slot)) +
+          ", handle-arg=" + std::to_string(tree->handle_argument_index) +
+#ifdef MOSS_TEST_BUILD
+          ", fact-keys=[" + fact_ids + "]" +
+#endif
+          ")");
+    }
+    SemanticCallEdge selected = *lookup.edge;
+    if (selected.caller_spec_id != caller.spec_id ||
+        selected.call_est_arena_index != tree->arena_index ||
+        selected.call_expression_occurrence_id != *call_expr ||
+        selected.target_kind == SemanticCallTargetKind::Unresolved)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT exact checked call fact has invalid identity or target kind");
+    return selected;
+  }
+
   const FunctionSpecialization* specialization_for_call(
       const Function& target, const Frame& caller, int line,
       const ExpressionTreeView* tree = nullptr,
-      std::optional<est::ExprId> call_expr = std::nullopt) const {
-    if (!target.static_dispatch) return nullptr;
-    std::string exact_call_specialization_key;
-    if (tree && call_expr && *call_expr < tree->arena->size() &&
-        std::holds_alternative<est::Call>(tree->arena->at(*call_expr))) {
-      const auto* facts = tree->arena->facts(*call_expr,
-                                             caller.functional_context);
-      if (facts &&
-          facts->resolved_target != target.semantic_callable_id)
+      std::optional<est::ExprId> call_expr = std::nullopt,
+      std::optional<SpecId> dynamic_callable_spec_id = std::nullopt,
+      const SemanticCallEdge* exact_edge = nullptr) const {
+    const auto owned_edge = exact_edge
+        ? std::optional<SemanticCallEdge>()
+        : std::optional<SemanticCallEdge>(checked_call_fact_for_occurrence(
+              caller, tree, call_expr, line));
+    const auto& edge = exact_edge ? *exact_edge : *owned_edge;
+    SpecId selected_id = InvalidSpecId;
+    if (edge.target_kind == SemanticCallTargetKind::DynamicCallback) {
+      if (edge.callee_spec_id != InvalidSpecId || !dynamic_callable_spec_id ||
+          *dynamic_callable_spec_id == InvalidSpecId)
         throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT exact call target specialization fact is missing or contradictory");
-      if (facts && !facts->specialization_result.empty())
-        exact_call_specialization_key = facts->specialization_result;
-    }
-    const auto checked = checked_call_edge_specialization_exact(
-        program_, caller.functional_context, caller.specialization_key,
-        target, line, exact_call_specialization_key,
-        tree && call_expr
-            ? std::optional<std::pair<std::uint32_t, est::ExprId>>{
-                  std::make_pair(tree->arena_index, *call_expr)}
-            : std::nullopt);
-    if (checked.test_fact_dropped || checked.test_fact_perturbed ||
-        checked.test_edge_dropped || checked.test_edge_duplicated ||
-        checked.test_edge_perturbed ||
-        checked.test_target_identity_perturbed)
+            "MOSS_INTERNAL_INVARIANT checked dynamic callback value lacks its SpecId");
+      selected_id = *dynamic_callable_spec_id;
+    } else if (edge.target_kind == SemanticCallTargetKind::Static) {
+      if (dynamic_callable_spec_id || edge.callee_spec_id == InvalidSpecId)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT checked static call fact has invalid target");
+      selected_id = edge.callee_spec_id;
+    } else {
       throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT checked specialization fact was dropped or perturbed");
-    if (checked.kind == CheckedCallEdgeSelectionKind::Missing && tree &&
-        call_expr &&
-        std::holds_alternative<est::Identifier>(
-            tree->arena->at(*call_expr))) {
-      const auto* facts = tree->arena->facts(*call_expr,
-                                             caller.functional_context);
-#ifdef MOSS_TEST_BUILD
-      est::SemanticFacts perturbed_facts;
-      if (std::getenv("MOSS_TEST_CONSUMER_DROP_CALLBACK_SPECIALIZATION"))
-        facts = nullptr;
-      if (facts &&
-          (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_SPECIALIZATION") ||
-           std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_TARGET"))) {
-        perturbed_facts = *facts;
-        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_SPECIALIZATION"))
-          perturbed_facts.specialization_result = "specialization-v2:forged";
-        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_TARGET"))
-          perturbed_facts.resolved_target = "callable-v1:forged";
-        facts = &perturbed_facts;
-      }
-#endif
-      if (!facts || facts->resolved_target != target.semantic_callable_id ||
-          facts->specialization_result.empty())
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT checked callback specialization fact is missing or contradictory");
-      const FunctionSpecialization* selected = nullptr;
-      std::size_t selected_count = 0;
-      for (const auto& candidate : target.specializations)
-        if (candidate.stable_type_key == facts->specialization_result) {
-          selected = &candidate;
-          ++selected_count;
-        }
-#ifdef MOSS_TEST_BUILD
-      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_CALLBACK_SPECIALIZATION"))
+          "MOSS_INTERNAL_INVARIANT checked call fact target kind is unsupported");
+    }
+    if (selected_id >= program_.specialization_table.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT callee SpecId is outside the program table");
+    const auto& identity = program_.specialization_table[selected_id];
+    if (identity.id != selected_id ||
+        identity.semantic_callable_identity != target.semantic_callable_id)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT callee SpecId belongs to another callable");
+    const FunctionSpecialization* selected = nullptr;
+    std::size_t selected_count = 0;
+    for (const auto& candidate : target.specializations)
+      if (candidate.spec_id == selected_id) {
+        selected = &candidate;
         ++selected_count;
-#endif
+      }
+    if (target.static_dispatch) {
       if (selected_count != 1 || !selected)
         throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT checked callback specialization fact is missing, duplicated, or contradictory");
+            "MOSS_INTERNAL_INVARIANT callee SpecId has no unique checked function specialization");
       return selected;
     }
-    if (checked.kind != CheckedCallEdgeSelectionKind::Unique ||
-        !checked.unique || !checked.exact_edge)
+    if (selected_count != 0 || target.spec_id != selected_id)
       throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT exact checked call edge specialization is "
-          "missing, duplicated, or contradictory");
-    if (tree && call_expr) {
-      const auto* facts = tree->arena->facts(*call_expr,
-                                             caller.functional_context);
-      if (facts && !facts->specialization_result.empty()) {
-        if (facts->resolved_target.empty() ||
-            facts->resolved_target != target.semantic_callable_id)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT exact call specialization target mismatch");
-        if (checked.unique->stable_type_key != facts->specialization_result)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT call edge and EST specialization disagree");
-      }
-    }
-    return checked.unique;
-  }
-
-  bool checked_call_requires_specialization(
-      const Function& target, const Frame& caller, int line) const {
-    if (!target.static_dispatch) return false;
-    const auto kind = checked_call_edge_specialization_exact(
-        program_, caller.functional_context, caller.specialization_key,
-        target, line).kind;
-    return kind == CheckedCallEdgeSelectionKind::Unique ||
-        kind == CheckedCallEdgeSelectionKind::Ambiguous ||
-        kind == CheckedCallEdgeSelectionKind::Contradictory;
+          "MOSS_INTERNAL_INVARIANT callee SpecId contradicts the checked function body");
+    return nullptr;
   }
 
   const ObjectType* object_type(const std::string& name) const {
@@ -1943,12 +1975,67 @@ class FastInterpreter {
     return nullptr;
   }
 
+  const ObjectType* checked_record_constructor_for_occurrence(
+      const ExpressionTreeView& tree, est::ExprId expression,
+      SpecId caller_spec_id, int line) const {
+    if (expression >= tree.arena->size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT constructor ExprId is out of range");
+    const auto* facts = tree.arena->facts(expression, caller_spec_id);
+    if (!facts || facts->specialization_id != caller_spec_id ||
+        !facts->resolved_target.empty() || !facts->type ||
+        facts->type->kind != TypeKind::NominalInstance ||
+        !facts->type->declaration ||
+        facts->type->declaration->kind != DeclarationKind::Record)
+      return nullptr;
+    if (!program_.type_context)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked constructor lacks TypeContext");
+    const auto declaration = program_.type_context->find_id(
+        facts->type->declaration->id);
+    if (!declaration || declaration->id != facts->type->declaration->id ||
+        declaration->kind != DeclarationKind::Record ||
+        declaration->module_id != facts->type->declaration->module_id)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked constructor declaration identity is missing or contradictory");
+    const ObjectType* selected = nullptr;
+    std::size_t matches = 0;
+    for (const auto& candidate : program_.objects) {
+      const auto candidate_declaration = program_.type_context->find(
+          candidate.name);
+      if (!candidate_declaration ||
+          candidate_declaration->id != declaration->id)
+        continue;
+      selected = &candidate;
+      ++matches;
+    }
+    if (matches != 1 || !selected)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked constructor declaration has no unique ObjectType");
+    return selected;
+  }
+
   const Method* method(const std::string& owner, const std::string& name) const {
     auto object = object_type(owner);
     if (!object) return nullptr;
     for (const auto& candidate : object->methods)
       if (candidate.name == name) return &candidate;
     return nullptr;
+  }
+
+  const Method* method_by_spec_id(const std::string& owner,
+                                  SpecId spec_id) const {
+    auto object = object_type(owner);
+    if (!object || spec_id == InvalidSpecId) return nullptr;
+    const Method* selected = nullptr;
+    std::size_t count = 0;
+    for (const auto& candidate : object->methods)
+      for (const auto& specialization : candidate.specializations)
+        if (specialization.spec_id == spec_id) {
+          selected = &candidate;
+          ++count;
+        }
+    return count == 1 ? selected : nullptr;
   }
 
   static std::int64_t wrapping_add(std::int64_t left, std::int64_t right) {
@@ -1997,30 +2084,20 @@ class FastInterpreter {
     if (!tree || !callback_expr || *callback_expr >= tree->arena->size())
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT callback lacks its exact EST occurrence");
-    const est::SemanticFacts* stage_facts = nullptr;
-    if (stage_expr) {
-      if (*stage_expr >= tree->arena->size())
+    if (!stage_expr || *stage_expr >= tree->arena->size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT pipeline callback lacks its checked Call occurrence");
+    const auto edge = checked_call_fact_for_occurrence(
+        frame, tree, stage_expr, line);
+    if (edge.target_kind == SemanticCallTargetKind::DynamicCallback) {
+      if (edge.callee_spec_id != InvalidSpecId)
         throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT pipeline callback stage is out of range");
-#ifdef MOSS_TEST_BUILD
-      auto* mutable_arena = const_cast<est::Arena*>(tree->arena);
-      if (std::getenv("MOSS_TEST_CONSUMER_DROP_DYNAMIC_CALLBACK_FACT"))
-        mutable_arena->test_drop_occurrence_dynamic_callback(
-            *stage_expr, frame.functional_context);
-      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_DYNAMIC_CALLBACK_FACT"))
-        mutable_arena->test_perturb_occurrence_dynamic_callback(
-            *stage_expr, frame.functional_context);
-#endif
-      stage_facts = tree->arena->facts(*stage_expr, frame.functional_context);
-      if (!stage_facts || !stage_facts->dynamic_callback)
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT checked pipeline callback classification is missing");
-
+            "MOSS_INTERNAL_INVARIANT dynamic callback row carries a static callee SpecId");
       const auto* callback_identifier = std::get_if<est::Identifier>(
           &tree->arena->at(*callback_expr));
       if (!callback_identifier)
         throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT checked pipeline callback is not an identifier");
+            "MOSS_INTERNAL_INVARIANT checked dynamic callback is not a local callable identifier");
       const Value* local_callable = nullptr;
       const auto local = frame.locals.find(callback_identifier->name);
       if (local != frame.locals.end()) local_callable = &local->second;
@@ -2029,44 +2106,31 @@ class FastInterpreter {
         if (alias != frame.aliases.end() && alias->second.value)
           local_callable = alias->second.value;
       }
-      const bool is_local_callable = local_callable &&
-          local_callable->kind == Value::Kind::Callable;
-      if (*stage_facts->dynamic_callback) {
-        if (!is_local_callable)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT dynamic callback fact contradicts its checked value");
-        const auto* fn = function(local_callable->string);
-        if (!fn)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT dynamic callback value has no checked function");
-        return call(*fn, names, callback, line, output, tree, nullptr,
-                    &values, std::nullopt);
-      }
-      if (is_local_callable)
+      if (!local_callable || local_callable->kind != Value::Kind::Callable ||
+          !local_callable->callable_target ||
+          local_callable->callable_spec_id == InvalidSpecId)
         throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT static callback fact contradicts its checked value");
+            "MOSS_INTERNAL_INVARIANT dynamic callback value lacks checked callable SpecId");
+      return call(*local_callable->callable_target, names, callback, line,
+                  output, tree, nullptr, &values, stage_expr,
+                  local_callable->callable_spec_id, &edge);
     }
-    const auto* facts = tree->arena->facts(*callback_expr,
-                                           frame.functional_context);
-#ifdef MOSS_TEST_BUILD
-    est::SemanticFacts perturbed_target_facts;
-    if (std::getenv("MOSS_TEST_CONSUMER_DROP_CALLBACK_TARGET"))
-      facts = nullptr;
-    if (facts &&
-        std::getenv("MOSS_TEST_CONSUMER_PERTURB_CALLBACK_TARGET")) {
-      perturbed_target_facts = *facts;
-      perturbed_target_facts.resolved_target = "callable-v1:forged";
-      facts = &perturbed_target_facts;
-    }
-#endif
-    if (!facts || facts->resolved_target.empty())
+    if (edge.target_kind != SemanticCallTargetKind::Static ||
+        edge.callee_spec_id == InvalidSpecId ||
+        edge.callee_spec_id >= program_.specialization_table.size())
       throw RuntimeError(line,
-          "MOSS_INTERNAL_INVARIANT callback target authority is missing");
-    if (const auto* fn = function_by_semantic_identity(facts->resolved_target))
-      return call(*fn, names, callback, line, output, tree, nullptr,
-                  &values, callback_expr);
-    throw RuntimeError(line,
-        "MOSS_INTERNAL_INVARIANT missing checked pipeline callable target");
+          "MOSS_INTERNAL_INVARIANT checked pipeline callback target is missing or contradictory");
+    const auto& identity = program_.specialization_table[edge.callee_spec_id];
+    if (identity.id != edge.callee_spec_id)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT pipeline callback SpecId table row is contradictory");
+    const auto* fn = function_by_semantic_identity(
+        identity.semantic_callable_identity);
+    if (!fn)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked pipeline callback SpecId has no callable body");
+    return call(*fn, names, callback, line, output, tree, nullptr, &values,
+                stage_expr, std::nullopt, &edge);
   }
 
   Value invoke_pipeline_expression(const ExpressionTreeView& tree,
@@ -2089,23 +2153,22 @@ class FastInterpreter {
   std::optional<std::string> checked_pipeline_stage_output_type(
       const ParsedFunctionalPipeline& parsed, size_t stage_index,
       const Frame& frame, int line) const {
+    (void)line;
+    const FunctionalPipeline* selected = nullptr;
     for (const auto& pipeline : program_.functional_pipelines) {
-      if (pipeline.line != line || pipeline.context != frame.functional_context ||
+      if (pipeline.specialization_id != frame.spec_id ||
+          pipeline.est_arena_index != parsed.arena_index ||
+          pipeline.est_expression_id != parsed.expression_id ||
           stage_index >= pipeline.nodes.size() ||
-          pipeline.nodes.size() != parsed.stages.size() + 1 ||
-          trim_copy(pipeline.source_expression) != trim_copy(parsed.source))
+          pipeline.nodes.size() != parsed.stages.size() + 1)
         continue;
-      bool matches = true;
-      for (size_t index = 1; index < pipeline.nodes.size(); ++index)
-        if (trim_copy(pipeline.nodes[index].source_text) !=
-            trim_copy(parsed.stages[index - 1].raw)) {
-          matches = false;
-          break;
-        }
-      if (!matches) continue;
-      return pipeline.nodes[stage_index].output_type;
+      if (selected)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT duplicate checked pipeline identity");
+      selected = &pipeline;
     }
-    return std::nullopt;
+    if (!selected) return std::nullopt;
+    return selected->nodes[stage_index].output_type;
   }
 
   static std::optional<std::string> checked_vector_element_type(
@@ -2219,7 +2282,7 @@ class FastInterpreter {
             if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
                 count && std::string(count) == "g3")
               std::cerr << "MOSS_TEST_FACT_COUNTER|g3|line=" << line
-                        << "|context=" << frame.functional_context << "\n";
+                        << "|spec_id=" << frame.spec_id << "\n";
 #endif
           }
           if (!output_type && !args.empty()) {
@@ -2388,19 +2451,8 @@ class FastInterpreter {
         const TypedTakeRequirementV1* requirement = nullptr;
         const TypedTakeFactV1* fact = nullptr;
         try {
-          if (!frame.specialization_identity.empty()) {
-            requirement = &program_.typed_semantics->find_take_requirement(
-                tree->arena_index, current_root, frame.functional_context,
-                frame.specialization_identity);
-          } else {
-            requirement = &program_.typed_semantics->find_take_requirement(
-                tree->arena_index, current_root, frame.functional_context);
-            if (!requirement->specialization_identity.empty()) {
-              throw std::invalid_argument(
-                  "take requirement expects specialization identity '" +
-                  requirement->specialization_identity + "' but active frame has none");
-            }
-          }
+          requirement = &program_.typed_semantics->find_take_requirement(
+              tree->arena_index, current_root, frame.spec_id);
           fact = program_.typed_semantics->find_take_fact(*requirement);
         } catch (const std::exception& exc) {
           throw RuntimeError(line,
@@ -2620,7 +2672,7 @@ class FastInterpreter {
                 std::get_if<est::Identifier>(
                     &tree->arena->at(member_node->base))) {
           const auto* checked_facts = tree->arena->facts(
-              current_root, frame.functional_context);
+              current_root, frame.spec_id);
           if (checked_facts && checked_facts->type) {
             Value result = Value::struct_value(
                 checked_facts->type->to_canonical_string());
@@ -2768,28 +2820,21 @@ class FastInterpreter {
     }
 
     std::string callee; std::vector<std::string> args;
-    if ((tree && expression_call(*tree, current_root, callee, args)) ||
-        (!tree && expression_call(e, callee, args, "call_string_fallback"))) {
+    if (tree && expression_call(*tree, current_root, callee, args)) {
+      const auto* call_node = std::get_if<est::Call>(
+          &tree->arena->at(current_root));
       const std::vector<est::ExprId>* call_argument_nodes = nullptr;
-      if (tree) {
-        const auto& call_root = tree->arena->at(current_root);
-        if (const auto* call_node = std::get_if<est::Call>(&call_root))
-          call_argument_nodes = &call_node->arguments;
-        else if (const auto* constructor_node =
-                     std::get_if<est::Constructor>(&call_root))
-          call_argument_nodes = &constructor_node->arguments;
+      if (call_node) call_argument_nodes = &call_node->arguments;
+      if (call_node) {
+        if (const auto* constructor = checked_record_constructor_for_occurrence(
+                *tree, current_root, frame.spec_id, line))
+          return construct(*constructor, args, frame, line, output, tree,
+                           call_argument_nodes);
       }
-      if ((moss_test_drop_fact("call-targets") ||
-           moss_test_perturb_fact("call-targets")) && function(callee)) {
-        const auto* facts = tree
-            ? tree->arena->facts(current_root, frame.functional_context)
-            : nullptr;
-        if (!facts || facts->resolved_target.empty() ||
-            facts->resolved_target ==
-                "fn:__moss_test_perturbed_call_target__")
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT checked call target fact was dropped or perturbed");
-      }
+      std::optional<SemanticCallEdge> exact_call_edge;
+      if (call_node)
+        exact_call_edge = checked_call_fact_for_occurrence(
+            frame, tree, current_root, line);
       auto evaluate_call_argument = [&](std::size_t index) {
         if (call_argument_nodes && index < call_argument_nodes->size())
           return evaluate_tree_node(*tree, call_argument_nodes->at(index),
@@ -3041,9 +3086,28 @@ class FastInterpreter {
           }
           return Value::unit();
         }
-        if (auto fn = function(callee))
-          return call(*fn, args, frame, line, output, tree,
-                      call_argument_nodes, nullptr, current_root);
+        if (!exact_call_edge)
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT function Call lacks checker call authority");
+        if (exact_call_edge->target_kind == SemanticCallTargetKind::Static) {
+          if (exact_call_edge->callee_spec_id == InvalidSpecId ||
+              exact_call_edge->callee_spec_id >=
+                  program_.specialization_table.size())
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT static Call has invalid callee SpecId");
+          const auto& identity = program_.specialization_table[
+              exact_call_edge->callee_spec_id];
+          if (identity.id != exact_call_edge->callee_spec_id)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT callee SpecId table row is contradictory");
+          if (const auto* fn = function_by_semantic_identity(
+                  identity.semantic_callable_identity))
+            return call(*fn, args, frame, line, output, tree,
+                        call_argument_nodes, nullptr, current_root,
+                        std::nullopt, &*exact_call_edge);
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT static Call SpecId has no checked callable body");
+        }
         auto callable_local = frame.locals.find(callee);
         const Value* callable_val = callable_local != frame.locals.end() ? &callable_local->second : nullptr;
         if (!callable_val) {
@@ -3053,24 +3117,37 @@ class FastInterpreter {
           }
         }
         if (callable_val && callable_val->kind == Value::Kind::Callable) {
-          if (auto fn = function(callable_val->string))
-            return call(*fn, args, frame, line, output, tree,
-                        call_argument_nodes, nullptr, current_root);
-          throw RuntimeError(line, program_.file_check_scope
-              ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
-                    callable_val->string + "' was not checked in this run"
-              : "unresolved callable identity '" + callable_val->string + "'");
+          if (exact_call_edge->target_kind !=
+                  SemanticCallTargetKind::DynamicCallback ||
+              exact_call_edge->callee_spec_id != InvalidSpecId ||
+              !callable_val->callable_target ||
+              callable_val->callable_spec_id == InvalidSpecId)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT runtime callable contradicts checked call target kind");
+          return call(*callable_val->callable_target, args, frame, line,
+                      output, tree, call_argument_nodes, nullptr, current_root,
+                      callable_val->callable_spec_id, &*exact_call_edge);
         }
         if (auto object = object_type(callee))
           return construct(*object, args, frame, line, output, tree,
                            call_argument_nodes);
         auto self_it = frame.locals.find("self");
         if (self_it != frame.locals.end() && self_it->second.kind == Value::Kind::Struct && self_it->second.object) {
-          if (auto target = method(self_it->second.object->type, callee)) {
-            return call_method(*target, self_it->second, args, frame, line, output,
-                               locate("self", frame, line, output), tree,
-                               call_argument_nodes);
-          }
+          const auto edge = checked_call_fact_for_occurrence(
+              frame, tree, current_root, line);
+          if (edge.target_kind != SemanticCallTargetKind::Static ||
+              edge.callee_spec_id == InvalidSpecId)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT self method call lacks checked static SpecId");
+          const auto* target = method_by_spec_id(
+              self_it->second.object->type, edge.callee_spec_id);
+          if (!target)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT self method SpecId has no unique body");
+          return call_method(*target, self_it->second, args, frame, line, output,
+                             locate("self", frame, line, output), tree,
+                             call_argument_nodes, current_root,
+                             edge.callee_spec_id);
         }
         throw RuntimeError(line, program_.file_check_scope
             ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: callable '" +
@@ -3456,8 +3533,7 @@ class FastInterpreter {
                       : nullptr;
                   if (method && method->name == method_name)
                     checked_receiver = active_expression_tree_->arena->facts(
-                        method->base, frame.functional_context.empty()
-                            ? "main" : frame.functional_context);
+                        method->base, frame.spec_id);
                 }
                 if (!checked_receiver || !checked_receiver->type ||
                     checked_receiver->type->kind != TypeKind::Builtin ||
@@ -3509,15 +3585,27 @@ class FastInterpreter {
           }
           if (receiver.kind != Value::Kind::Struct || !receiver.object)
             throw RuntimeError(line, "method receiver is not a Moss object");
-          auto target = method(receiver.object->type, method_name);
+          if (!member_node || !member_argument_nodes ||
+              !std::holds_alternative<est::Call>(
+                  tree->arena->at(current_root)))
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT user method call lacks exact EST Call occurrence");
+          const auto checked_method_edge = checked_call_fact_for_occurrence(
+              frame, tree, current_root, line);
+          if (checked_method_edge.target_kind !=
+                  SemanticCallTargetKind::Static ||
+              checked_method_edge.callee_spec_id == InvalidSpecId)
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT method call lacks checked static SpecId");
+          const auto* target = method_by_spec_id(
+              receiver.object->type, checked_method_edge.callee_spec_id);
           if (!target)
-            throw RuntimeError(line, program_.file_check_scope
-                ? "internal error: FAST_DEBUG_UNCHECKED_EXECUTION: method '" +
-                      method_name + "' was not checked in this run"
-                : "unresolved method '" + method_name + "'");
+            throw RuntimeError(line,
+                "MOSS_INTERNAL_INVARIANT checked method SpecId has no unique body");
           return call_method(*target, receiver, method_args, frame, line, output,
                              locate(member->first, frame, line, output), tree,
-                             member_argument_nodes);
+                             member_argument_nodes, current_root,
+                             checked_method_edge.callee_spec_id);
         }
       }
       auto receiver = evaluate_member_receiver();
@@ -3543,7 +3631,15 @@ class FastInterpreter {
           emit("LocalRead", frame, line, name);
           return found->second;
         }
-        if (function(name)) return Value::callable_value(name);
+        const auto* facts = tree->arena->facts(current_root,
+                                               frame.spec_id);
+        if (facts && !facts->resolved_target.empty())
+          if (const auto* target = function_by_semantic_identity(
+                  facts->resolved_target))
+            return Value::callable_value(name, target, target->spec_id);
+        if (function(name))
+          throw RuntimeError(line,
+              "MOSS_INTERNAL_INVARIANT function value lacks checked semantic identity");
         if (name == "None") {
           Value none = Value::struct_value("option");
           none.object->case_name = "None";
@@ -3920,37 +4016,40 @@ class FastInterpreter {
              const ExpressionTreeView* tree = nullptr,
              const std::vector<est::ExprId>* argument_nodes = nullptr,
              const std::vector<Value>* argument_values = nullptr,
-             std::optional<est::ExprId> call_expr = std::nullopt) {
+             std::optional<est::ExprId> call_expr = std::nullopt,
+             std::optional<SpecId> dynamic_callable_spec_id = std::nullopt,
+             const SemanticCallEdge* exact_call_edge = nullptr) {
     if (arguments.size() != target.params.size())
       throw RuntimeError(line, "wrong number of arguments for '" + target.name + "'");
     Frame frame;
     frame.function = target.name;
+    const auto owned_call_edge = exact_call_edge
+        ? std::optional<SemanticCallEdge>()
+        : std::optional<SemanticCallEdge>(checked_call_fact_for_occurrence(
+              caller, tree, call_expr, line));
+    const auto& call_edge = exact_call_edge ? *exact_call_edge
+                                            : *owned_call_edge;
     const auto* specialization = specialization_for_call(
-        target, caller, line, tree, call_expr);
-    if (!specialization && checked_call_requires_specialization(target, caller, line)) {
-#ifndef NDEBUG
-      if (const char* count = std::getenv("MOSS_TEST_COUNT_FACT");
-          count && std::string(count) == "g4")
-        std::cerr << "MOSS_TEST_FACT_COUNTER|g4|line=" << line
-                  << "|context=" << caller.functional_context
-                  << "|callee=" << target.name << "\n";
-#endif
-    }
-    frame.functional_context = functional_function_context(target, specialization);
-    frame.specialization_key = specialization
-        ? specialization->stable_type_key : std::string();
+        target, caller, line, tree, call_expr, dynamic_callable_spec_id,
+        &call_edge);
+    frame.spec_id = call_edge.target_kind ==
+            SemanticCallTargetKind::DynamicCallback
+        ? dynamic_callable_spec_id.value_or(InvalidSpecId)
+        : call_edge.callee_spec_id;
+    if (frame.spec_id == InvalidSpecId)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT called function body lacks checked SpecId");
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
     if (specialization)
-      frame.specialization_identity = frame.functional_context + "@" +
-          std::to_string(target.line);
     bind_parameters(target.params,
                     specialization ? specialization->parameter_effects : target.parameter_effects,
                     arguments, caller, frame, line, output,
                     specialization ? &specialization->parameter_types : nullptr,
-                    tree, argument_nodes, argument_values);
+                    tree, argument_nodes, argument_values,
+                    &call_edge.argument_callable_spec_ids);
     int enter_id = emit("FunctionEnter", frame, target.line);
     EventScope function_scope(*this, enter_id, true);
     const auto& executable_body = target.execution_body
@@ -3979,11 +4078,31 @@ class FastInterpreter {
                     const std::vector<std::string>& arguments, Frame& caller,
                     int line, std::ostream& output, Place origin,
                     const ExpressionTreeView* tree = nullptr,
-                    const std::vector<est::ExprId>* argument_nodes = nullptr) {
+                    const std::vector<est::ExprId>* argument_nodes = nullptr,
+                    std::optional<est::ExprId> call_expr = std::nullopt,
+                    std::optional<SpecId> selected_body_spec_id = std::nullopt) {
     if (arguments.size() != target.params.size()) throw RuntimeError(line, "wrong number of method arguments");
     Frame frame;
     frame.function = target.owner + "." + target.name;
-    frame.functional_context = functional_method_context(target);
+    frame.spec_id = selected_body_spec_id.value_or(target.spec_id);
+    if (call_expr) {
+      const auto edge = checked_call_fact_for_occurrence(
+          caller, tree, call_expr, line);
+      if (edge.target_kind != SemanticCallTargetKind::Static ||
+          edge.callee_spec_id != frame.spec_id ||
+          frame.spec_id == InvalidSpecId ||
+          frame.spec_id >= program_.specialization_table.size() ||
+          program_.specialization_table[frame.spec_id].id != frame.spec_id ||
+          std::none_of(target.specializations.begin(), target.specializations.end(),
+              [&](const MethodSpecializationIdentity& specialization) {
+                return specialization.spec_id == frame.spec_id;
+              }))
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT method call fact contradicts checked method SpecId");
+    }
+    if (frame.spec_id == InvalidSpecId)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT method body lacks checked SpecId");
     frame.source_file = target.execution_source_file.empty()
         ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "method:" + target.owner + "." +
@@ -4103,13 +4222,11 @@ class FastInterpreter {
     }
     if (!matched_handle) return nullptr;
 
-    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
-
     const TypedLocalOwnershipRequirementV1* requirement = nullptr;
     const TypedLocalOwnershipFactV1* found_fact = nullptr;
     try {
       requirement = program_.typed_semantics->find_local_ownership_requirement(
-          matched_handle->arena_index, matched_handle->expr, context);
+          matched_handle->arena_index, matched_handle->expr, frame.spec_id);
       if (!requirement) {
         return nullptr;
       }
@@ -4146,7 +4263,7 @@ class FastInterpreter {
     }
 
     const auto* tree_facts = arena->facts(found_fact->expression_occurrence_id,
-                                          found_fact->specialization_context);
+                                          frame.spec_id);
     if (!tree_facts || !tree_facts->inferred_effect ||
         *tree_facts->inferred_effect != found_fact->access) {
       throw RuntimeError(line,
@@ -4171,11 +4288,10 @@ class FastInterpreter {
       }
     }
     if (!rhs) return nullptr;
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     const auto& required =
         program_.typed_semantics->required_local_transfer_occurrences;
-    bool has_requirement = false;
+    const TypedLocalTransferRequirementV1* selected_requirement = nullptr;
+    std::size_t requirement_count = 0;
     for (const auto& candidate : required) {
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_CONSUMER_DROP_LOCAL_TRANSFER_REQUIREMENT"))
@@ -4185,15 +4301,15 @@ class FastInterpreter {
           candidate.rhs_expression_occurrence_id == rhs->expr &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key) {
-        if (has_requirement)
-          throw RuntimeError(line,
-              "MOSS_INTERNAL_INVARIANT duplicate local transfer requirement");
-        has_requirement = true;
+          candidate.specialization_id == frame.spec_id) {
+        selected_requirement = &candidate;
+        ++requirement_count;
       }
     }
-    if (!has_requirement) {
+    if (requirement_count != 1 || !selected_requirement) {
+      if (requirement_count > 1)
+        throw RuntimeError(line,
+            "MOSS_INTERNAL_INVARIANT duplicate local transfer requirement");
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_CONSUMER_REQUIRE_LOCAL_TRANSFER_FACT"))
         throw RuntimeError(line,
@@ -4202,10 +4318,8 @@ class FastInterpreter {
       return nullptr;
     }
     try {
-      return program_.typed_semantics->find_local_transfer_fact(
-          rhs->arena_index, rhs->expr,
-          statement.checked_statement_occurrence_id, context,
-          frame.specialization_key);
+      return &program_.typed_semantics->find_local_transfer_fact(
+          *selected_requirement);
     } catch (const std::exception& error) {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT " + std::string(error.what()));
@@ -4227,14 +4341,11 @@ class FastInterpreter {
     }
     if (!matched_handle) return {};
 
-    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
-
     std::vector<const TypedLoopOwnershipFactV1*> facts;
     for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
       if (req.loop_est_arena_index == matched_handle->arena_index &&
           req.loop_expression_occurrence_id == matched_handle->expr &&
-          req.specialization_context == context &&
-          req.specialization_identity == frame.specialization_key) {
+          req.specialization_id == frame.spec_id) {
         if (req.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -4251,16 +4362,14 @@ class FastInterpreter {
     for (const auto& fact : program_.typed_semantics->loop_ownership_facts) {
       if (fact.loop_est_arena_index == matched_handle->arena_index &&
           fact.loop_expression_occurrence_id == matched_handle->expr &&
-          fact.specialization_context == context &&
-          fact.specialization_identity == frame.specialization_key) {
+          fact.specialization_id == frame.spec_id) {
         if (fact.availability != TypedLoopOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : program_.typed_semantics->required_loop_ownership_occurrences) {
           if (req.loop_est_arena_index == fact.loop_est_arena_index &&
               req.loop_expression_occurrence_id == fact.loop_expression_occurrence_id &&
-              req.specialization_context == fact.specialization_context &&
-              req.specialization_identity == fact.specialization_identity &&
+              req.specialization_id == fact.specialization_id &&
               req.definition_identity == fact.definition_identity &&
               req.edge_kind == fact.edge_kind) {
             found_req = true;
@@ -4279,12 +4388,10 @@ class FastInterpreter {
       const Stmt& s, const Frame& frame, int line) const {
     if (!program_.typed_semantics) return {};
     (void)s;
-    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
 
     std::vector<const TypedExceptionalOwnershipFactV1*> facts;
     for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
-      if (req.specialization_context == context &&
-          req.specialization_identity == frame.specialization_key) {
+      if (req.specialization_id == frame.spec_id) {
         if (req.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         try {
@@ -4296,15 +4403,13 @@ class FastInterpreter {
       }
     }
     for (const auto& fact : program_.typed_semantics->exceptional_ownership_facts) {
-      if (fact.specialization_context == context &&
-          fact.specialization_identity == frame.specialization_key) {
+      if (fact.specialization_id == frame.spec_id) {
         if (fact.availability != TypedExceptionalOwnershipFactV1::Availability::Present)
           continue;
         bool found_req = false;
         for (const auto& req : program_.typed_semantics->required_exceptional_ownership_occurrences) {
           if (req.source_statement_occurrence_id == fact.source_statement_occurrence_id &&
-              req.specialization_context == fact.specialization_context &&
-              req.specialization_identity == fact.specialization_identity &&
+              req.specialization_id == fact.specialization_id &&
               req.recovery_statement_occurrence_id == fact.recovery_statement_occurrence_id &&
               req.raised_variant_identity == fact.raised_variant_identity) {
             found_req = true;
@@ -4328,8 +4433,6 @@ class FastInterpreter {
         selected.source_edges.empty())
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT bare raise transfer authority unavailable");
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     for (const auto* source_edge : selected.source_edges) {
       if (!selected.signal || !source_edge ||
           source_edge->raised_variant_identity !=
@@ -4342,8 +4445,7 @@ class FastInterpreter {
                 raise.checked_statement_occurrence_id,
                 selected.recovery_statement_occurrence_id,
                 *source_edge, selected.signal->identity.type);
-        if (requirement.specialization_context != context ||
-            requirement.specialization_identity != frame.specialization_key ||
+        if (requirement.specialization_id != frame.spec_id ||
             requirement.raised_variant_identity !=
                 selected.signal->identity.canonical())
           throw std::invalid_argument(
@@ -4372,16 +4474,13 @@ class FastInterpreter {
     if (!matched_handle)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked match scrutinee occurrence is missing");
-    const std::string context = frame.functional_context.empty() ? "main" : frame.functional_context;
-    std::string active_specialization_identity = frame.specialization_key;
+    SpecId active_specialization_id = frame.spec_id;
     const TypedMatchOwnershipRequirementV1* requirement = nullptr;
 #ifdef MOSS_TEST_BUILD
     const bool drop_match_requirement =
         std::getenv("MOSS_TEST_CONSUMER_DROP_MATCH_REQUIREMENT") != nullptr;
-    if (std::getenv("MOSS_TEST_CONSUMER_COLLIDE_MATCH_SPECIALIZATION_IDENTITY")) {
-      const auto delimiter = context.find('<');
-      active_specialization_identity = context.substr(0, delimiter);
-    }
+    if (std::getenv("MOSS_TEST_CONSUMER_COLLIDE_MATCH_SPECIALIZATION_IDENTITY"))
+      ++active_specialization_id;
 #else
     constexpr bool drop_match_requirement = false;
 #endif
@@ -4390,8 +4489,7 @@ class FastInterpreter {
       if (!drop_match_requirement &&
           req.est_arena_index == matched_handle->arena_index &&
           req.scrutinee_occurrence_id == matched_handle->expr &&
-          req.specialization_context == context &&
-          req.specialization_identity == active_specialization_identity) {
+          req.specialization_id == active_specialization_id) {
         requirement = &req;
         ++requirement_count;
       }
@@ -4423,8 +4521,7 @@ class FastInterpreter {
             return candidate.est_arena_index == requirement->est_arena_index &&
                 candidate.scrutinee_occurrence_id == requirement->scrutinee_occurrence_id &&
                 candidate.statement_occurrence_id == requirement->statement_occurrence_id &&
-                candidate.specialization_identity == requirement->specialization_identity &&
-                candidate.specialization_context == requirement->specialization_context;
+                candidate.specialization_id == requirement->specialization_id;
           });
       if (fact == corrupted.match_ownership_facts.end())
         throw RuntimeError(line,
@@ -4453,8 +4550,6 @@ class FastInterpreter {
     if (!program_.typed_semantics || !tree.arena)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT typed collection outcome semantics are unavailable");
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     const TypedCollectionOutcomeRequirementV1* requirement = nullptr;
     std::size_t count = 0;
 #ifdef MOSS_TEST_BUILD
@@ -4471,15 +4566,15 @@ class FastInterpreter {
       if (!drop_requirement && candidate.operation == operation &&
           candidate.operation_est_arena_index == tree.arena_index &&
           candidate.operation_expression_occurrence_id == operation_expression &&
-          candidate.specialization_identity == frame.specialization_key &&
-          candidate.specialization_context == context) {
+          candidate.specialization_id == frame.spec_id) {
         requirement = &candidate;
         ++count;
         if (duplicate_requirement) ++count;
       }
     }
     if (count != 1 || !requirement) {
-      const auto* semantic = tree.arena->facts(operation_expression, context);
+      const auto* semantic = tree.arena->facts(operation_expression,
+                                               frame.spec_id);
       if (count || (semantic && semantic->type &&
                     semantic->type->kind == TypeKind::Never))
         throw RuntimeError(line,
@@ -4533,164 +4628,39 @@ class FastInterpreter {
         !program_.expression_arenas[handle->arena_index])
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT missing exact checked return-value EST handle");
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
-    std::string query_context = context;
+    SpecId query_spec_id = frame.spec_id;
 #ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT"))
-      query_context += ":wrong-context";
+    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT") ||
+        std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
+      ++query_spec_id;
 #endif
-    std::string callable_context = context;
-    const auto failure_context = callable_context.find(":on_fail:");
-    if (failure_context != std::string::npos) {
-      callable_context.resize(failure_context);
-      query_context = callable_context;
-    }
-    const auto callable_suffix = callable_context.find('<');
-    if (callable_suffix != std::string::npos)
-      callable_context.resize(callable_suffix);
-    std::string query_specialization = frame.specialization_key;
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
-      query_specialization += ":wrong-specialization";
-#endif
+    if (query_spec_id == InvalidSpecId ||
+        query_spec_id >= program_.specialization_table.size() ||
+        program_.specialization_table[query_spec_id].id != query_spec_id)
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT ReturnValue caller SpecId is missing or contradictory");
+    const auto& owner_identity =
+        program_.specialization_table[query_spec_id];
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      // Imported top-level functions retain the original exact-owner path.
-      std::string callable = callable_context;
-      if (callable.rfind("fn:", 0) == 0) callable.erase(0, 3);
-      if (callable_context.rfind("fn:", 0) == 0) {
-        const Function* owner = nullptr;
-        std::size_t owner_count = 0;
-        for (const auto& function : program_.functions)
-          if (function.name == callable) {
-            owner = &function;
-            ++owner_count;
-          }
-        if (owner_count != 1 || !owner) return false;
-        const std::string module = module_name_from_symbol(owner->name);
-        if (module.empty() || !program_.external_modules.count(module))
-          return false;
-        const auto module_identity = program_.module_identities.find(module);
-        return module_identity != program_.module_identities.end() &&
-            !module_identity->second.empty() &&
-            candidate.provenance.defining_module_id == module_identity->second &&
-            candidate.provenance.enclosing_callable_id == callable_context &&
-            !statement.source_file.empty() &&
-            candidate.provenance.source_file == statement.source_file;
-      }
-
-      if (callable_context.rfind("handler:", 0) == 0) {
-        const std::string identity = callable_context.substr(8);
-        const auto separator = identity.rfind('.');
-        if (separator == std::string::npos || separator == 0 ||
-            separator + 1 >= identity.size()) return false;
-        std::string domain_identity = identity.substr(0, separator);
-        const std::string handler_name = identity.substr(separator + 1);
-#ifdef MOSS_TEST_BUILD
-        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_OWNER"))
-          domain_identity += ":wrong-owner";
-#endif
-        const Domain* owner_domain = nullptr;
-        std::size_t domain_count = 0;
-        for (const auto& domain : program_.domains)
-          if (domain.name == domain_identity) {
-            owner_domain = &domain;
-            ++domain_count;
-          }
-        if (domain_count != 1 || !owner_domain) return false;
-        const Handler* owner_handler = nullptr;
-        std::size_t handler_count = 0;
-        for (const auto& handler : owner_domain->handlers)
-          if (handler.name == handler_name) {
-            owner_handler = &handler;
-            ++handler_count;
-          }
-        if (handler_count != 1 || !owner_handler ||
-            !owner_handler->reply_type || !candidate.expression_type ||
-            candidate.expression_type->to_canonical_string() !=
-                *owner_handler->reply_type) return false;
-#ifdef MOSS_TEST_BUILD
-        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_HANDLER_TYPE"))
-          return false;
-#endif
-        const std::string module = module_name_from_symbol(owner_domain->name);
-        if (module.empty() || !program_.external_modules.count(module))
-          return false;
-        const auto module_identity = program_.module_identities.find(module);
-        if (module_identity == program_.module_identities.end() ||
-            module_identity->second.empty() ||
-            candidate.provenance.defining_module_id != module_identity->second)
-          return false;
-#ifdef MOSS_TEST_BUILD
-        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_MODULE"))
-          return false;
-        std::string source_file = statement.source_file;
-        if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_HANDLER_SOURCE"))
-          source_file += ":wrong-source";
-#else
-        const std::string& source_file = statement.source_file;
-#endif
-        return !source_file.empty() &&
-            candidate.provenance.enclosing_callable_id == callable_context &&
-            candidate.provenance.source_file == source_file;
-      }
-
-      // Method bodies are imported under `method:<qualified object>.<name>`.
-      // Resolve both declarations uniquely; source/type spellings alone do
-      // not establish an imported owner.
-      constexpr std::string_view method_prefix = "method:";
-      if (callable_context.rfind(method_prefix, 0) != 0) return false;
-      const std::string method_identity = callable_context.substr(
-          method_prefix.size());
-      const auto separator = method_identity.rfind('.');
-      if (separator == std::string::npos || separator == 0 ||
-          separator + 1 >= method_identity.size()) return false;
-      std::string object_identity = method_identity.substr(0, separator);
-      const std::string method_name = method_identity.substr(separator + 1);
-#ifdef MOSS_TEST_BUILD
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_OWNER"))
-        object_identity += ":wrong-owner";
-#endif
-      const ObjectType* owner_object = nullptr;
-      std::size_t object_count = 0;
-      for (const auto& object : program_.objects)
-        if (object.name == object_identity) {
-          owner_object = &object;
-          ++object_count;
-        }
-      if (object_count != 1 || !owner_object) return false;
-      const Method* owner_method = nullptr;
-      std::size_t method_count = 0;
-      for (const auto& method : owner_object->methods)
-        if (method.name == method_name && method.owner == owner_object->name) {
-          owner_method = &method;
-          ++method_count;
-        }
-      if (method_count != 1 || !owner_method) return false;
-      const std::string module = module_name_from_symbol(owner_object->name);
-      if (module.empty() || !program_.external_modules.count(module))
-        return false;
-      const auto module_identity = program_.module_identities.find(module);
-      if (module_identity == program_.module_identities.end() ||
-          module_identity->second.empty() ||
-          candidate.provenance.defining_module_id != module_identity->second)
-        return false;
-#ifdef MOSS_TEST_BUILD
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_MODULE"))
-        return false;
-      std::string source_file = statement.source_file;
-      if (std::getenv("MOSS_TEST_CONSUMER_WRONG_IMPORTED_RETURN_METHOD_SOURCE"))
-        source_file += ":wrong-source";
-#else
-      const std::string& source_file = statement.source_file;
-#endif
-      return !source_file.empty() &&
-          candidate.provenance.enclosing_callable_id == callable_context &&
-          candidate.provenance.source_file == source_file &&
-          (!owner_method->execution_source_file.empty()
-              ? owner_method->execution_source_file == source_file
-              : true);
+      const std::string provider_module_identity =
+          owner_identity.provider_module_identity.empty()
+              ? owner_identity.module_identity
+              : owner_identity.provider_module_identity;
+      if (provider_module_identity.empty() ||
+          candidate.specialization_id != query_spec_id) return false;
+      const auto module_identity_matches = std::count_if(
+          program_.module_identities.begin(), program_.module_identities.end(),
+          [&](const auto& entry) {
+            return entry.second == provider_module_identity &&
+                program_.external_modules.count(entry.first) != 0;
+          });
+      return module_identity_matches == 1 &&
+          candidate.provenance.defining_module_id ==
+              provider_module_identity &&
+          !statement.source_file.empty() &&
+          candidate.provenance.source_file == statement.source_file &&
+          candidate.provenance.line == statement.line;
     };
     const TypedReturnValueRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
@@ -4712,11 +4682,9 @@ class FastInterpreter {
             candidate.expression_occurrence_span.origin_id ==
                 occurrence_span.origin_id)) &&
           candidate.provenance.line == statement.line &&
-          candidate.provenance.enclosing_callable_id == callable_context &&
           (statement.source_file.empty() ||
            candidate.provenance.source_file == statement.source_file) &&
-          candidate.specialization_context == query_context &&
-          candidate.specialization_identity == query_specialization &&
+          candidate.specialization_id == query_spec_id &&
           (!handle || (candidate.est_arena_index == handle->arena_index &&
                        candidate.expression_occurrence_id == handle->expr));
     };
@@ -4737,16 +4705,6 @@ class FastInterpreter {
       ++requirement_count;
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT")) fact_count = 0;
     if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT")) ++fact_count;
-    if (callable_context.rfind("handler:", 0) == 0) {
-      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_REQUIREMENT"))
-        --requirement_count;
-      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_REQUIREMENT"))
-        ++requirement_count;
-      if (std::getenv("MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_HANDLER_FACT"))
-        fact_count = 0;
-      if (std::getenv("MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_HANDLER_FACT"))
-        ++fact_count;
-    }
 #endif
     if (requirement_count != 1 || fact_count != 1 || !requirement) {
       throw RuntimeError(line,
@@ -4789,19 +4747,10 @@ class FastInterpreter {
       if (requirement->source_free_checked_body_occurrence && std::getenv(
               "MOSS_TEST_CONSUMER_PERTURB_SOURCE_FREE_RETURN_EST_CONTEXT")) {
         auto corrupted = *requirement;
-        corrupted.est_fact_context += ":wrong-context";
+        ++corrupted.specialization_id;
         (void)program_.typed_semantics->find_return_value_fact(corrupted);
         throw RuntimeError(line,
             "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue EST context unexpectedly passed");
-      }
-      if (callable_context.rfind("handler:", 0) == 0 &&
-          std::getenv("MOSS_TEST_CONSUMER_PERTURB_RETURN_VALUE_HANDLER_FACT")) {
-        auto corrupted = *requirement;
-        corrupted.required_access = corrupted.required_access == Effect::Consume
-            ? Effect::Read : Effect::Consume;
-        (void)program_.typed_semantics->find_return_value_fact(corrupted);
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT perturbed imported handler Reply fact unexpectedly passed");
       }
       if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
         auto corrupted = *requirement;
@@ -4816,14 +4765,9 @@ class FastInterpreter {
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
       if (fact->source_free_checked_body_occurrence) {
-        const Function* owner = nullptr;
-        std::size_t owner_count = 0;
-        if (callable_context.rfind("fn:", 0) == 0)
-          for (const auto& candidate : program_.functions)
-            if (candidate.name == callable_context.substr(3)) {
-              owner = &candidate;
-              ++owner_count;
-            }
+        const Function* owner = function_by_semantic_identity(
+            owner_identity.semantic_callable_identity);
+        const std::size_t owner_count = owner ? 1 : 0;
         const bool source_free_occurrence_matches = owner && handle
             ? typed_return_value_source_free_occurrence_matches(
                   *fact, *owner, statement, *handle)
@@ -4839,7 +4783,7 @@ class FastInterpreter {
             source_free_module_identity->second.empty() ||
             fact->provenance.defining_module_id !=
                 source_free_module_identity->second ||
-            fact->provenance.enclosing_callable_id != callable_context ||
+            fact->provenance.enclosing_callable_id != owner_identity.semantic_callable_identity ||
             !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
@@ -4854,17 +4798,17 @@ class FastInterpreter {
       if (fact->expression_occurrence_id >= arena->size())
         throw std::invalid_argument("return-value EST occurrence is out of range");
       const auto* occurrence = arena->facts(handle->expr,
-                                             fact->est_fact_context);
+                                             fact->specialization_id);
       if (!occurrence || !occurrence->type) {
-        const Function* imported_checked_owner = nullptr;
-        std::size_t imported_checked_owner_count = 0;
-        if (callable_context.rfind("fn:", 0) == 0)
-          for (const auto& function : program_.functions)
-            if (function.name == callable_context.substr(3) &&
-                function.imported_checked_body_projected) {
-              imported_checked_owner = &function;
-              ++imported_checked_owner_count;
-            }
+        const Function* imported_checked_owner =
+            function_by_semantic_identity(
+                owner_identity.semantic_callable_identity);
+        const std::size_t imported_checked_owner_count =
+            imported_checked_owner &&
+                    imported_checked_owner->imported_checked_body_projected
+                ? 1 : 0;
+        if (imported_checked_owner_count == 0)
+          imported_checked_owner = nullptr;
         if (imported_checked_owner_count > 1 ||
             (imported_checked_owner &&
              imported_checked_owner->semantic_callable_id.empty()))
@@ -4872,6 +4816,22 @@ class FastInterpreter {
               "imported checked ReturnValue owner identity is ambiguous");
         const bool imported_checked_body_owner =
             imported_checked_owner_count == 1 && imported_checked_owner;
+#ifdef MOSS_TEST_BUILD
+        if (std::getenv("MOSS_TEST_TRACE_IMPORTED_RETURN_VALUE_OWNER")) {
+          std::cerr << "IMPORTED_RETURN_OWNER spec=" << query_spec_id
+                    << " module=" << owner_identity.provider_module_identity
+                    << " row_module=" << owner_identity.module_identity
+                    << " callable=" << owner_identity.semantic_callable_identity
+                    << " exact_owner=" << fact_is_from_exact_imported_owner(*fact)
+                    << " fact_module=" << fact->provenance.defining_module_id
+                    << " fact_callable=" << fact->provenance.enclosing_callable_id
+                    << " fact_source=" << fact->provenance.source_file
+                    << " stmt_source=" << statement.source_file
+                    << " fact_spec=" << fact->specialization_id
+                    << " imported_function_owner=" << imported_checked_body_owner
+                    << "\n";
+        }
+#endif
         if (imported_checked_body_owner ||
             !fact_is_from_exact_imported_owner(*fact))
           throw std::invalid_argument(
@@ -4897,15 +4857,11 @@ class FastInterpreter {
     if (statement.kind != Stmt::Kind::Echo)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked Echo argument identity unavailable");
-    std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
-    if (!statement.echo_types_by_context.count(context)) {
-      if (!statement.echo_types_by_context.count(std::string()))
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT missing exact Echo specialization context");
-      context.clear();
-    }
-    const auto& checked_types = statement.echo_types_by_context.at(context);
+    const auto checked = statement.echo_types_by_spec_id.find(frame.spec_id);
+    if (checked == statement.echo_types_by_spec_id.end())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT missing exact Echo specialization SpecId");
+    const auto& checked_types = checked->second;
     if (argument_index >= checked_types.size())
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checked Echo argument type missing");
@@ -4948,7 +4904,7 @@ class FastInterpreter {
             return item.est_arena_index == handle->arena_index &&
                 item.argument_expression_occurrence_id == handle->expr &&
                 item.argument_index == argument_index &&
-                item.specialization_context == context;
+                item.specialization_id == frame.spec_id;
           });
       const bool borrowed_requirement = req != requirements.end() &&
           req->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
@@ -4964,7 +4920,7 @@ class FastInterpreter {
             return item.est_arena_index == handle->arena_index &&
                 item.argument_expression_occurrence_id == handle->expr &&
                 item.argument_index == argument_index &&
-                item.specialization_context == context;
+                item.specialization_id == frame.spec_id;
           });
       const bool borrowed_fact = fact_it != facts.end() &&
           fact_it->mode == TypedEchoArgumentModeV1::BorrowedVectorElement;
@@ -4978,24 +4934,24 @@ class FastInterpreter {
                    "MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_FACT"))
         fact_it->required_access = Effect::Consume;
 #endif
-      std::string query_context = context;
+      SpecId query_spec_id = frame.spec_id;
 #ifdef MOSS_TEST_BUILD
       if (std::getenv("MOSS_TEST_CONSUMER_WRONG_ECHO_ARGUMENT_CONTEXT"))
-        query_context += ":wrong-context";
+        ++query_spec_id;
 #endif
       const auto& requirement = program_.typed_semantics->find_echo_argument_requirement(
-          handle->arena_index, handle->expr, argument_index, query_context);
+          handle->arena_index, handle->expr, argument_index, query_spec_id);
       auto exact_requirement = requirement;
 #ifdef MOSS_TEST_BUILD
       if (requirement.mode == TypedEchoArgumentModeV1::BorrowedVectorElement &&
           std::getenv("MOSS_TEST_CONSUMER_PERTURB_ECHO_ARGUMENT_CONTEXT"))
-        exact_requirement.est_fact_context += ":consumer-perturbed";
+        ++exact_requirement.specialization_id;
 #endif
       const auto& fact = program_.typed_semantics->find_echo_argument_fact(
           exact_requirement);
       if (fact.echo_statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          fact.specialization_identity != frame.specialization_key ||
+          fact.specialization_id != frame.spec_id ||
           !fact.is_authoritative() || fact.required_access != Effect::Read ||
           !fact.display_result_non_escaping || fact.permits_copy)
         throw std::invalid_argument(
@@ -5027,13 +4983,14 @@ class FastInterpreter {
         rows += "a=" + std::to_string(candidate.est_arena_index) +
             "/e=" + std::to_string(candidate.argument_expression_occurrence_id) +
             "/i=" + std::to_string(candidate.argument_index) +
-            "/c=" + candidate.specialization_context;
+            "/spec=" + std::to_string(candidate.specialization_id);
       }
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT " + std::string(error.what()) +
           " [query=" + std::to_string(handle->arena_index) + "/" +
           std::to_string(handle->expr) + "/" +
-          std::to_string(argument_index) + "/" + context +
+          std::to_string(argument_index) + "/spec=" +
+          std::to_string(frame.spec_id) +
           ", requirements=" + rows + "]");
     }
   }
@@ -5044,8 +5001,6 @@ class FastInterpreter {
     if (!program_.typed_semantics || !tree.arena ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       return nullptr;
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     const TypedCollectionViewRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     std::size_t fact_count = 0;
@@ -5054,8 +5009,7 @@ class FastInterpreter {
       if (candidate.est_arena_index != tree.arena_index ||
           candidate.statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != frame.specialization_key)
+          candidate.specialization_id != frame.spec_id)
         continue;
       if (candidate.operation_expression_occurrence_id >= tree.arena->size())
         throw RuntimeError(line,
@@ -5107,8 +5061,7 @@ class FastInterpreter {
               requirement->operation_expression_occurrence_id &&
           candidate.statement_occurrence_id ==
               requirement->statement_occurrence_id &&
-          candidate.specialization_context == requirement->specialization_context &&
-          candidate.specialization_identity == requirement->specialization_identity)
+          candidate.specialization_id == requirement->specialization_id)
         ++fact_count;
     }
 #ifdef MOSS_TEST_BUILD
@@ -5175,9 +5128,6 @@ class FastInterpreter {
         ? std::get_if<est::Index>(&tree.arena->at(index_id)) : nullptr;
     if (!index) throw RuntimeError(line,
         "MOSS_INTERNAL_INVARIANT indexed READ ExprId is invalid");
-    const auto context = frame.functional_context.empty()
-        ? std::string("main") : frame.functional_context;
-    const auto specialization = frame.specialization_key;
     const TypedIndexedExpressionReadRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     for (const auto& candidate :
@@ -5187,8 +5137,7 @@ class FastInterpreter {
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
           candidate.statement_slot == est::ExprSlot::Condition &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == specialization) {
+          candidate.specialization_id == frame.spec_id) {
         requirement = &candidate;
         ++requirement_count;
       }
@@ -5199,8 +5148,7 @@ class FastInterpreter {
           candidate.index_expression_occurrence_id == index_id &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == specialization)
+          candidate.specialization_id == frame.spec_id)
         ++fact_count;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_INDEXED_EXPRESSION_READ_AUTHORITY")) {
@@ -5211,14 +5159,13 @@ class FastInterpreter {
           [&](const auto& row) {
             return row.statement_occurrence_id == statement.checked_statement_occurrence_id &&
                 row.index_expression_occurrence_id == index_id &&
-                row.specialization_context == context &&
-                row.specialization_identity == specialization;
+                row.specialization_id == frame.spec_id &&
+                true;
           }), requirements.end());
       facts.erase(std::remove_if(facts.begin(), facts.end(), [&](const auto& row) {
         return row.statement_occurrence_id == statement.checked_statement_occurrence_id &&
             row.index_expression_occurrence_id == index_id &&
-            row.specialization_context == context &&
-            row.specialization_identity == specialization;
+            row.specialization_id == frame.spec_id;
       }), facts.end());
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT checker indexed expression-read authority was dropped");
@@ -5243,8 +5190,7 @@ class FastInterpreter {
             candidate.operation_expression_occurrence_id == index_id &&
             candidate.statement_occurrence_id ==
                 statement.checked_statement_occurrence_id &&
-            candidate.specialization_context == context &&
-            candidate.specialization_identity == specialization)
+            candidate.specialization_id == frame.spec_id)
           ++map_requirements;
       for (const auto& candidate : program_.typed_semantics
                ->conditional_collection_error_facts)
@@ -5254,8 +5200,7 @@ class FastInterpreter {
             candidate.operation_expression_occurrence_id == index_id &&
             candidate.statement_occurrence_id ==
                 statement.checked_statement_occurrence_id &&
-            candidate.specialization_context == context &&
-            candidate.specialization_identity == specialization)
+            candidate.specialization_id == frame.spec_id)
           ++map_facts;
       if (map_requirements == 1 && map_facts == 1) return nullptr;
       throw RuntimeError(line,
@@ -5280,8 +5225,7 @@ class FastInterpreter {
            (fact.permits_copy || !fact.temporary_nonescaping_borrow)) ||
           (fact.disposition == TypedIndexedExpressionReadFactV1::ReadDisposition::PrimitiveValue &&
            (!fact.permits_copy || fact.temporary_nonescaping_borrow)) ||
-          fact.specialization_context != context ||
-          fact.specialization_identity != specialization)
+          fact.specialization_id != frame.spec_id)
         throw std::invalid_argument(
             "indexed expression-read authority does not match exact checked occurrence");
       if (fact.disposition ==
@@ -5301,8 +5245,6 @@ class FastInterpreter {
     if (!program_.typed_semantics || !tree.arena ||
         statement.checked_statement_occurrence_id == UINT32_MAX)
       return nullptr;
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     std::vector<std::pair<est::ExprId, est::ExprId>> query_shapes;
     std::vector<est::ExprId> pending{tree.root};
     std::set<est::ExprId> seen;
@@ -5365,8 +5307,7 @@ class FastInterpreter {
               statement.checked_statement_occurrence_id &&
           candidate.query_statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key) {
+          candidate.specialization_id == frame.spec_id) {
         requirement = &candidate;
         ++requirement_count;
       }
@@ -5385,8 +5326,7 @@ class FastInterpreter {
                 requirement->projection_statement_occurrence_id &&
             candidate.query_statement_occurrence_id ==
                 requirement->query_statement_occurrence_id &&
-            candidate.specialization_context == requirement->specialization_context &&
-            candidate.specialization_identity == requirement->specialization_identity)
+            candidate.specialization_id == requirement->specialization_id)
           ++fact_count;
 #ifdef MOSS_TEST_BUILD
     if (std::getenv("MOSS_TEST_CONSUMER_DROP_PROJECTED_COLLECTION_READ_REQUIREMENT"))
@@ -5425,8 +5365,7 @@ class FastInterpreter {
                 requirement->projection_statement_occurrence_id &&
             candidate.query_statement_occurrence_id ==
                 requirement->query_statement_occurrence_id &&
-            candidate.specialization_identity == requirement->specialization_identity &&
-            candidate.specialization_context == requirement->specialization_context) {
+            candidate.specialization_id == requirement->specialization_id) {
           fact = &candidate;
           ++matches;
         }
@@ -5464,16 +5403,14 @@ class FastInterpreter {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT conditional Map read EST identity invalid");
     if (!std::holds_alternative<est::Index>(tree.arena->at(operation_node))) {
-      const std::string active_context = frame.functional_context.empty()
-          ? "main" : frame.functional_context;
       const auto matches_statement = [&](const auto& candidate) {
         return candidate.operation ==
                    TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead &&
             candidate.est_arena_index == tree.arena_index &&
             candidate.statement_occurrence_id ==
                 statement.checked_statement_occurrence_id &&
-            candidate.specialization_context == active_context &&
-            candidate.specialization_identity == frame.specialization_key;
+            candidate.specialization_id == frame.spec_id &&
+            true;
       };
       const bool has_checked_nested_read = std::any_of(
           program_.typed_semantics->required_conditional_collection_error_occurrences.begin(),
@@ -5490,8 +5427,6 @@ class FastInterpreter {
     const auto* index = std::get_if<est::Index>(&tree.arena->at(operation_node));
     const auto operation =
         TypedConditionalCollectionErrorFactV1::Operation::MapIndexRead;
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     const TypedConditionalCollectionErrorRequirementV1* requirement = nullptr;
     std::size_t requirement_count = 0;
     std::size_t fact_count = 0;
@@ -5511,8 +5446,7 @@ class FastInterpreter {
           candidate.est_arena_index == tree.arena_index &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key &&
+          candidate.specialization_id == frame.spec_id &&
           candidate.operation_expression_occurrence_id != operation_node)
         unsupported_checked_read = true;
       if (candidate.operation != operation ||
@@ -5520,8 +5454,7 @@ class FastInterpreter {
           candidate.operation_expression_occurrence_id != operation_node ||
           candidate.statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != frame.specialization_key)
+          candidate.specialization_id != frame.spec_id)
         continue;
       if (!drop_requirement) {
         requirement = &candidate;
@@ -5535,8 +5468,7 @@ class FastInterpreter {
           candidate.est_arena_index == tree.arena_index &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key &&
+          candidate.specialization_id == frame.spec_id &&
           candidate.operation_expression_occurrence_id != operation_node)
         unsupported_checked_read = true;
       if (candidate.operation == operation &&
@@ -5544,8 +5476,7 @@ class FastInterpreter {
           candidate.operation_expression_occurrence_id == operation_node &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key)
+          candidate.specialization_id == frame.spec_id)
         ++fact_count;
     }
     if (unsupported_checked_read)
@@ -5620,8 +5551,6 @@ class FastInterpreter {
         statement.checked_statement_occurrence_id == UINT32_MAX)
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT conditional Map write-through identity unavailable");
-    const std::string context = frame.functional_context.empty()
-        ? "main" : frame.functional_context;
     const auto operation =
         TypedConditionalCollectionErrorFactV1::Operation::MapIndexWriteThrough;
     std::vector<est::ExprId> pending{tree.root};
@@ -5640,7 +5569,8 @@ class FastInterpreter {
         under_projection = true;
         pending.push_back(member->base);
       } else if (const auto* index = std::get_if<est::Index>(&value)) {
-        const auto* base_facts = tree.arena->facts(index->base, context);
+        const auto* base_facts = tree.arena->facts(index->base,
+                                                  frame.spec_id);
         has_nested_typed_map_index |= under_projection && base_facts &&
             base_facts->type && base_facts->type->kind == TypeKind::Builtin &&
             base_facts->type->name == "map";
@@ -5668,8 +5598,7 @@ class FastInterpreter {
           candidate.est_arena_index != tree.arena_index ||
           candidate.statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
-          candidate.specialization_context != context ||
-          candidate.specialization_identity != frame.specialization_key ||
+          candidate.specialization_id != frame.spec_id ||
           !reachable.count(candidate.operation_expression_occurrence_id))
         continue;
       if (!drop_requirement) {
@@ -5684,8 +5613,7 @@ class FastInterpreter {
           candidate.est_arena_index == tree.arena_index &&
           candidate.statement_occurrence_id ==
               statement.checked_statement_occurrence_id &&
-          candidate.specialization_context == context &&
-          candidate.specialization_identity == frame.specialization_key &&
+          candidate.specialization_id == frame.spec_id &&
           reachable.count(candidate.operation_expression_occurrence_id))
         ++fact_count;
     }
@@ -5734,8 +5662,8 @@ class FastInterpreter {
     if (moss_test_drop_fact("joins") || moss_test_perturb_fact("joins"))
       throw RuntimeError(statement.line,
           "MOSS_INTERNAL_INVARIANT checked join fact was dropped or perturbed");
-    auto exact = statement.joined_types_by_context.find(frame.functional_context);
-    return exact == statement.joined_types_by_context.end()
+    auto exact = statement.joined_types_by_spec_id.find(frame.spec_id);
+    return exact == statement.joined_types_by_spec_id.end()
         ? statement.joined_types : exact->second;
   }
 
@@ -6736,8 +6664,14 @@ inline FastInterpreter::Value FastInterpreter::Value::char_value(uint32_t cp) {
 inline FastInterpreter::Value FastInterpreter::Value::string_value(std::string value) {
   Value result; result.kind = Kind::String; result.string = std::move(value); return result;
 }
-inline FastInterpreter::Value FastInterpreter::Value::callable_value(std::string name) {
-  Value result; result.kind = Kind::Callable; result.string = std::move(name); return result;
+inline FastInterpreter::Value FastInterpreter::Value::callable_value(
+    std::string name, const Function* target, SpecId spec_id) {
+  Value result;
+  result.kind = Kind::Callable;
+  result.string = std::move(name);
+  result.callable_target = target;
+  result.callable_spec_id = spec_id;
+  return result;
 }
 inline FastInterpreter::Value FastInterpreter::Value::struct_value(std::string type) {
   Value result; result.kind = Kind::Struct;

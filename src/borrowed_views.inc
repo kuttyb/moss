@@ -192,8 +192,7 @@
         phase21_result_context_ = raises;
         gen_stmts(o, method.body, &receiver, nullptr, "", locals, types, 2, false, true, functional_method_context(t, method));
         if (method.result_expression) {
-          auto context = functional_method_context(t, method);
-          auto pipeline = method.result_functional_pipeline_ids.find(context);
+          auto pipeline = method.result_functional_pipeline_ids.find(method.spec_id);
           o << "        ";
           if (raises) o << "Ok(";
           o << expr(*method.result_expression, &receiver, locals, &types,

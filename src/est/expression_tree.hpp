@@ -152,6 +152,11 @@ class Arena {
                     SemanticFacts facts);
   const SemanticFacts* facts(ExprId id,
                              std::uint32_t specialization_id) const;
+  void remap_specialization_ids(
+      const std::unordered_map<std::uint32_t, std::uint32_t>& remap);
+#ifdef MOSS_TEST_BUILD
+  std::vector<std::uint32_t> test_fact_specialization_ids(ExprId id) const;
+#endif
 #ifdef MOSS_TEST_BUILD
   void test_mutate_call_targets(bool drop);
   void test_contradict_selector_type(TypeRef wrong_type);

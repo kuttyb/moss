@@ -78,6 +78,7 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
 # All individual standalone Python regressions from tests/run.sh
 TOOLING_TESTS: list[tuple] = [
     ("check_phase28_w5_call_specialization", [sys.executable, "tests/tooling/check_phase28_w5_call_specialization.py", "{compiler}"]),
+    ("check_phase28_l8_identity_repros", [sys.executable, "tests/tooling/check_phase28_l8_identity_repros.py", "{compiler}"]),
     ("check_phase28_l8_callback_authority", [sys.executable, "tests/tooling/check_phase28_l8_callback_authority.py", "{compiler}"]),
     ("check_phase28_l8_field_controls", [sys.executable, "tests/tooling/check_phase28_l8_field_controls.py", "{compiler}"]),
     ("check_run_parallel_timeout", [sys.executable, "tests/tooling/check_run_parallel_timeout.py"]),
@@ -262,6 +263,7 @@ def build_manifest() -> list[Job]:
         "check_agent_feedback",
         "check_phase28_local_ownership",
         "check_phase28_w5_call_specialization",
+        "check_phase28_l8_identity_repros",
         "check_phase28_l8_callback_authority",
         "check_phase28_team_b_consumer",
         "check_phase24_imported_generic_expressions",

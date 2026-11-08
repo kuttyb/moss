@@ -12465,6 +12465,11 @@ static void annotate_program_source(Program& program, const string& source_file)
 static void merge_project_program(Program& destination, Program source,
                                   const string& source_file,
                                   const std::filesystem::path* file_check_root = nullptr) {
+  if (source.expression_arena &&
+      std::find(source.expression_arenas.begin(),
+                source.expression_arenas.end(), source.expression_arena) ==
+          source.expression_arenas.end())
+    source.expression_arenas.push_back(source.expression_arena);
   vector<std::uint32_t> arena_remap;
   arena_remap.reserve(source.expression_arenas.size());
   for (const auto& arena : source.expression_arenas) {
@@ -12490,7 +12495,51 @@ static void merge_project_program(Program& destination, Program source,
           "compiled provider has no stable module identity for SpecId import",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
     try {
-      (void)remap_imported_program_spec_ids(destination, source, module->second);
+      const auto spec_remap = remap_imported_program_spec_ids(
+          destination, source, module->second);
+#ifdef MOSS_TEST_BUILD
+      const bool trace_est_import =
+          std::getenv("MOSS_TEST_TRACE_EST_IMPORT_REMAP") != nullptr;
+      if (trace_est_import) {
+        std::vector<std::pair<SpecId, SpecId>> ordered(spec_remap.begin(),
+                                                       spec_remap.end());
+        std::sort(ordered.begin(), ordered.end());
+        std::cerr << "EST_IMPORT_REMAP module=" << module->second
+                  << " source_arenas=" << source.expression_arenas.size()
+                  << " primary=" << source.expression_arena.get() << " pairs=";
+        for (const auto& pair : ordered)
+          std::cerr << pair.first << "->" << pair.second << ",";
+        std::cerr << "\n";
+      }
+#endif
+      std::set<est::Arena*> remapped_arenas;
+      for (const auto& arena : source.expression_arenas) {
+        if (!arena || !remapped_arenas.insert(arena.get()).second) continue;
+        if (std::find(destination.expression_arenas.begin(),
+                      destination.expression_arenas.end(), arena) !=
+            destination.expression_arenas.end())
+          throw std::invalid_argument(
+              "imported EST arena is already shared with destination before SpecId remap");
+#ifdef MOSS_TEST_BUILD
+        if (trace_est_import)
+          std::cerr << "EST_IMPORT_ARENA before ptr=" << arena.get()
+                    << " nodes=" << arena->size() << "\n";
+#endif
+        arena->remap_specialization_ids(spec_remap);
+#ifdef MOSS_TEST_BUILD
+        if (trace_est_import) {
+          for (est::ExprId expression = 0; expression < arena->size();
+               ++expression) {
+            const auto ids = arena->test_fact_specialization_ids(expression);
+            if (ids.empty()) continue;
+            std::cerr << "EST_IMPORT_FACT ptr=" << arena.get()
+                      << " expr=" << expression << " ids=";
+            for (const auto id : ids) std::cerr << id << ",";
+            std::cerr << "\n";
+          }
+        }
+#endif
+      }
     } catch (const std::exception& error) {
       throw CompileError(0,
           "cannot remap imported SpecId table: " + string(error.what()),
@@ -19262,8 +19311,38 @@ static ParsedModuleUnit load_module_interface(
           build_loaded_body(arm.body, "execution-failure:" + domain.name + "::" +
                             handler.name + ":" + std::to_string(arm.line));
     }
+  std::unique_ptr<moss::TypeContext::Scope> provider_type_scope;
   if (load_execution_bodies) {
-    parse_execution_body_payload(execution_bodies, provider, file);
+    if (execution_bodies.present) {
+      // ReturnValue artifact types may be nominal. Decode them against the
+      // declarations already admitted from Section 1 so the artifact's
+      // canonical type is bound to the exact provider declaration identity.
+      build_type_context(provider);
+      for (const auto& object : provider.objects) {
+        auto declaration = provider.type_context->find(object.name);
+        if (!declaration)
+          throw CompileError(0,
+              "provider type context omitted a Section 1 object declaration",
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+        auto qualified = *declaration;
+        qualified.program_name = module_symbol(provider.module_name, object.name);
+        provider.type_context->declare(std::move(qualified));
+      }
+      for (const auto& enumeration : provider.enums) {
+        auto declaration = provider.type_context->find(enumeration.name);
+        if (!declaration)
+          throw CompileError(0,
+              "provider type context omitted a Section 1 enum declaration",
+              "SOURCE_FREE_TYPE_IDENTITY_MISMATCH");
+        auto qualified = *declaration;
+        qualified.program_name = module_symbol(provider.module_name,
+                                               enumeration.name);
+        provider.type_context->declare(std::move(qualified));
+      }
+      provider_type_scope = std::make_unique<moss::TypeContext::Scope>(
+          provider.type_context.get());
+      parse_execution_body_payload(execution_bodies, provider, file);
+    }
     for (auto& function : provider.functions) {
       if (function.execution_result_expression)
         est::populate_loaded_expression(provider, function.expression_handles,
