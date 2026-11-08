@@ -2850,9 +2850,106 @@ class FastInterpreter {
         exact_call_edge = checked_call_fact_for_occurrence(
             frame, tree, current_root, line);
       auto evaluate_call_argument = [&](std::size_t index) {
-        if (call_argument_nodes && index < call_argument_nodes->size())
-          return evaluate_tree_node(*tree, call_argument_nodes->at(index),
-                                    frame, line, output);
+        if (call_argument_nodes && index < call_argument_nodes->size()) {
+          const auto argument_expr = call_argument_nodes->at(index);
+          if (exact_call_edge &&
+              exact_call_edge->target_kind == SemanticCallTargetKind::Static) {
+            if (exact_call_edge->callee_spec_id == InvalidSpecId ||
+                exact_call_edge->callee_spec_id >=
+                    program_.specialization_table.size() ||
+                exact_call_edge->argument_callable_spec_ids.size() !=
+                    call_argument_nodes->size())
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT checked callable argument row has invalid callee or arity");
+            const auto& callee_row = program_.specialization_table[
+                exact_call_edge->callee_spec_id];
+            if (callee_row.id != exact_call_edge->callee_spec_id)
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT checked callable argument callee row is contradictory");
+            const auto* callee = function_by_semantic_identity(
+                callee_row.semantic_callable_identity);
+            if (!callee)
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT checked callable argument callee has no function body");
+            std::string parameter_type;
+            if (callee->static_dispatch) {
+              const FunctionSpecialization* selected = nullptr;
+              for (const auto& candidate : callee->specializations)
+                if (candidate.spec_id == exact_call_edge->callee_spec_id) {
+                  if (selected)
+                    throw RuntimeError(line,
+                        "MOSS_INTERNAL_INVARIANT checked callable argument callee specialization is duplicated");
+                  selected = &candidate;
+                }
+              if (!selected || index >= selected->parameter_types.size())
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT checked callable argument callee specialization is missing");
+              parameter_type = selected->parameter_types[index];
+            } else {
+              if (callee->spec_id != exact_call_edge->callee_spec_id ||
+                  index >= callee->params.size())
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT checked callable argument callee declaration is contradictory");
+              parameter_type = callee->params[index].type;
+            }
+            const bool callable_parameter =
+                parameter_type.rfind("callable-v1:", 0) == 0 ||
+                parameter_type.rfind("callable:", 0) == 0;
+            const SpecId argument_spec_id =
+                exact_call_edge->argument_callable_spec_ids[index];
+            if (!callable_parameter) {
+              if (argument_spec_id != InvalidSpecId)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT non-callable argument slot has a checked callable SpecId");
+            } else {
+              if (argument_spec_id == InvalidSpecId ||
+                  argument_spec_id >= program_.specialization_table.size())
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument slot lacks checked SpecId authority");
+              const std::string expected_callable =
+                  parameter_type.rfind("callable:", 0) == 0
+                      ? parameter_type.substr(9) : parameter_type;
+              const auto& argument_row =
+                  program_.specialization_table[argument_spec_id];
+              if (argument_row.id != argument_spec_id ||
+                  argument_row.semantic_callable_identity != expected_callable)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument SpecId contradicts the checked parameter identity");
+              const auto* argument_target = unique_function_owner_for_spec_id(
+                  program_, argument_spec_id);
+              if (!argument_target)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument SpecId has no unique checked function owner");
+              const auto* identifier = std::get_if<est::Identifier>(
+                  &tree->arena->at(argument_expr));
+              if (!identifier)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument SpecId is not attached to an Identifier argument occurrence");
+              const auto local = frame.locals.find(identifier->name);
+              if (local != frame.locals.end()) {
+                if (local->second.kind != Value::Kind::Callable ||
+                    local->second.callable_target != argument_target ||
+                    local->second.callable_spec_id != argument_spec_id)
+                  throw RuntimeError(line,
+                      "MOSS_INTERNAL_INVARIANT local callable argument contradicts its checked SpecId");
+                return local->second;
+              }
+              const auto alias = frame.aliases.find(identifier->name);
+              if (alias != frame.aliases.end() && alias->second.value) {
+                const auto& value = *alias->second.value;
+                if (value.kind != Value::Kind::Callable ||
+                    value.callable_target != argument_target ||
+                    value.callable_spec_id != argument_spec_id)
+                  throw RuntimeError(line,
+                      "MOSS_INTERNAL_INVARIANT aliased callable argument contradicts its checked SpecId");
+                return value;
+              }
+              return Value::callable_value(identifier->name, argument_target,
+                                           argument_spec_id);
+            }
+          }
+          return evaluate_tree_node(*tree, argument_expr, frame, line, output);
+        }
         throw RuntimeError(line, "internal error: callable argument has no EST node");
       };
       // Fast Debug may see the whitespace-preserving spelling used by typed
@@ -4060,12 +4157,16 @@ class FastInterpreter {
     // Keep parameter binding identical for checked specialized and ordinary
     // functions; ordinary functions use the checker-inferred declaration
     // parameter effects below.
+    const bool functional_callback_invocation =
+        call_edge.invocation_kind == "functional_callback" ||
+        call_edge.invocation_kind == "dynamic_callback";
     bind_parameters(target.params,
                     specialization ? specialization->parameter_effects : target.parameter_effects,
                     arguments, caller, frame, line, output,
                     specialization ? &specialization->parameter_types : nullptr,
                     tree, argument_nodes, argument_values,
-                    &call_edge.argument_callable_spec_ids);
+                    functional_callback_invocation ? nullptr
+                        : &call_edge.argument_callable_spec_ids);
     int enter_id = emit("FunctionEnter", frame, target.line);
     EventScope function_scope(*this, enter_id, true);
     const auto& executable_body = target.execution_body
