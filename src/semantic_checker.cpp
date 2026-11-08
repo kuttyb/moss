@@ -38779,6 +38779,20 @@ class Checker {
               !supplied.count(field.name) && field.init.empty())
             err(line, "enum field '" + callee + "." + field.name +
                 "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
+        const ObjectType& constructed_object = *objects_.at(callee);
+        const string constructed_name = constructed_object.declaration_name.empty()
+            ? constructed_object.name : constructed_object.declaration_name;
+        const string constructed_identity = moss::declaration_identity(
+            moss::DeclarationKind::Record,
+            program_module_identity(p_, constructed_object.defining_module),
+            constructed_name);
+        const auto constructed_declaration = p_.type_context
+            ? p_.type_context->find(constructed_object.name) : nullptr;
+        if (!constructed_declaration ||
+            constructed_declaration->id != constructed_identity)
+          err(line,
+              "checked record constructor has missing or contradictory declaration identity",
+              "MOSS_INTERNAL_INVARIANT");
         if (current_body_types_ && !checking_specialization_ &&
             !current_body_types_->active_expression_occurrences.empty()) {
           const auto occurrence_id =
@@ -38851,6 +38865,45 @@ class Checker {
           else
             current_body_types_->expression_occurrence_ledger_complete = false;
         }
+        moss::TypeRef checked_constructor_type = current_body_types_
+            ? current_body_types_->known_expression(value) : nullptr;
+        if (!checked_constructor_type)
+          checked_constructor_type = inferred_expr_term(value, env);
+        if (checked_constructor_type && current_body_types_)
+          checked_constructor_type = current_body_types_->solver.resolve(
+              checked_constructor_type);
+        if (!checked_constructor_type ||
+            checked_constructor_type->kind != moss::TypeKind::NominalInstance ||
+            !checked_constructor_type->declaration ||
+            checked_constructor_type->declaration->id != constructed_identity)
+          err(line,
+              "checked record constructor type contradicts its declaration identity",
+              "MOSS_INTERNAL_INVARIANT");
+        if (active_est_expression_cursors_.empty() ||
+            !active_est_expression_cursors_.back() ||
+            current_spec_id_ == InvalidSpecId)
+          err(line,
+              "checked record constructor has no exact EST occurrence owner",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto& constructor_cursor =
+            *active_est_expression_cursors_.back();
+        const auto* constructor_arena =
+            expression_arena(constructor_cursor.arena_index);
+        if (!constructor_arena ||
+            constructor_cursor.expr >= constructor_arena->size() ||
+            !std::holds_alternative<est::Constructor>(
+                constructor_arena->at(constructor_cursor.expr)))
+          err(line,
+              "checked record constructor does not match its exact EST Constructor occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+        retain_active_expression_target(constructed_identity);
+        const auto* constructor_facts = constructor_arena->facts(
+            constructor_cursor.expr, current_spec_id_);
+        if (!constructor_facts ||
+            constructor_facts->resolved_target != constructed_identity)
+          err(line,
+              "checked record constructor authority was not retained on its EST Constructor",
+              "MOSS_INTERNAL_INVARIANT");
       } else {
         // Validate the operand of assert before its builtin signature check.
         // This preserves the operand's more specific diagnostic (for example,
