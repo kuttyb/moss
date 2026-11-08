@@ -98,6 +98,22 @@ def edit_one_call(text: str, edit) -> str:
     return "\n".join(lines) + "\n"
 
 
+def edit_call_row_count(text: str, *, duplicate: bool) -> str:
+    lines = text.splitlines()
+    count_index = next(index for index, line in enumerate(lines)
+                       if line.startswith("call_edge_count "))
+    count = int(lines[count_index].split()[1])
+    row_index = next(index for index, line in enumerate(lines)
+                     if line.startswith("call_edge "))
+    if duplicate:
+        lines[count_index] = f"call_edge_count {count + 1}"
+        lines.insert(row_index + 1, lines[row_index])
+    else:
+        lines[count_index] = f"call_edge_count {count - 1}"
+        del lines[row_index]
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_phase28_mossi_specid_import_mutations.py COMPILER",
@@ -141,6 +157,9 @@ def main() -> int:
             (str(provider_artifacts), str(base_artifacts)))}
         originals = interface.read_text(encoding="utf-8")
         mutation_cases = (
+            ("duplicate call row", lambda text: edit_call_row_count(
+                text, duplicate=True),
+             "invalid, duplicate, or unknown-ID call edge"),
             ("stale locator", lambda text: edit_one_call(
                 text, lambda fields, tail: fields.__setitem__(tail, "999999")),
              "stale caller or statement locator"),
@@ -166,6 +185,17 @@ def main() -> int:
                 raise AssertionError(
                     f"{name} failed for an unintended reason:\n{combined}")
             print(f"PASS importer mutation: {name}")
+
+        interface.write_text(originals, encoding="utf-8")
+        reseal_mutation(interface, lambda text: edit_call_row_count(
+            text, duplicate=False))
+        result = run([margo, "build", "--json"], cwd=consumer,
+                     env=imported_env, expected=1)
+        if "MOSS_INTERNAL_INVARIANT" not in result.stdout + result.stderr:
+            raise AssertionError(
+                "missing imported call edge did not fail closed:\n" +
+                result.stdout + result.stderr)
+        print("PASS importer mutation: missing call row fails closed")
 
         # A qualified foreign reference must resolve by the original provider
         # pair. Keep the table slot/module fixed, perturb only provider ID.
