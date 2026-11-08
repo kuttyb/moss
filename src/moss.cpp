@@ -15795,6 +15795,19 @@ static void validate_execution_body_iterator_authority(
   }
 }
 
+static void validate_execution_body_iterator_targets(
+    const std::vector<Stmt>& statements,
+    const std::set<SpecId>& method_body_spec_ids) {
+  for (const auto& statement : statements)
+    for (const auto& [_, targets] :
+         statement.iterator_method_spec_ids_by_spec_id)
+      for (SpecId target : targets)
+        if (!method_body_spec_ids.count(target))
+          throw CompileError(std::max(statement.line, 0),
+              "iterator method authority target is not a concrete method body SpecId",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+}
+
 static void write_execution_body_statement(std::ostream& out,
                                            const Stmt& statement,
                                            unsigned section_version = 5);
@@ -17143,6 +17156,29 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         throw CompileError(std::max(handler.line, 0),
             "ABI-v9 execution-body section omits a handler body",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  if (section.version >= 5) {
+    std::set<SpecId> method_body_spec_ids;
+    for (const auto& object : provider.objects)
+      for (const auto& method : object.methods)
+        for (const auto& specialization : method.specializations)
+          if (specialization.spec_id != InvalidSpecId)
+            method_body_spec_ids.insert(specialization.spec_id);
+    const auto validate_body = [&](const vector<Stmt>& statements) {
+      validate_execution_body_iterator_targets(
+          statements, method_body_spec_ids);
+    };
+    for (const auto& function : provider.functions)
+      if (function.execution_body) validate_body(*function.execution_body);
+    for (const auto& object : provider.objects)
+      for (const auto& method : object.methods)
+        if (method.execution_body) validate_body(*method.execution_body);
+    for (const auto& domain : provider.domains)
+      for (const auto& handler : domain.handlers) {
+        if (handler.execution_body) validate_body(*handler.execution_body);
+        for (const auto& arm : handler.execution_failure_arms)
+          if (arm.execution_body) validate_body(*arm.execution_body);
+      }
+  }
 }
 
 static FailurePatternAbi parse_failure_pattern_text(const string& text);
