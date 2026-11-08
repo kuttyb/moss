@@ -54,7 +54,8 @@ static Program method_provider(const string& module) {
       {0, "method-v1:Holder.select.declaration", std::nullopt,
        "method declaration", module},
       {1, "method-v1:Holder.select", std::nullopt,
-       "method body specialization", module}};
+       "method body specialization", module},
+      {2, "program:main", std::nullopt, "main", module}};
   ObjectType object;
   object.name = "Holder";
   Method method;
@@ -66,6 +67,12 @@ static Program method_provider(const string& module) {
       {"method-body-v1:Holder.select(int)", {"int"}, 1});
   object.methods.push_back(std::move(method));
   result.objects.push_back(std::move(object));
+  result.main = MainProc{};
+  result.main->spec_id = 2;
+  Stmt loop;
+  loop.kind = Stmt::Kind::For;
+  loop.iterator_method_spec_ids_by_spec_id[2] = {1};
+  result.main->body.push_back(std::move(loop));
   return result;
 }
 
@@ -214,8 +221,40 @@ int main() {
          first_method_map.at(0));
   assert(first_methods.objects.front().methods.front().specializations.front()
              .spec_id == first_method_map.at(1));
+  assert(first_methods.main->spec_id == first_method_map.at(2));
+  const auto& first_iterator_ids = first_methods.main->body.front()
+      .iterator_method_spec_ids_by_spec_id;
+  assert(first_iterator_ids.size() == 1);
+  assert(first_iterator_ids.at(first_method_map.at(2)) ==
+         std::vector<SpecId>{first_method_map.at(1)});
   assert(second_methods.objects.front().methods.front().spec_id ==
          second_method_map.at(0));
   assert(second_methods.objects.front().methods.front().specializations.front()
              .spec_id == second_method_map.at(1));
+
+  auto duplicated_iterator = method_provider("module-v1:methods-duplicate-iterator");
+  duplicated_iterator.main->body.front().iterator_method_spec_ids_by_spec_id[2] =
+      {1, 1};
+  bool duplicate_iterator_rejected = false;
+  try {
+    (void)remap_imported_program_spec_ids(
+        destination, duplicated_iterator,
+        "module-v1:methods-duplicate-iterator");
+  } catch (const std::invalid_argument&) {
+    duplicate_iterator_rejected = true;
+  }
+  assert(duplicate_iterator_rejected);
+
+  auto missing_iterator = method_provider("module-v1:methods-missing-iterator");
+  missing_iterator.main->body.front().iterator_method_spec_ids_by_spec_id[2] =
+      {9};
+  bool missing_iterator_rejected = false;
+  try {
+    (void)remap_imported_program_spec_ids(
+        destination, missing_iterator,
+        "module-v1:methods-missing-iterator");
+  } catch (const std::invalid_argument&) {
+    missing_iterator_rejected = true;
+  }
+  assert(missing_iterator_rejected);
 }

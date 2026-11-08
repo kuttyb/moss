@@ -921,6 +921,20 @@ class Checker {
       for (const auto& d : p_.domains) check_domain(d);
       if (p_.main) check_main(*p_.main);
       check_test_and_benchmark_declarations();
+      // `check_local_call_cycles()` temporarily publishes source-only call
+      // graph rows so effect and summary analysis can inspect dependencies.
+      // They are not checker call authority: they have no caller SpecId or
+      // exact EST occurrence. Body checking has now regenerated executable
+      // call edges from retained occurrences; remove only the unkeyed prepass
+      // rows before exposing Program to any consumer or artifact writer.
+      p_.semantic_call_edges.erase(std::remove_if(
+          p_.semantic_call_edges.begin(), p_.semantic_call_edges.end(),
+          [](const SemanticCallEdge& edge) {
+        return edge.caller_spec_id == InvalidSpecId ||
+            (edge.invocation_kind == "ordinary_call" &&
+             (edge.call_est_arena_index == UINT32_MAX ||
+              edge.call_expression_occurrence_id == UINT32_MAX));
+      }), p_.semantic_call_edges.end());
       if (!p_.file_check_scope) validate_staged_nominal_map_key_proofs();
     }
     p_.concrete_domain_graph.closed = true;
@@ -3468,6 +3482,11 @@ class Checker {
     std::uint32_t child_count = 0;
   };
   vector<std::optional<EstExpressionCursor>> active_est_expression_cursors_;
+  // A checker path that already owns an exact EST occurrence (for example a
+  // ReturnValue handle) can root the normal recursive expression walk here.
+  // This is consumed only at the root; recursive children still resolve from
+  // their active parent cursor.
+  std::optional<EstExpressionCursor> forced_root_expression_cursor_;
   struct PipelineCallbackCursor {
     std::uint32_t arena_index = UINT32_MAX;
     est::ExprId pipeline_expr = UINT32_MAX;
@@ -10731,12 +10750,22 @@ class Checker {
         if (!method.return_type && !has_value_return) method.set_return_type("unit");
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.set_return_type(method.return_type);
         method_function.source_file = method_source;
+        SourceFileScope method_context(current_semantic_context_,
+            "method:" + object.name + "." + method.name);
+        struct MethodOwnerScope {
+          const Method*& slot;
+          const Method* prior;
+          MethodOwnerScope(const Method*& target, const Method& owner)
+              : slot(target), prior(target) { slot = &owner; }
+          ~MethodOwnerScope() { slot = prior; }
+        } method_owner_scope(current_method_, method);
         TypeEnv final_env = check_stmts(method.body, std::move(entry_env), nullptr,
                                         nullptr, &method_function);
         if (method.result_expression)
           check_expression_root_in_body(method.body,
               method.result_line ? method.result_line : method.line,
-              *method.result_expression, final_env, "return-value");
+                *method.result_expression, final_env, "return-value",
+                &method.expression_handles);
         if (!method.return_type && has_value_return)
           err(method_source, method.line, "cannot infer return type for method '" + object.name + "." + method.name + "'");
       }
@@ -11834,7 +11863,8 @@ class Checker {
                                  Effect::Consume);
       check_expression_root_in_body(f.body,
           f.result_line ? f.result_line : f.line,
-          *f.result_expression, env, "return-value");
+          *f.result_expression, env, "return-value",
+          &f.expression_handles);
       auto actual = inferred_expr_type(*f.result_expression, env);
       if (!actual && !f.generic && !f.static_dispatch)
         err(f.result_line ? f.result_line : f.line,
@@ -32113,6 +32143,68 @@ class Checker {
           break;
         case Stmt::Kind::Return:
           if (!s.a.empty()) {
+            const est::Handle* return_handle = nullptr;
+            std::size_t return_handle_count = 0;
+            for (const auto& handle : s.expression_handles)
+              if (handle.slot == est::ExprSlot::ReturnValue &&
+                  handle.argument_index == 0) {
+                return_handle = &handle;
+                ++return_handle_count;
+              }
+            if (return_handle_count != 1 || !return_handle)
+              err(s.line,
+                  "checked Return has missing or ambiguous ReturnValue EST occurrence",
+                  "MOSS_INTERNAL_INVARIANT");
+            const auto* return_arena =
+                expression_arena(return_handle->arena_index);
+            if (!return_arena || return_handle->expr >= return_arena->size())
+              err(s.line,
+                  "checked ReturnValue EST occurrence has no retained arena node",
+                  "MOSS_INTERNAL_INVARIANT");
+            bool contains_call = false;
+            std::set<est::ExprId> visited_return_nodes;
+            std::function<void(est::ExprId)> find_return_calls =
+                [&](est::ExprId expression_id) {
+              if (expression_id >= return_arena->size() ||
+                  !visited_return_nodes.insert(expression_id).second)
+                return;
+              if (std::holds_alternative<est::Call>(
+                      return_arena->at(expression_id)))
+                contains_call = true;
+              for (const auto child :
+                   syntax_children(*return_arena, expression_id))
+                find_return_calls(child);
+            };
+            find_return_calls(return_handle->expr);
+            if (contains_call) {
+              struct ReturnStatementCursorScope {
+                const Stmt*& slot;
+                const Stmt* prior;
+                ReturnStatementCursorScope(const Stmt*& target,
+                                           const Stmt& statement)
+                    : slot(target), prior(target) { slot = &statement; }
+                ~ReturnStatementCursorScope() { slot = prior; }
+              } return_statement_scope(current_check_statement_, s);
+              if (est::fingerprint(s.a) !=
+                  return_handle->source_fingerprint)
+                err(s.line,
+                    "checked ReturnValue source does not match its EST occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
+              struct ReturnRootCursorScope {
+                std::optional<EstExpressionCursor>& slot;
+                std::optional<EstExpressionCursor> prior;
+                ReturnRootCursorScope(
+                    std::optional<EstExpressionCursor>& target,
+                    EstExpressionCursor cursor)
+                    : slot(target), prior(target) {
+                  slot = std::move(cursor);
+                }
+                ~ReturnRootCursorScope() { slot = std::move(prior); }
+              } return_root_scope(forced_root_expression_cursor_,
+                  EstExpressionCursor{return_handle->arena_index,
+                      return_handle->expr, s.a});
+              check_expression(s.line, s.a, env.types, "return-value");
+            }
             check_ownership_expression(s.line, s.a, env, Effect::Consume);
             const auto inferred_return_type = inferred_expr_type(s.a, env.types);
             bool unshadowed_none_return = false;
@@ -32185,8 +32277,12 @@ class Checker {
             }
             if (fact.statement_occurrence_id == UINT32_MAX &&
                 checking_specialization_ && current_check_result_function_) {
+              const auto& return_body =
+                  current_check_result_function_->execution_body
+                      ? *current_check_result_function_->execution_body
+                      : current_check_result_function_->body;
               auto body = specialized_statement_occurrences_.find(
-                  &current_check_result_function_->body);
+                  &return_body);
               if (body != specialized_statement_occurrences_.end()) {
                 auto specialization = body->second.find(
                     local_ownership_specialization_identity());
@@ -32358,6 +32454,8 @@ class Checker {
                       "fn:" + current_check_result_function_->name) {
                 const Function& imported_owner =
                     *current_check_result_function_;
+                const auto& imported_body = imported_owner.execution_body
+                    ? *imported_owner.execution_body : imported_owner.body;
                 const auto& specialization_type =
                     checking_specialization_->return_type_ref;
                 auto* imported_return_arena =
@@ -32385,8 +32483,8 @@ class Checker {
                     checking_specialization_->stable_type_key;
                 size_t body_statement_matches = 0;
                 std::uint32_t body_statement_ordinal = UINT32_MAX;
-                for (size_t index = 0; index < imported_owner.body.size(); ++index)
-                  if (&imported_owner.body[index] == &s) {
+                for (size_t index = 0; index < imported_body.size(); ++index)
+                  if (&imported_body[index] == &s) {
                     body_statement_ordinal = static_cast<std::uint32_t>(index);
                     ++body_statement_matches;
                   }
@@ -32643,8 +32741,10 @@ class Checker {
                       return &candidate == &owner &&
                           candidate.name == owner.name;
                     });
+                const auto& owner_body = owner.execution_body
+                    ? *owner.execution_body : owner.body;
                 const size_t owner_body_statement_count = std::count_if(
-                    owner.body.begin(), owner.body.end(),
+                    owner_body.begin(), owner_body.end(),
                     [&](const Stmt& candidate) { return &candidate == &s; });
                 const size_t specialization_count = std::count_if(
                     owner.specializations.begin(), owner.specializations.end(),
@@ -33486,6 +33586,8 @@ class Checker {
     record_dependency();
 
     TypeEnv specialized_env;
+    const vector<Stmt>& specialization_body = function.execution_body
+        ? *function.execution_body : function.body;
     ScopedOpTimer miss_timer("spec_cache_miss_body_check", stable_key);
     for (size_t index = 0; index < function.params.size(); ++index)
       specialized_env[function.params[index].name] = canonical_types[index];
@@ -33519,13 +33621,15 @@ class Checker {
                                            "fn:" + function.name);
     StaticBindingScope specialization_bounds(static_bound_bindings_);
     static_bound_bindings_.clear();
-    infer_statement_expressions(function.body, specialized_env);
-    static_bindings_for_body(function.body, specialized_env);
+    infer_statement_expressions(specialization_body, specialized_env);
+    static_bindings_for_body(specialization_body, specialized_env);
     Function concrete_function = function;
+    concrete_function.body = specialization_body;
     concrete_function.set_return_type(specialization.return_type);
     for (size_t index = 0; index < concrete_function.params.size(); ++index)
       concrete_function.params[index].set_type(canonical_types[index]);
-    check_stmts(function.body, specialized_env, nullptr, nullptr, &concrete_function);
+    check_stmts(specialization_body, specialized_env, nullptr, nullptr,
+                &concrete_function);
     OwnershipEnv specialized_ownership;
     for (size_t index = 0; index < function.params.size(); ++index) {
       specialized_ownership.types[function.params[index].name] = canonical_types[index];
@@ -33536,7 +33640,8 @@ class Checker {
       SourceFileScope semantic_context(
           current_semantic_context_, "fn:" + function.name);
       auto final_ownership = check_ownership(
-          function.body, std::move(specialized_ownership), nullptr, nullptr);
+          specialization_body, std::move(specialized_ownership), nullptr,
+          nullptr);
       if (function.result_expression)
         check_ownership_expression(function.result_line ? function.result_line : function.line,
                                    *function.result_expression, final_ownership, Effect::Consume);
@@ -33796,6 +33901,7 @@ class Checker {
 
   std::optional<EstExpressionCursor> checked_call_est_cursor(
       const string& callee, const vector<string>& arguments) const {
+    (void)arguments;
     auto is_call = [&](const EstExpressionCursor& cursor) {
       const auto* arena = expression_arena(cursor.arena_index);
       if (!arena || cursor.expr >= arena->size()) return false;
@@ -33809,58 +33915,7 @@ class Checker {
         active_est_expression_cursors_.back() &&
         is_call(*active_est_expression_cursors_.back()))
       return active_est_expression_cursors_.back();
-
-    vector<std::pair<const est::Handle*, string>> roots;
-    if (current_check_statement_) {
-      const auto expressions = statement_expressions(*current_check_statement_);
-      for (const auto& expression : expressions)
-        for (const auto& handle : current_check_statement_->expression_handles)
-          if (handle.source_fingerprint == est::fingerprint(expression))
-            roots.emplace_back(&handle, expression);
-    } else if (current_check_result_function_ &&
-               current_check_result_function_->result_expression) {
-      const auto& expression =
-          *current_check_result_function_->result_expression;
-      for (const auto& handle : current_check_result_function_->expression_handles)
-        if (handle.source_fingerprint == est::fingerprint(expression))
-          roots.emplace_back(&handle, expression);
-    }
-    vector<EstExpressionCursor> matches;
-    std::set<std::pair<uint32_t, est::ExprId>> visited;
-    for (const auto& root : roots) {
-      const auto* handle = root.first;
-      const auto& source = root.second;
-      const auto* arena = expression_arena(handle->arena_index);
-      if (!arena) continue;
-      std::function<void(est::ExprId)> visit = [&](est::ExprId id) {
-        if (id >= arena->size() ||
-            !visited.emplace(handle->arena_index, id).second) return;
-        if (const auto* call = std::get_if<est::Call>(&arena->at(id))) {
-          const auto* identifier = std::get_if<est::Identifier>(
-              &arena->at(call->callee));
-          if (identifier && identifier->name == callee) {
-            auto expression = est::view(*arena, handle->expr, source)
-                                  .source_text(id);
-            string parsed_callee;
-            vector<string> parsed_arguments;
-            if (expression && tree_parse_simple_call(*expression,
-                    parsed_callee, parsed_arguments) &&
-                parsed_callee == callee &&
-                parsed_arguments.size() == arguments.size() &&
-                std::equal(parsed_arguments.begin(), parsed_arguments.end(),
-                    arguments.begin(), [](const string& left,
-                                          const string& right) {
-                      return trim(left) == trim(right);
-                    }))
-              matches.push_back({handle->arena_index, id, source});
-          }
-        }
-        for (const auto child : syntax_children(*arena, id)) visit(child);
-      };
-      visit(handle->expr);
-    }
-    return matches.size() == 1
-        ? std::optional<EstExpressionCursor>{matches.front()} : std::nullopt;
+    return std::nullopt;
   }
 
   std::optional<uint32_t> checked_call_source_occurrence(
@@ -37028,6 +37083,14 @@ class Checker {
       return EstExpressionCursor{parent.arena_index, *child,
                                  std::string(source)};
     }
+    if (forced_root_expression_cursor_) {
+      const auto& forced = *forced_root_expression_cursor_;
+      if (forced.source != source ||
+          !expression_arena(forced.arena_index) ||
+          forced.expr >= expression_arena(forced.arena_index)->size())
+        return std::nullopt;
+      return forced;
+    }
     return root_expression_cursor(source, root_slot);
   }
 
@@ -39061,10 +39124,35 @@ class Checker {
   void check_expression_root_in_body(const vector<Stmt>& body, int line,
                                      const string& expression,
                                      const TypeEnv& env,
-                                     const string& root_slot) {
+                                     const string& root_slot,
+                                     const vector<est::Handle>* result_handles = nullptr) {
     auto retained = checked_body_states_.find(&body);
     if (retained == checked_body_states_.end() || !retained->second) {
-      check_expression(line, expression, env);
+      Stmt synthetic_return;
+      synthetic_return.kind = Stmt::Kind::Return;
+      synthetic_return.line = line;
+      synthetic_return.a = expression;
+      synthetic_return.text = "return " + expression;
+      if (root_slot == "return-value" && result_handles) {
+        const auto fingerprint = est::fingerprint(expression);
+        for (const auto& handle : *result_handles)
+          if (handle.slot == est::ExprSlot::ReturnValue &&
+              handle.argument_index == 0 &&
+              handle.source_fingerprint == fingerprint)
+            synthetic_return.expression_handles.push_back(handle);
+        if (synthetic_return.expression_handles.size() != 1)
+          err(line,
+              "callable result expression has missing or ambiguous retained EST occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+      }
+      struct ResultStatementScope {
+        const Stmt*& slot;
+        const Stmt* prior;
+        ResultStatementScope(const Stmt*& target, const Stmt& statement)
+            : slot(target), prior(target) { slot = &statement; }
+        ~ResultStatementScope() { slot = prior; }
+      } statement_scope(current_check_statement_, synthetic_return);
+      check_expression(line, expression, env, root_slot);
       return;
     }
     Stmt synthetic_return;
@@ -39072,6 +39160,19 @@ class Checker {
     synthetic_return.line = line;
     synthetic_return.a = expression;
     synthetic_return.text = "return " + expression;
+    if (root_slot == "return-value" && result_handles) {
+      const auto fingerprint = est::fingerprint(expression);
+      for (const auto& handle : *result_handles) {
+        if (handle.slot == est::ExprSlot::ReturnValue &&
+            handle.argument_index == 0 &&
+            handle.source_fingerprint == fingerprint)
+          synthetic_return.expression_handles.push_back(handle);
+      }
+      if (synthetic_return.expression_handles.size() != 1)
+        err(line,
+            "callable result expression has missing or ambiguous retained EST occurrence",
+            "MOSS_INTERNAL_INVARIANT");
+    }
     BodyTypeScope body_scope(current_body_types_, retained->second.get());
     struct StatementScope {
       const Stmt*& slot;
@@ -39916,6 +40017,59 @@ class Checker {
           err(statement.line, "domain handle binding '" + statement.a + "' is immutable");
         check_for_source(statement.line, statement.b, current_env,
                          "for-iterable");
+        auto methods = implicit_iterator_methods(statement.b, current_env);
+        if (methods.empty()) {
+          const_cast<Stmt&>(statement)
+              .iterator_method_spec_ids_by_spec_id.erase(current_spec_id_);
+          return;
+        }
+        if (current_spec_id_ == InvalidSpecId)
+          err(statement.line,
+              "checked custom iterator has no caller SpecId",
+              "MOSS_INTERNAL_INVARIANT");
+        auto& method_ids = const_cast<Stmt&>(statement)
+            .iterator_method_spec_ids_by_spec_id[current_spec_id_];
+        method_ids.clear();
+        if (!methods.empty()) {
+          if (methods.size() > 2 ||
+              (methods.size() == 1 && methods.front()->name != "next") ||
+              (methods.size() == 2 &&
+               (methods[0]->name != "iter" || methods[1]->name != "next")))
+            err(statement.line,
+                "checked custom iterator has missing or contradictory method protocol identity",
+                "MOSS_INTERNAL_INVARIANT");
+          std::set<SpecId> unique_method_ids;
+          for (const Method* method : methods) {
+            if (!method || method->specializations.size() != 1)
+              err(statement.line,
+                  "checked custom iterator method has missing or ambiguous body specialization",
+                  "MOSS_INTERNAL_INVARIANT");
+            const SpecId body_spec_id = method->specializations.front().spec_id;
+            const auto owner = objects_.find(method->owner);
+            const std::size_t declaration_matches = owner == objects_.end()
+                ? 0 : static_cast<std::size_t>(std::count_if(
+                      owner->second->methods.begin(), owner->second->methods.end(),
+                      [&](const Method& candidate) {
+                        return &candidate == method &&
+                            candidate.semantic_callable_id ==
+                                method->semantic_callable_id;
+                      }));
+            if (body_spec_id == InvalidSpecId ||
+                body_spec_id >= p_.specialization_table.size() ||
+                !unique_method_ids.insert(body_spec_id).second ||
+                declaration_matches != 1 ||
+                p_.specialization_table[body_spec_id]
+                        .semantic_callable_identity !=
+                    method->semantic_callable_id ||
+                p_.specialization_table[body_spec_id].module_identity !=
+                    program_module_identity(
+                        p_, owner->second->defining_module))
+              err(statement.line,
+                  "checked custom iterator method SpecId is missing, duplicated, or owned by another callable",
+                  "MOSS_INTERNAL_INVARIANT");
+            method_ids.push_back(body_spec_id);
+          }
+        }
         return;
       }
 
