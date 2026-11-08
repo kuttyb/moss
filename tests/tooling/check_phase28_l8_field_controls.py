@@ -64,7 +64,7 @@ def expect_step2_map_view(compiler: str, source: Path, scratch: Path,
 
 
 def grid_source(site: str, source_kind: str, binding: str, use: str) -> tuple[str, str | None]:
-    """Build one field-effect control. Return source and expected diagnostic code."""
+    """Exercise a field place on every source axis (proposal §§3/5/8.2)."""
     if site == "main" and source_kind == "parameter":
         raise ValueError("main has no source parameters")
 
@@ -75,7 +75,7 @@ type Harness:
   inner: Inner
 """
     if site == "method":
-        declarations += "  fn probe(source: Vector[Int]) -> Int:\n    pass\n"
+        declarations += "  fn probe(source: Inner) -> Int:\n    pass\n"
     elif site == "handler":
         declarations = """type Inner:
   frontier: Vector[Int]
@@ -83,16 +83,16 @@ type Harness:
 domain Harness:
   inner: Inner
 """
-        declarations += "  fn Probe(source: Vector[Int]) -> Int:\n    pass\n"
+        declarations += "  fn Probe(source: Inner) -> Int:\n    pass\n"
 
-    param = "source: Vector[Int]" if source_kind == "parameter" else ""
+    param = "source: Inner" if source_kind == "parameter" else ""
     setup: list[str] = []
-    source_expr = "source"
+    source_expr = "source.frontier"
     if source_kind == "local":
-        setup.append("source = [1, 2, 3]")
+        setup.append("source = Inner(frontier = [1, 2, 3])")
     elif source_kind == "vector-element":
-        setup.append("items = [[1, 2, 3]]")
-        source_expr = "items[0]"
+        setup.append("items = [Inner(frontier = [1, 2, 3])]")
+        source_expr = "items[0].frontier"
     elif source_kind == "nested-field":
         if site in ("main", "function"):
             setup.append("h = Harness(inner = Inner(frontier = [1, 2, 3]))")
@@ -125,23 +125,23 @@ domain Harness:
         lines = f"fn probe({param}) -> Int:\n" if param else "fn probe() -> Int:\n"
         lines += "\n".join("  " + line for line in body)
         if param:
-            lines += "\n\nfn main():\n  source = [1, 2, 3]\n  echo probe(source)\n"
-            if use == "read": lines += "  echo (source |> count)\n"
+            lines += "\n\nfn main():\n  source = Inner(frontier = [1, 2, 3])\n  echo probe(source)\n"
+            if use == "read": lines += "  echo (source.frontier |> count)\n"
         else:
             lines += "\n\nfn main():\n  echo probe()\n"
         lines = declarations + "\n" + lines
     elif site == "method":
-        lines = declarations.replace("  fn probe(source: Vector[Int]) -> Int:\n    pass\n", "")
+        lines = declarations.replace("  fn probe(source: Inner) -> Int:\n    pass\n", "")
         lines += "  fn probe(" + param + ") -> Int:\n"
         lines += "\n".join("    " + line for line in body)
         lines += "\n\nfn main():\n  h = Harness(inner = Inner(frontier = [1, 2, 3]))\n"
         if param:
-            lines += "  source = [1, 2, 3]\n  echo h.probe(source)\n"
-            if use == "read": lines += "  echo (source |> count)\n"
+            lines += "  source = Inner(frontier = [1, 2, 3])\n  echo h.probe(source)\n"
+            if use == "read": lines += "  echo (source.frontier |> count)\n"
         else:
             lines += "  echo h.probe()\n"
     else:
-        lines = declarations.replace("  fn Probe(source: Vector[Int]) -> Int:\n    pass\n", "")
+        lines = declarations.replace("  fn Probe(source: Inner) -> Int:\n    pass\n", "")
         lines += "  fn Probe(" + param + ") -> Int:\n"
         lines += "\n".join("    " + line.replace("return ", "reply ") for line in body)
         lines += "\n\nfn main():\n  h = Harness(inner = Inner(frontier = [1, 2, 3]))\n"
@@ -149,19 +149,15 @@ domain Harness:
             # Proposal §§1.2/7.5: preserve the caller via an explicit owned
             # duplicate; the handler still receives an immutable payload.
             argument = "copy(source)" if use == "read" else "source"
-            lines += f"  source = [1, 2, 3]\n  echo message h.Probe({argument})\n"
-            if use == "read": lines += "  echo (source |> count)\n"
+            lines += f"  source = Inner(frontier = [1, 2, 3])\n  echo message h.Probe({argument})\n"
+            if use == "read": lines += "  echo (source.frontier |> count)\n"
         else:
             lines += "  echo message h.Probe()\n"
 
-    expected_rejection = None
-    if use == "consume" and source_kind == "vector-element":
-        expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
-    elif use == "consume" and source_kind == "nested-field":
-        expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
-    elif use == "consume" and source_kind == "parameter" and site == "handler":
-        # Proposal §7.5 forbids laundering incoming payloads into owned state.
-        expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
+    # Proposal §5 forbids destructive extraction through an ordinary field
+    # alias, including fields rooted in a local, parameter, or indexed owner.
+    # §8.2 requires READ aliases to leave the field available to the caller.
+    expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME" if use == "consume" else None
     return lines, expected_rejection
 
 
