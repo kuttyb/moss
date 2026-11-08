@@ -263,6 +263,8 @@ When working with Moss:
   merge into `phase28-work` or `main`.
   For Phase 28 Task F1 on `phase28-f1-field`, the user authorized scoped local
   commits and a normal push after Agent 2 independently signs off. Do not merge.
+  The user separately authorized pushing the parked WIP checkpoint on
+  `phase28-f1-field-wip`; that checkpoint is not an accepted implementation.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

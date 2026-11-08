@@ -19202,3 +19202,19 @@ untouched.
   The earlier make wrapper preflight on the candidate also fails at
   `check_phase28_local_ownership` as above. No code fix, push, or merge was
   made; wait for L8 repair-plan approval before implementation.
+
+## Phase 28 Task F1 approved repair attempt — stopped after R1 regressed live borrow
+
+- Restored `infer_straight_line_definition_effect` from exact baseline
+  `00b54a51` and removed the F1-only boolean arguments. R1 identity comparisons
+  remain uncommitted in `src/semantic_checker.cpp`; R2 and R3 were not started.
+- Rebuilt `moss-dev` successfully. `if_else_live_join.moss` checks successfully;
+  `check_phase28_team_b_consumer.py` passes.
+- `check_phase28_local_ownership.py` fails first at
+  `loop_borrow_still_live.moss`: baseline reports `OWNERSHIP_SOURCE_BORROWED`
+  at line 11 because `origin` is overwritten while READ alias `alias` remains
+  live; candidate accepts. R1's binding-identity comparisons now match local
+  sources where the earlier definition-identity comparison failed closed, so
+  a local alias can be treated as an owned transfer and omitted from the live
+  READ-borrow guard. This is an acceptance failure; no R2/R3 edits, full suites,
+  Agent 2 review, commit, or push followed.
