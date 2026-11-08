@@ -19146,3 +19146,59 @@ untouched.
   rather than the exact checked EST source and reaching edge. Per the review
   stop rule, Agent 2 did not run the three additional probes. No code repair,
   push, or merge occurred. Task remains stopped for review/acceptance defects.
+
+## Phase 28 Task F1 NO-GO investigation and complete matrix rerun
+
+- No implementation files changed. `use_after_move.moss` lines 5-7 are
+  `alias = value`, `moved = alias`, `echo value.value`. Exact baseline
+  `00b54a51` rejects line 7 with `OWNERSHIP_USE_AFTER_CONSUME`, citing the
+  transfer to `alias` at line 5; candidate `a1758df4` accepts with no
+  diagnostics. F1 assigns `alias` a binding identity
+  `fn:invalid@4@5:statement` and a definition identity
+  `fn:invalid@4@5:statement:alias` (`semantic_checker.cpp:25208-25211`). The
+  exact EST RHS identity for `alias` is the former, but the new non-field
+  reaching-edge comparisons at `25556-25558`, `25637-25640`, and
+  `25657-25660` compare it with the latter. The `moved = alias` demand edge is
+  dropped, so CONSUME does not propagate through `alias = value`; line 7 then
+  sees `value` as available.
+- Agent 2's flagged-site classification:
+  - `Checker::checked_statement_source_binding_identity`, lines 24608-24611:
+    prohibited (b). The exact `ExpressionOccurrence` keyed by arena and ExprId
+    with `resolved_binding_id` is absent from the provisional
+    `solve_local_collection_types` body state built by early
+    `field_alias_parameter_effects`; the code then uses `identifier->name` to
+    look up the statement environment.
+  - `Checker::direct_statement_identifier`, lines 24553-24555: allowed (a)
+    when the structurally parsed EST identifier spelling is used only for
+    checker-local scope/flow-map lookup.
+  - `Checker::analyze_body_ownership_flow`, let initializer
+    `inferred_expr_type(s.b, ...)` at 25214-25216 and
+    `storage_location(s.b, ...)` at 25222-25224: prohibited source-derived (b).
+    The exact initializer ExprId-bound TypeRef and storage/projection path are
+    not retrieved; this code derives them directly from `Stmt::b`. These are
+    unconditional source-derived reads, not lookups that occur only after an
+    exact identity miss.
+  - The same prohibited source-derived reads occur for assignment RHS at
+    25284-25286 and 25292-25294; the exact RHS ExprId-bound TypeRef and storage
+    path are not retrieved, and the code instead derives them from `Stmt::b`.
+- Corpus references: the `0 losses` run compared `00b54a51` with the candidate.
+  The F1 corpus manifest pins sources to `150ab36` and records 00b as baseline
+  (212 accepts) against reference 150ab (236 accepts), hence 24 known losses.
+  A direct run against the `150ab36` compiler reports 238 inputs, 24 losses,
+  0 gains, and no new loss names.
+- Complete uninterrupted `tests/run_parallel.py` matrices ran from separate
+  plain clones at `00b54a51` and `a1758df4`, with 170 selected jobs each in
+  Default and Shadow. Default: baseline 117/170 PASS, candidate 116/170 PASS;
+  candidate-only failures are `check_phase28_local_ownership` and
+  `check_phase28_team_b_consumer`, baseline-only is
+  `check_phase21_borrowed_view_write`. Shadow: baseline 116/170, candidate
+  116/170; candidate-only failures are the same two, baseline-only failures
+  are `check_make_incremental_dependencies` and
+  `check_phase21_borrowed_view_write`. The exact diagnostic strings
+  `Native statement EST handle missing/invalid` and
+  `Root-ingress capture lacks exact message edge` each occur zero times in the
+  complete matrix transcript logs and retained complete Shadow job logs.
+  Matrix runners completed all 170 jobs and exited 1 because jobs failed.
+  The earlier make wrapper preflight on the candidate also fails at
+  `check_phase28_local_ownership` as above. No code fix, push, or merge was
+  made; wait for L8 repair-plan approval before implementation.
