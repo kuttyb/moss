@@ -133,7 +133,7 @@ struct TypedLocalOwnershipFactV1 {
             : disposition == Disposition::NotApplicable;
     if (inference_status != InferenceStatus::Inferred ||
         availability != Availability::Present ||
-        definition_identity.empty() || specialization_context.empty() ||
+        definition_identity.empty() ||
         statement_occurrence_id == UINT32_MAX ||
         est_arena_index == UINT32_MAX || expression_occurrence_id == UINT32_MAX)
       return false;
@@ -251,7 +251,7 @@ struct TypedLocalTransferFactV1 {
         source_type && source_type->is_closed() && target_type &&
         target_type->is_closed() &&
         source_type->structurally_equal(*target_type) &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         !provenance.source_file.empty() && provenance.line > 0 &&
         !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
@@ -514,7 +514,7 @@ struct TypedTakeFactV1 {
         est_arena_index != UINT32_MAX && take_occurrence_id != UINT32_MAX &&
         place_occurrence_id != UINT32_MAX &&
         statement_occurrence_id != UINT32_MAX &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         !root_binding_identity.empty() && !root_name.empty() &&
         terminal_type && result_type && !projection_path.empty() &&
         terminal_type->structurally_equal(*result_type) &&
@@ -594,8 +594,7 @@ struct TypedCopyFactV1 {
         copy_occurrence_id != UINT32_MAX &&
         source_occurrence_id != UINT32_MAX &&
         statement_occurrence_id != UINT32_MAX &&
-        !specialization_context.empty() &&
-        !est_fact_context.empty() &&
+
         !provenance.source_file.empty() && provenance.line > 0 &&
         !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty() &&
@@ -666,7 +665,7 @@ struct TypedCollectionOutcomeFactV1 {
         operation_est_arena_index == UINT32_MAX ||
         operation_expression_occurrence_id == UINT32_MAX ||
         statement_occurrence_id == UINT32_MAX ||
-        specialization_context.empty() || est_fact_context.empty() ||
+
         provenance.source_file.empty() || provenance.line <= 0 ||
         provenance.defining_module_id.empty() ||
         provenance.enclosing_callable_id.empty() ||
@@ -747,7 +746,7 @@ struct TypedConditionalCollectionErrorFactV1 {
         !key_type || !key_type->is_closed() || !result_type ||
         !result_type->is_closed() || error_type_identity != "std__CollectionError" ||
         error_variant_identity != "MissingKey" || !exceptional_edge_authorized ||
-        specialization_context.empty() || est_fact_context.empty() ||
+
         provenance.source_file.empty() || provenance.line <= 0 ||
         provenance.defining_module_id.empty() ||
         provenance.enclosing_callable_id.empty() ||
@@ -811,7 +810,7 @@ struct TypedReturnValueFactV1 {
             : (!source_span_valid || !checked_body_semantic_hash.empty() ||
                checked_body_statement_ordinal != UINT32_MAX ||
                expression_source_fingerprint != 0)) ||
-        specialization_context.empty() || est_fact_context.empty() ||
+
         provenance.source_file.empty() || provenance.line <= 0 ||
         provenance.defining_module_id.empty() ||
         provenance.enclosing_callable_id.empty() || !expression_type ||
@@ -929,7 +928,7 @@ struct TypedReturnValueArtifactFactV1 {
         expression_span_line == 0 || expression_span_column == 0 ||
         expression_source_end <= expression_source_begin ||
         expression_source_fingerprint == 0 ||
-        specialization_context.empty() || est_fact_context.empty() ||
+
         provenance.source_file.empty() ||
         provenance.defining_module_id.empty() ||
         provenance.enclosing_callable_id != callable_identity || !expression_type ||
@@ -991,7 +990,7 @@ struct TypedCollectionViewFactV1 {
         !result_type->is_closed() || result_type->kind != TypeKind::Builtin ||
         result_type->name != "vector" || result_type->type_args.size() != 1 ||
         required_access != Effect::Read || !bounded_non_escaping_lifetime ||
-        specialization_context.empty() || est_fact_context.empty() ||
+
         provenance.source_file.empty() || provenance.line <= 0 ||
         provenance.defining_module_id.empty() ||
         provenance.enclosing_callable_id.empty()) return false;
@@ -1068,7 +1067,7 @@ struct TypedProjectedCollectionReadFactV1 {
                       return argument && argument->is_closed();
                     }) &&
         required_access == Effect::Read && temporary_non_escaping_query_borrow &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         !provenance.source_file.empty() && provenance.line > 0 &&
         !provenance.defining_module_id.empty() &&
         !provenance.enclosing_callable_id.empty();
@@ -1130,7 +1129,7 @@ struct TypedProjectedCallArgumentReadFactV1 {
         member_projection_expression_occurrence_id != UINT32_MAX &&
         statement_occurrence_id != UINT32_MAX &&
         argument_index != UINT32_MAX &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         argument_occurrence_span.line > 0 &&
         argument_occurrence_span.source_end >=
             argument_occurrence_span.source_begin &&
@@ -1233,7 +1232,7 @@ struct TypedIndexedCallArgumentReadFactV1 {
         index_expression_occurrence_id != UINT32_MAX &&
         statement_occurrence_id != UINT32_MAX &&
         argument_index != UINT32_MAX &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         argument_occurrence_span.line > 0 &&
         argument_occurrence_span.source_end >=
             argument_occurrence_span.source_begin &&
@@ -1343,8 +1342,7 @@ struct TypedIndexedExpressionReadFactV1 {
         result_type && result_type->is_closed() &&
         same_type(receiver_type->type_args.front(), result_type) &&
         required_access == Effect::Read && disposition_matches &&
-        !specialization_context.empty() &&
-        !est_fact_context.empty() && !provenance.source_file.empty() &&
+         !provenance.source_file.empty() &&
         provenance.line > 0 && !provenance.enclosing_callable_id.empty() &&
         !provenance.defining_module_id.empty();
   }
@@ -1503,7 +1501,7 @@ struct TypedRootIngressDomainCaptureFactV1 {
         message_expression_occurrence_id != UINT32_MAX &&
         receiver_expression_occurrence_id != UINT32_MAX &&
         source_fingerprint != 0 &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         !receiver_binding.empty() && !receiver_definition_identity.empty() &&
         !domain_instance_identity.empty() && !domain_type_identity.empty() &&
         !concrete_graph_identity.empty() &&
@@ -1560,7 +1558,7 @@ struct TypedRootIngressArgumentTypeFactV1 {
         argument_index != UINT32_MAX &&
         argument_expression_occurrence_id != UINT32_MAX &&
         source_fingerprint != 0 && !selected_handler_identity.empty() &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         argument_type && argument_type->is_closed();
   }
   SpecId specialization_id = InvalidSpecId;
@@ -1610,7 +1608,7 @@ struct TypedRootIngressPayloadFactV1 {
         argument_index != UINT32_MAX &&
         argument_expression_occurrence_id != UINT32_MAX &&
         source_fingerprint != 0 && !selected_handler_identity.empty() &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         payload_type && payload_type->is_closed() && !primitive_copy &&
         required_access == Effect::Consume &&
         checker_proved_fresh_rvalue && !permits_moss_value_copy &&
@@ -1657,7 +1655,7 @@ struct TypedRootIngressArgumentDispositionFactV1 {
         source_fingerprint != 0 &&
         !source_binding_identity.empty() &&
         !source_definition_identity.empty() &&
-        !specialization_context.empty() && !est_fact_context.empty() &&
+
         payload_type && payload_type->is_closed() &&
         action == Action::TransferOwnedBinding &&
         required_access == Effect::Consume && source_is_owned &&
@@ -1702,7 +1700,6 @@ struct TypedMatchOwnershipFactV1 {
         statement_occurrence_id == UINT32_MAX ||
         est_arena_index == UINT32_MAX ||
         scrutinee_occurrence_id == UINT32_MAX ||
-        specialization_context.empty() ||
         !scrutinee_type || !scrutinee_type->is_closed() || arms.empty())
       return false;
     std::set<std::string> cases;
@@ -1816,8 +1813,7 @@ struct TypedTryContinuationFactV1 {
   bool is_authoritative() const noexcept {
     return availability == Availability::Present &&
         statement_occurrence_id != UINT32_MAX &&
-        !owner_callable_identity.empty() &&
-        !specialization_context.empty();
+        !owner_callable_identity.empty();
   }
   SpecId specialization_id = InvalidSpecId;
 };
@@ -2215,7 +2211,6 @@ struct TypedSemanticModuleV1 {
         retained.receiver_occurrence_id != requirement.receiver_occurrence_id ||
         retained.selector_occurrence_id != requirement.selector_occurrence_id ||
         retained.specialization_identity != requirement.specialization_identity ||
-        retained.est_fact_context != requirement.est_fact_context ||
         !same_type(retained.argument_type, requirement.argument_type) ||
         !same_type(retained.receiver_type, requirement.receiver_type) ||
         !same_type(retained.element_type, requirement.element_type) ||
@@ -2251,7 +2246,6 @@ struct TypedSemanticModuleV1 {
         result->receiver_occurrence_id != requirement.receiver_occurrence_id ||
         result->selector_occurrence_id != requirement.selector_occurrence_id ||
         result->specialization_identity != requirement.specialization_identity ||
-        result->est_fact_context != requirement.est_fact_context ||
         !same_type(result->argument_type, requirement.argument_type) ||
         !same_type(result->receiver_type, requirement.receiver_type) ||
         !same_type(result->element_type, requirement.element_type) ||
@@ -2279,7 +2273,6 @@ struct TypedSemanticModuleV1 {
           left.source_fingerprint == right.source_fingerprint &&
           left.origin_id == right.origin_id &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           left.receiver_binding == right.receiver_binding &&
           left.receiver_definition_identity == right.receiver_definition_identity &&
           left.domain_instance_identity == right.domain_instance_identity &&
@@ -2368,7 +2361,6 @@ struct TypedSemanticModuleV1 {
           left.source_fingerprint == right.source_fingerprint &&
           left.selected_handler_identity == right.selected_handler_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_type(left.argument_type, right.argument_type) &&
           left.availability == right.availability;
     };
@@ -2428,7 +2420,6 @@ struct TypedSemanticModuleV1 {
           left.source_fingerprint == right.source_fingerprint &&
           left.selected_handler_identity == right.selected_handler_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           left.payload_type && right.payload_type &&
           left.payload_type->structurally_equal(*right.payload_type) &&
           left.required_access == right.required_access &&
@@ -2496,7 +2487,6 @@ struct TypedSemanticModuleV1 {
           left.source_definition_identity == right.source_definition_identity &&
           left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_type(left.payload_type, right.payload_type) &&
           left.action == right.action &&
           left.required_access == right.required_access &&
@@ -2715,7 +2705,6 @@ struct TypedSemanticModuleV1 {
       std::uint32_t arena_index, est::ExprId expr_id,
       std::uint32_t statement_occurrence_id,
       SpecId specialization_id,
-      const std::string& specialization_identity,
       const std::string& definition_identity) const {
     const TypedLocalOwnershipRequirementV1* result = nullptr;
     for (const auto& req : required_local_ownership_occurrences) {
@@ -2723,7 +2712,6 @@ struct TypedSemanticModuleV1 {
           req.expression_occurrence_id != expr_id ||
           req.statement_occurrence_id != statement_occurrence_id ||
           req.specialization_id != specialization_id ||
-          req.specialization_identity != specialization_identity ||
           req.definition_identity != definition_identity)
         continue;
       if (result)
@@ -2849,9 +2837,7 @@ struct TypedSemanticModuleV1 {
               right.source_dead_after_assignment &&
           same_type(left.source_type, right.source_type) &&
           same_type(left.target_type, right.target_type) &&
-          left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
     const TypedLocalTransferRequirementV1* required = nullptr;
@@ -2872,7 +2858,6 @@ struct TypedSemanticModuleV1 {
           candidate.rhs_expression_occurrence_id !=
               req.rhs_expression_occurrence_id ||
           candidate.statement_occurrence_id != req.statement_occurrence_id ||
-          candidate.specialization_identity != req.specialization_identity ||
           candidate.specialization_id != req.specialization_id) continue;
       result = &candidate;
       ++fact_matches;
@@ -2890,16 +2875,14 @@ struct TypedSemanticModuleV1 {
   const TypedLocalTransferFactV1* find_local_transfer_fact(
       std::uint32_t arena_index, est::ExprId rhs_expression_occurrence_id,
       std::uint32_t statement_occurrence_id,
-      SpecId specialization_id,
-      const std::string& specialization_identity) const {
+      SpecId specialization_id) const {
     const TypedLocalTransferRequirementV1* result = nullptr;
     for (const auto& requirement : required_local_transfer_occurrences) {
       if (requirement.est_arena_index != arena_index ||
           requirement.rhs_expression_occurrence_id !=
               rhs_expression_occurrence_id ||
           requirement.statement_occurrence_id != statement_occurrence_id ||
-          requirement.specialization_id != specialization_id ||
-          requirement.specialization_identity != specialization_identity)
+          requirement.specialization_id != specialization_id)
         continue;
       if (result)
         throw std::invalid_argument("duplicate local transfer lookup");
@@ -2951,7 +2934,6 @@ struct TypedSemanticModuleV1 {
           left.statement_occurrence_id == right.statement_occurrence_id &&
           left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           left.root_binding_identity == right.root_binding_identity &&
           left.root_name == right.root_name &&
           same_type(left.terminal_type, right.terminal_type) &&
@@ -3012,7 +2994,6 @@ struct TypedSemanticModuleV1 {
         result->statement_occurrence_id !=
             requirement.statement_occurrence_id ||
         result->root_binding_identity != requirement.root_binding_identity ||
-        result->est_fact_context != requirement.est_fact_context ||
         result->root_name != requirement.root_name ||
         !same_type(result->terminal_type, requirement.terminal_type) ||
         !same_type(result->result_type, requirement.result_type) ||
@@ -3049,17 +3030,6 @@ struct TypedSemanticModuleV1 {
           : "checker take requirement missing");
     (void)find_take_fact(*result);
     return *result;
-  }
-
-  const TypedTakeRequirementV1& find_take_requirement(
-      std::uint32_t arena_index, est::ExprId take_occurrence,
-      SpecId specialization_id,
-      const std::string& specialization_identity) const {
-    const auto& requirement = find_take_requirement(
-        arena_index, take_occurrence, specialization_id);
-    if (requirement.specialization_identity != specialization_identity)
-      throw std::invalid_argument("checker take requirement specialization mismatch");
-    return requirement;
   }
 
   const TypedCopyFactV1* find_copy_fact(
@@ -3115,7 +3085,6 @@ struct TypedSemanticModuleV1 {
     }
     if (result->source_occurrence_id != requirement.source_occurrence_id ||
         result->statement_occurrence_id != requirement.statement_occurrence_id ||
-        result->est_fact_context != requirement.est_fact_context ||
         !same_provenance(result->provenance, requirement.provenance) ||
         !same_span(result->copy_occurrence_span,
                    requirement.copy_occurrence_span) ||
@@ -3150,17 +3119,6 @@ struct TypedSemanticModuleV1 {
           : "checker copy requirement missing");
     (void)find_copy_fact(*result);
     return *result;
-  }
-
-  const TypedCopyRequirementV1& find_copy_requirement(
-      std::uint32_t arena_index, est::ExprId copy_occurrence,
-      SpecId specialization_id,
-      const std::string& specialization_identity) const {
-    const auto& requirement = find_copy_requirement(
-        arena_index, copy_occurrence, specialization_id);
-    if (requirement.specialization_identity != specialization_identity)
-      throw std::invalid_argument("checker copy requirement specialization mismatch");
-    return requirement;
   }
 
   // Resolve the complete checker-declared copy authority set. This is the
@@ -3206,7 +3164,6 @@ struct TypedSemanticModuleV1 {
           left.statement_occurrence_id == right.statement_occurrence_id &&
           left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance) &&
           left.receiver_binding_identity == right.receiver_binding_identity &&
           left.receiver_definition_identity == right.receiver_definition_identity &&
@@ -3309,7 +3266,6 @@ struct TypedSemanticModuleV1 {
           a.exceptional_edge_authorized == b.exceptional_edge_authorized &&
           a.specialization_identity == b.specialization_identity &&
           a.specialization_id == b.specialization_id &&
-          a.est_fact_context == b.est_fact_context &&
           a.provenance.source_file == b.provenance.source_file &&
           a.provenance.line == b.provenance.line &&
           a.provenance.defining_module_id == b.provenance.defining_module_id &&
@@ -3371,7 +3327,6 @@ struct TypedSemanticModuleV1 {
         found->availability == requirement.availability &&
         same_span(found->expression_occurrence_span, requirement.expression_occurrence_span) &&
         found->specialization_identity == requirement.specialization_identity &&
-        found->est_fact_context == requirement.est_fact_context &&
         found->provenance.source_file == requirement.provenance.source_file &&
         found->provenance.line == requirement.provenance.line &&
         found->provenance.defining_module_id == requirement.provenance.defining_module_id &&
@@ -3432,7 +3387,6 @@ struct TypedSemanticModuleV1 {
         found->required_access == requirement.required_access &&
         found->bounded_non_escaping_lifetime == requirement.bounded_non_escaping_lifetime &&
         found->specialization_identity == requirement.specialization_identity &&
-        found->est_fact_context == requirement.est_fact_context &&
         found->provenance.source_file == requirement.provenance.source_file &&
         found->provenance.line == requirement.provenance.line &&
         found->provenance.defining_module_id == requirement.provenance.defining_module_id &&
@@ -3502,7 +3456,6 @@ struct TypedSemanticModuleV1 {
           left.permits_copy == right.permits_copy &&
           left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
     std::size_t requirement_matches = 0;
@@ -3585,7 +3538,6 @@ struct TypedSemanticModuleV1 {
           left.permits_copy == right.permits_copy &&
           left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
     std::size_t requirement_matches = 0;
@@ -3682,7 +3634,6 @@ struct TypedSemanticModuleV1 {
               right.temporary_non_escaping_query_borrow &&
           left.specialization_identity == right.specialization_identity &&
           left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context &&
           same_provenance(left.provenance, right.provenance);
     };
     for (const auto& requirement : required_projected_collection_read_occurrences) {
@@ -3752,8 +3703,7 @@ struct TypedSemanticModuleV1 {
           left.statement_occurrence_id == right.statement_occurrence_id &&
           left.statement_slot == right.statement_slot &&
           left.specialization_identity == right.specialization_identity &&
-          left.specialization_id == right.specialization_id &&
-          left.est_fact_context == right.est_fact_context;
+          left.specialization_id == right.specialization_id;
     };
     const TypedIndexedExpressionReadRequirementV1* selected = nullptr;
     std::size_t requirements = 0;
@@ -3780,7 +3730,6 @@ struct TypedSemanticModuleV1 {
         fact->temporary_nonescaping_borrow !=
             requirement.temporary_nonescaping_borrow ||
         fact->permits_copy != requirement.permits_copy ||
-        fact->est_fact_context != requirement.est_fact_context ||
         !same_provenance(fact->provenance, requirement.provenance))
       throw std::invalid_argument(
           "indexed expression-read fact contradicts its checker requirement");
@@ -3877,18 +3826,6 @@ struct TypedSemanticModuleV1 {
           : "checker match requirement missing");
     (void)find_match_ownership_fact(*result);
     return *result;
-  }
-
-  const TypedMatchOwnershipRequirementV1& find_match_ownership_requirement(
-      std::uint32_t arena_index, est::ExprId scrutinee_occurrence,
-      std::uint32_t statement_occurrence,
-      SpecId specialization_id,
-      const std::string& specialization_identity) const {
-    const auto& requirement = find_match_ownership_requirement(
-        arena_index, scrutinee_occurrence, statement_occurrence, specialization_id);
-    if (requirement.specialization_identity != specialization_identity)
-      throw std::invalid_argument("checker match requirement specialization mismatch");
-    return requirement;
   }
 
   void require_complete_open_summaries() const {

@@ -18784,3 +18784,10 @@ untouched.
   selectors in Native/Fast Debug and serialize the owning SpecId on existing
   Section 2 callable body records. The prior field-grid result predates this
   SpecId work and is stale.
+- Typed API label cleanup checkpoint is pending commit: exact fact validation
+  no longer reads `specialization_context` or `est_fact_context`; local transfer
+  lookup is keyed only by arena/ExprId/statement occurrence/SpecId, and the
+  string identity overloads for local ownership, copy, take and match lookups
+  have been removed. Forced `semantic_checker.o` build, SpecId remap Werror
+  harness, feedback validation, and diff-check pass. Consumer object build and
+  full identity/domain-instance gates remain pending Team B synchronization.
