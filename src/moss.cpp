@@ -15684,7 +15684,8 @@ static void parse_generic_ir_line(const string& line, Function& function) {
 }
 
 static bool execution_body_read_statement(const string& record,
-                                         Stmt& statement) {
+                                         Stmt& statement,
+                                         unsigned section_version = 5) {
   if (!starts_with(record, "stmt ")) return false;
   std::istringstream fields(record.substr(5));
   int kind = -1;
@@ -15721,6 +15722,39 @@ static bool execution_body_read_statement(const string& record,
           "invalid or duplicate statement raise identity in ABI-v9 execution-body section",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
   }
+  if (section_version >= 5) {
+    size_t iterator_owner_count = 0;
+    if (!(fields >> iterator_owner_count) || iterator_owner_count > 100000)
+      throw CompileError(std::max(statement.line, 0),
+          "invalid iterator method authority map in ABI-v9 execution-body section",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    for (size_t index = 0; index < iterator_owner_count; ++index) {
+      SpecId caller = InvalidSpecId;
+      size_t target_count = 0;
+      if (!(fields >> caller >> target_count) || caller == InvalidSpecId ||
+          (target_count != 1 && target_count != 2))
+        throw CompileError(std::max(statement.line, 0),
+            "invalid iterator method authority owner or cardinality",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<SpecId> targets;
+      std::set<SpecId> unique_targets;
+      for (size_t target_index = 0; target_index < target_count;
+           ++target_index) {
+        SpecId target = InvalidSpecId;
+        if (!(fields >> target) || target == InvalidSpecId ||
+            !unique_targets.insert(target).second)
+          throw CompileError(std::max(statement.line, 0),
+              "invalid or duplicate iterator method body SpecId",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        targets.push_back(target);
+      }
+      if (!statement.iterator_method_spec_ids_by_spec_id.emplace(
+              caller, std::move(targets)).second)
+        throw CompileError(std::max(statement.line, 0),
+            "duplicate iterator method authority owner SpecId",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+  }
   string trailing;
   if (fields >> trailing)
     throw CompileError(std::max(statement.line, 0),
@@ -15729,14 +15763,47 @@ static bool execution_body_read_statement(const string& record,
   return true;
 }
 
+static void validate_execution_body_iterator_authority(
+    const Program& provider, const std::vector<Stmt>& statements,
+    const std::set<SpecId>& body_spec_ids) {
+  for (const auto& statement : statements) {
+    if (!statement.iterator_method_spec_ids_by_spec_id.empty() &&
+        statement.kind != Stmt::Kind::For)
+      throw CompileError(std::max(statement.line, 0),
+          "iterator method authority is attached to a non-For statement",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    for (const auto& [caller, targets] :
+         statement.iterator_method_spec_ids_by_spec_id) {
+      if (!body_spec_ids.count(caller) ||
+          caller >= provider.specialization_table.size() ||
+          (targets.size() != 1 && targets.size() != 2))
+        throw CompileError(std::max(statement.line, 0),
+            "iterator method authority has an unknown caller body or invalid cardinality",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      std::set<SpecId> unique_targets;
+      for (SpecId target : targets) {
+        if (target == InvalidSpecId ||
+            target >= provider.specialization_table.size() ||
+            !unique_targets.insert(target).second ||
+            provider.specialization_table[target]
+                    .semantic_callable_identity.rfind("method-v1:", 0) != 0)
+          throw CompileError(std::max(statement.line, 0),
+              "iterator method authority has a missing, duplicate, or non-method target",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+    }
+  }
+}
+
 static void write_execution_body_statement(std::ostream& out,
-                                           const Stmt& statement);
+                                           const Stmt& statement,
+                                           unsigned section_version = 5);
 
 static string execution_body_statements_hash(
-    const std::vector<Stmt>& statements) {
+    const std::vector<Stmt>& statements, unsigned section_version = 5) {
   std::ostringstream records;
   for (const auto& statement : statements)
-    write_execution_body_statement(records, statement);
+    write_execution_body_statement(records, statement, section_version);
   return source_free_contract_sha256(records.str());
 }
 
@@ -16187,7 +16254,7 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         string tag;
         statement_input >> tag;
         if (tag != "stmt" || !execution_body_read_statement(
-                line, statement))
+                line, statement, section.version))
           throw CompileError(std::max(declaration_line, 0),
               "invalid function body record in ABI-v9 execution-body section",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -16198,8 +16265,17 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         throw CompileError(std::max(declaration_line, 0),
             "unterminated function body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
-      const string body_hash =
-          execution_body_statements_hash(execution_statements);
+      if (section.version >= 5) {
+        std::set<SpecId> body_spec_ids;
+        if (function_spec_id != InvalidSpecId)
+          body_spec_ids.insert(function_spec_id);
+        body_spec_ids.insert(specialization_spec_ids.begin(),
+                             specialization_spec_ids.end());
+        validate_execution_body_iterator_authority(
+            provider, execution_statements, body_spec_ids);
+      }
+      const string body_hash = execution_body_statements_hash(
+          execution_statements, section.version);
       std::set<std::pair<std::uint32_t, SpecId>> artifact_ordinals;
       vector<string> normalized_artifacts;
       for (const auto& encoded : return_value_artifact_records) {
@@ -16538,7 +16614,7 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         string tag;
         statement_input >> tag;
         if (tag != "stmt" || !execution_body_read_statement(
-                line, statement))
+                line, statement, section.version))
           throw CompileError(std::max(declaration_line, 0),
               "invalid method body record in ABI-v9 execution-body section",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -16549,8 +16625,15 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         throw CompileError(std::max(declaration_line, 0),
             "unterminated method body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
-      const string body_hash =
-          execution_body_statements_hash(execution_statements);
+      if (section.version >= 5) {
+        std::set<SpecId> body_spec_ids;
+        for (const auto& body_identity : method_body_identities)
+          body_spec_ids.insert(body_identity.spec_id);
+        validate_execution_body_iterator_authority(
+            provider, execution_statements, body_spec_ids);
+      }
+      const string body_hash = execution_body_statements_hash(
+          execution_statements, section.version);
       std::set<std::pair<std::uint32_t, SpecId>> artifact_ordinals;
       vector<string> normalized_artifacts;
       for (const auto& encoded : return_value_artifact_records) {
@@ -16766,12 +16849,21 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         string tag;
         statement_input >> tag;
         if (tag != "stmt" || !execution_body_read_statement(
-                line, statement))
+                line, statement, section.version))
           throw CompileError(std::max(declaration_line, 0),
               "invalid handler body record in ABI-v9 execution-body section",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
         statement.source_file = handler->execution_source_file;
         handler_execution_statements.push_back(std::move(statement));
+      }
+      if (section.version >= 5) {
+        std::set<SpecId> body_spec_ids;
+        if (handler_spec_id != InvalidSpecId)
+          body_spec_ids.insert(handler_spec_id);
+        for (const auto& owner_record : handler_owners)
+          body_spec_ids.insert(std::get<2>(owner_record));
+        validate_execution_body_iterator_authority(
+            provider, handler_execution_statements, body_spec_ids);
       }
       vector<string> handler_return_value_artifact_records;
       while (std::getline(input, line) &&
@@ -16794,8 +16886,8 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
             "truncated handler body in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       const string handler_callable = "handler:" + owner + "." + name;
-      const string handler_body_hash =
-          execution_body_statements_hash(handler_execution_statements);
+      const string handler_body_hash = execution_body_statements_hash(
+          handler_execution_statements, section.version);
       std::set<std::pair<std::uint32_t, SpecId>> handler_artifact_ordinals;
       vector<string> normalized_handler_artifacts;
       for (const auto& encoded : handler_return_value_artifact_records) {
@@ -16895,12 +16987,22 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
                 "truncated handler failure-arm body",
                 "SOURCE_FREE_EXECUTION_BODY_INVALID");
           Stmt statement;
-          if (!execution_body_read_statement(line, statement))
+          if (!execution_body_read_statement(line, statement,
+                                             section.version))
             throw CompileError(std::max(arm_line, 0),
                 "invalid handler failure-arm statement",
                 "SOURCE_FREE_EXECUTION_BODY_INVALID");
           statement.source_file = handler->execution_source_file;
           arm.body.push_back(std::move(statement));
+        }
+        if (section.version >= 5) {
+          std::set<SpecId> body_spec_ids;
+          if (handler_spec_id != InvalidSpecId)
+            body_spec_ids.insert(handler_spec_id);
+          for (const auto& owner_record : handler_owners)
+            body_spec_ids.insert(std::get<2>(owner_record));
+          validate_execution_body_iterator_authority(
+              provider, arm.body, body_spec_ids);
         }
         vector<string> arm_artifact_records;
         while (std::getline(input, line) &&
@@ -16922,7 +17024,7 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
               "unterminated handler failure-arm body",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
         arm.execution_return_value_body_hash =
-            execution_body_statements_hash(arm.body);
+            execution_body_statements_hash(arm.body, section.version);
         arm.execution_body_section_version = section.version;
         std::set<std::pair<std::uint32_t, SpecId>> arm_artifact_ordinals;
         for (const auto& encoded : arm_artifact_records) {
@@ -17469,7 +17571,7 @@ static ExecutionBodySectionView parse_execution_body_section(
         string("execution_body_version ").size());
     size_t consumed = 0;
     const auto version = std::stoul(version_text, &consumed);
-    if (consumed != version_text.size() || version < 1 || version > 4)
+    if (consumed != version_text.size() || version < 1 || version > 5)
       throw std::out_of_range("execution body version");
     result.version = static_cast<unsigned>(version);
   } catch (const std::exception&) {
@@ -23409,7 +23511,8 @@ static void validate_imported_nominal_key_proofs(
 }
 
 static void write_execution_body_statement(std::ostream& out,
-                                           const Stmt& statement) {
+                                           const Stmt& statement,
+                                           unsigned section_version) {
   out << "stmt " << static_cast<int>(statement.kind) << " "
       << statement.line << " " << statement.indent << " "
       << std::quoted(statement.text) << " " << std::quoted(statement.a) << " "
@@ -23422,6 +23525,31 @@ static void write_execution_body_statement(std::ostream& out,
   out << " " << statement.exceptional_alternatives.size();
   for (const auto& raised : statement.exceptional_alternatives)
     out << " " << std::quoted(raised.canonical());
+  if (section_version >= 5) {
+    vector<SpecId> callers;
+    callers.reserve(statement.iterator_method_spec_ids_by_spec_id.size());
+    for (const auto& [caller, _] :
+         statement.iterator_method_spec_ids_by_spec_id)
+      callers.push_back(caller);
+    std::sort(callers.begin(), callers.end());
+    out << " " << callers.size();
+    for (SpecId caller : callers) {
+      const auto& methods =
+          statement.iterator_method_spec_ids_by_spec_id.at(caller);
+      if (caller == InvalidSpecId ||
+          (methods.size() != 1 && methods.size() != 2))
+        throw std::invalid_argument(
+            "iterator method authority has invalid caller or cardinality");
+      std::set<SpecId> unique_methods;
+      out << " " << caller << " " << methods.size();
+      for (SpecId method : methods) {
+        if (method == InvalidSpecId || !unique_methods.insert(method).second)
+          throw std::invalid_argument(
+              "iterator method authority has invalid or duplicate body SpecId");
+        out << " " << method;
+      }
+    }
+  }
   out << "\n";
 }
 
@@ -24039,6 +24167,8 @@ static string encode_execution_body_payload(
     const auto mapped_function_id = artifact_spec_ids.find(function->spec_id);
     if (function->spec_id == InvalidSpecId ||
         mapped_function_id == artifact_spec_ids.end() ||
+        program.specialization_table[function->spec_id].module_identity !=
+            local_module_identity->second ||
         (!function->semantic_callable_id.empty() &&
          program.specialization_table[function->spec_id]
                  .semantic_callable_identity !=
@@ -24058,6 +24188,8 @@ static string encode_execution_body_payload(
       const auto mapped = artifact_spec_ids.find(specialization.spec_id);
       if (specialization.spec_id == InvalidSpecId ||
           mapped == artifact_spec_ids.end() ||
+          program.specialization_table[specialization.spec_id].module_identity !=
+              local_module_identity->second ||
           (!function->semantic_callable_id.empty() &&
            program.specialization_table[specialization.spec_id]
                    .semantic_callable_identity !=
@@ -24107,6 +24239,8 @@ static string encode_execution_body_payload(
       const auto mapped_method_id = artifact_spec_ids.find(method->spec_id);
       if (method->spec_id == InvalidSpecId ||
           mapped_method_id == artifact_spec_ids.end() ||
+          program.specialization_table[method->spec_id].module_identity !=
+              local_module_identity->second ||
           method->semantic_callable_id.empty() ||
           program.specialization_table[method->spec_id]
                   .semantic_callable_identity !=
@@ -24139,6 +24273,8 @@ static string encode_execution_body_payload(
         const auto mapped_body_id = artifact_spec_ids.find(
             specialization.spec_id);
         if (mapped_body_id == artifact_spec_ids.end() ||
+            program.specialization_table[specialization.spec_id].module_identity !=
+                local_module_identity->second ||
             specialization.stable_type_key.empty() ||
             program.specialization_table[specialization.spec_id]
                     .semantic_callable_identity !=
@@ -24264,7 +24400,7 @@ static string append_execution_body_section(
   const string payload = encode_execution_body_payload(
       manifest, program, module, package_fingerprint, interface_digest);
   std::ostringstream section;
-  section << "execution_body_version 4\n"
+  section << "execution_body_version 5\n"
           << "execution_body_length " << payload.size() << "\n"
           << "execution_body_hash sha256:"
           << source_free_contract_sha256(payload) << "\n"
