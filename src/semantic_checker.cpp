@@ -21480,12 +21480,18 @@ class Checker {
   }
 
   void infer_effects() {
+    auto imported_method_owner = [&](const ObjectType& object) {
+      const string module = object.defining_module.empty()
+          ? module_name_from_symbol(object.name) : object.defining_module;
+      return p_.external_modules.count(module) != 0;
+    };
     for (auto& function : p_.functions)
       if (std::filesystem::path(function.source_file).extension() != ".mossi")
         function.parameter_effects.assign(function.params.size(), Effect::Read);
     for (auto& object : p_.objects)
       for (auto& method : object.methods)
-        if (std::filesystem::path(method.source_file).extension() != ".mossi")
+        if (!imported_method_owner(object) &&
+            std::filesystem::path(method.source_file).extension() != ".mossi")
           method.parameter_effects.assign(method.params.size(), Effect::Read);
 
     size_t entities = p_.functions.size();
@@ -21537,7 +21543,8 @@ class Checker {
       }
       for (auto& object : p_.objects) {
         for (auto& method : object.methods) {
-          if (std::filesystem::path(method.source_file).extension() == ".mossi")
+          if (imported_method_owner(object) ||
+              std::filesystem::path(method.source_file).extension() == ".mossi")
             continue;
           SourceFileScope method_source(current_source_file_, method.source_file);
           TypeEnv env;
