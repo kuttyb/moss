@@ -12115,6 +12115,108 @@ class Checker {
     return name;
   }
 
+  void check_domain_constructor_state_initializers(
+      const Stmt& statement, const string& domain_name,
+      const TypeEnv& env) {
+    if (current_spec_id_ == InvalidSpecId)
+      err(statement.source_file, statement.line,
+          "domain initializer has no checker specialization owner",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto source_fingerprint = est::fingerprint(statement.b);
+    const est::Handle* root_handle = nullptr;
+    for (const auto& handle : statement.expression_handles) {
+      if ((handle.slot != est::ExprSlot::Initializer &&
+           handle.slot != est::ExprSlot::RhsValue) ||
+          handle.source_fingerprint != source_fingerprint)
+        continue;
+      if (root_handle)
+        err(statement.source_file, statement.line,
+            "domain initializer has duplicate retained EST roots",
+            "MOSS_INTERNAL_INVARIANT");
+      root_handle = &handle;
+    }
+    if (!root_handle)
+      err(statement.source_file, statement.line,
+          "domain initializer lacks its retained EST root",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto* arena = expression_arena(root_handle->arena_index);
+    if (!arena || root_handle->expr >= arena->size())
+      err(statement.source_file, statement.line,
+          "domain initializer has an invalid retained EST root",
+          "MOSS_INTERNAL_INVARIANT");
+
+    auto root_id = est::unparenthesized(*arena, root_handle->expr);
+    std::vector<est::ExprId> arguments;
+    const auto& root = arena->at(root_id);
+    if (const auto* constructor = std::get_if<est::Constructor>(&root))
+      arguments = constructor->arguments;
+    else if (const auto* call = std::get_if<est::Call>(&root))
+      arguments = call->arguments;
+    else
+      err(statement.source_file, statement.line,
+          "domain initializer root is not its checked constructor occurrence",
+          "MOSS_INTERNAL_INVARIANT");
+
+    const auto domain = domains_.find(domain_name);
+    if (domain == domains_.end())
+      err(statement.source_file, statement.line,
+          "domain initializer target disappeared during checking",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto root_span = arena->span(root_id);
+    for (const auto argument_id : arguments) {
+      if (argument_id >= arena->size())
+        err(statement.source_file, statement.line,
+            "domain initializer contains an invalid EST argument",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto* named = std::get_if<est::NamedArgument>(&arena->at(argument_id));
+      if (!named)
+        err(statement.source_file, statement.line,
+            "domain initializer argument is not a retained named binding",
+            "MOSS_INTERNAL_INVARIANT");
+      const bool state_field = std::any_of(
+          domain->second->state.begin(), domain->second->state.end(),
+          [&](const Field& field) { return field.name == named->name; });
+      if (!state_field) continue;  // Routes are checked by the composition graph.
+
+      if (named->value >= arena->size())
+        err(statement.source_file, statement.line,
+            "domain initializer field has an invalid EST value",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto value_span = arena->span(named->value);
+      if (value_span.source_begin < root_span.source_begin ||
+          value_span.source_end < value_span.source_begin ||
+          value_span.source_end > root_span.source_end)
+        err(statement.source_file, statement.line,
+            "domain initializer field span escapes its retained EST root",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto begin = value_span.source_begin - root_span.source_begin;
+      const auto length = value_span.source_end - value_span.source_begin;
+      if (begin > statement.b.size() ||
+          length > statement.b.size() - begin)
+        err(statement.source_file, statement.line,
+            "domain initializer field span is outside its source expression",
+            "MOSS_INTERNAL_INVARIANT");
+      const string value_source = statement.b.substr(begin, length);
+      if (value_source.empty())
+        err(statement.source_file, statement.line,
+            "domain initializer field has an empty retained source span",
+            "MOSS_INTERNAL_INVARIANT");
+
+      struct ForcedInitializerCursorScope {
+        std::optional<EstExpressionCursor>& slot;
+        std::optional<EstExpressionCursor> previous;
+        ForcedInitializerCursorScope(
+            std::optional<EstExpressionCursor>& target,
+            EstExpressionCursor cursor)
+            : slot(target), previous(target) { slot = std::move(cursor); }
+        ~ForcedInitializerCursorScope() { slot = std::move(previous); }
+      } cursor_scope(forced_root_expression_cursor_,
+          EstExpressionCursor{root_handle->arena_index, named->value,
+                              value_source});
+      check_expression(statement.line, value_source, env, "initializer");
+    }
+  }
+
   const Handler* check_call(int line, const string& receiver, const string& message,
                             const vector<string>& args,
                             const TypeEnv& env) const {
@@ -40509,6 +40611,8 @@ class Checker {
           if (current || current_function || current_object_ || !p_.main ||
               &statements != &p_.main->body)
             err(statement.line, "domain construction is allowed only in the main composition prefix");
+          check_domain_constructor_state_initializers(
+              statement, *constructed, current_env);
           return;
         }
         auto existing = current_env.find(statement.a);
