@@ -3311,6 +3311,34 @@ class Checker {
     return id;
   }
 
+  const FunctionSpecialization* checked_static_specialization_for_occurrence(
+      const Function& target, std::uint32_t arena, est::ExprId expression,
+      int line) const {
+    if (current_spec_id_ == InvalidSpecId)
+      err(line, "checked static call has no caller SpecId",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto selected = select_exact_semantic_call_edge(
+        p_, current_spec_id_, arena, expression);
+    if (selected.kind != ExactSemanticCallEdgeLookup::Kind::Unique ||
+        !selected.edge || selected.edge->target_kind !=
+            SemanticCallTargetKind::Static ||
+        selected.edge->target_callable_identity != target.semantic_callable_id ||
+        selected.edge->callee_spec_id == InvalidSpecId)
+      err(line, "checked static call edge is missing, duplicated, or contradictory",
+          "MOSS_INTERNAL_INVARIANT");
+    const FunctionSpecialization* result = nullptr;
+    std::size_t matches = 0;
+    for (const auto& specialization : target.specializations)
+      if (specialization.spec_id == selected.edge->callee_spec_id) {
+        result = &specialization;
+        ++matches;
+      }
+    if (matches != 1 || !result)
+      err(line, "checked static call edge names an unknown specialization SpecId",
+          "MOSS_INTERNAL_INVARIANT");
+    return result;
+  }
+
   void assign_declared_spec_ids() {
     p_.specialization_table.clear();
     for (auto& function : p_.functions) {
@@ -3318,8 +3346,7 @@ class Checker {
           ? function_semantic_identity(function)
           : function.semantic_callable_id;
       function.spec_id = register_program_specification(
-          program_module_identity(p_, function.defining_module) + ":" +
-              callable,
+          callable,
           "fn:" + function.name, std::nullopt,
           program_module_identity(p_, function.defining_module));
       for (auto& specialization : function.specializations) {
@@ -3335,9 +3362,8 @@ class Checker {
       }
     }
     for (auto& object : p_.objects) {
-      const string owner = program_module_identity(p_, object.defining_module) + ":" +
-          (object.declaration_name.empty() ? object.name
-                                           : object.declaration_name);
+      const string owner = object.declaration_name.empty()
+          ? object.name : object.declaration_name;
       for (auto& method : object.methods) {
         string signature = owner + ":method:" + method.name + ":" +
             std::to_string(method.params.size());
@@ -3346,10 +3372,35 @@ class Checker {
           signature += ":" + std::to_string(type.size()) + ":" + type;
         }
         signature += ":source-line:" + std::to_string(method.line);
+        const string declaration_signature = signature;
+        method.semantic_callable_id = "method-v1:" + declaration_signature;
         method.spec_id = register_program_specification(
-            std::move(signature), "method:" + object.name + "." + method.name,
+            method.semantic_callable_id + ":declaration",
+            "method:" + object.name + "." + method.name,
             std::nullopt,
             program_module_identity(p_, object.defining_module));
+        // A declaration identity is not a checked body identity. Methods are
+        // currently checked once per closed source signature, so create one
+        // explicit body specialization row for that checked body. Keeping the
+        // two IDs separate prevents consumers from treating a declaration as
+        // proof that a particular overload body was selected.
+        string body_key = "method-body-v1:" +
+            std::to_string(declaration_signature.size()) + ":" +
+            declaration_signature + ":" + std::to_string(method.params.size());
+        vector<string> parameter_types;
+        for (const auto& parameter : method.params) {
+          const auto type = canonical_type_name(parameter.type);
+          parameter_types.push_back(type);
+          body_key += ":" + std::to_string(type.size()) + ":" + type;
+        }
+        const SpecId body_spec_id = register_program_specification(
+            method.semantic_callable_id,
+            "method-body:" + object.name + "." + method.name,
+            std::nullopt,
+            program_module_identity(p_, object.defining_module));
+        method.specializations.clear();
+        method.specializations.push_back(
+            {body_key, std::move(parameter_types), body_spec_id});
       }
     }
     for (auto& domain : p_.domains) {
@@ -10612,7 +10663,13 @@ class Checker {
       }
       current_object_ = &object;
       for (auto& method : const_cast<ObjectType&>(object).methods) {
-        SpecIdScope spec_id_scope(current_spec_id_, method.spec_id);
+        if (method.specializations.size() != 1 ||
+            method.specializations.front().spec_id == InvalidSpecId)
+          err(method.line,
+              "checked method body has missing or ambiguous specialization SpecId",
+              "MOSS_INTERNAL_INVARIANT");
+        SpecIdScope spec_id_scope(
+            current_spec_id_, method.specializations.front().spec_id);
         string method_source = method.source_file.empty() ? object.source_file : method.source_file;
         current_source_file_ = method_source;
         string signature = method.name + "/" + std::to_string(method.params.size());
@@ -24510,7 +24567,12 @@ class Checker {
     }
     for (auto& object : p_.objects) {
       for (auto& method : object.methods) {
-        SpecIdScope spec_id_scope(current_spec_id_, method.spec_id);
+        if (method.specializations.size() != 1 ||
+            method.specializations.front().spec_id == InvalidSpecId)
+          throw std::logic_error(
+              "functional method body has missing or ambiguous specialization SpecId");
+        SpecIdScope spec_id_scope(
+            current_spec_id_, method.specializations.front().spec_id);
         method.result_functional_pipeline_ids.clear();
         method.result_functional_expression_plans_by_spec_id.clear();
         TypeEnv env;
@@ -24567,7 +24629,13 @@ class Checker {
     for (const auto& object : p_.objects) {
       current_object_ = &object;
       for (const auto& method : object.methods) {
-        SpecIdScope spec_id_scope(current_spec_id_, method.spec_id);
+        if (method.specializations.size() != 1 ||
+            method.specializations.front().spec_id == InvalidSpecId)
+          err(method.line,
+              "ownership method body has missing or ambiguous specialization SpecId",
+              "MOSS_INTERNAL_INVARIANT");
+        SpecIdScope spec_id_scope(
+            current_spec_id_, method.specializations.front().spec_id);
         if (compiled_interface_file(method.source_file)) continue;
         SourceFileScope source_scope(current_source_file_, method.source_file);
         SourceFileScope semantic_context(
@@ -25077,14 +25145,12 @@ class Checker {
                       call->arguments.size()) {
                 checked_effects = &target->second->parameter_effects;
               } else if (target->second->static_dispatch) {
-                const auto selected = checked_call_edge_specialization(
-                    p_, current_semantic_context_, target->second->name,
-                    statement.line);
-                if (selected.kind == CheckedCallEdgeSelectionKind::Unique &&
-                    selected.unique &&
-                    selected.unique->parameter_effects.size() ==
-                        statement.args.size())
-                  checked_effects = &selected.unique->parameter_effects;
+                const auto* selected = checked_static_specialization_for_occurrence(
+                    *target->second, occurrence->est_arena_index,
+                    occurrence->est_expr_id, statement.line);
+                if (selected->parameter_effects.size() ==
+                    statement.args.size())
+                  checked_effects = &selected->parameter_effects;
               }
               if (checked_effects) {
                 auto expr_is_alias = [&](est::ExprId expr) {
@@ -25293,14 +25359,12 @@ class Checker {
                       statement.args.size()) {
                 checked_effects = &target->second->parameter_effects;
               } else if (target->second->static_dispatch) {
-                const auto selected = checked_call_edge_specialization(
-                    p_, current_semantic_context_, target->second->name,
-                    statement.line);
-                if (selected.kind == CheckedCallEdgeSelectionKind::Unique &&
-                    selected.unique &&
-                    selected.unique->parameter_effects.size() ==
-                        statement.args.size())
-                  checked_effects = &selected.unique->parameter_effects;
+                const auto* selected = checked_static_specialization_for_occurrence(
+                    *target->second, call.est_arena_index,
+                    call.est_expr_id, statement.line);
+                if (selected->parameter_effects.size() ==
+                    statement.args.size())
+                  checked_effects = &selected->parameter_effects;
               }
             }
             if (checked_effects) {
@@ -26524,14 +26588,12 @@ class Checker {
                         call->arguments.size()) {
                   checked_effects = &target->second->parameter_effects;
                 } else if (target->second->static_dispatch) {
-                  const auto selected = checked_call_edge_specialization(
-                      p_, current_semantic_context_, target->second->name,
+                  const auto* selected = checked_static_specialization_for_occurrence(
+                      *target->second, handle.arena_index, node_id,
                       statement.line);
-                  if (selected.kind == CheckedCallEdgeSelectionKind::Unique &&
-                      selected.unique &&
-                      selected.unique->parameter_effects.size() ==
-                          call->arguments.size())
-                    checked_effects = &selected.unique->parameter_effects;
+                  if (selected->parameter_effects.size() ==
+                      call->arguments.size())
+                    checked_effects = &selected->parameter_effects;
                 }
                 if (checked_effects)
                   for (size_t argument = 0;
@@ -26752,14 +26814,12 @@ class Checker {
                             statement.args.size()) {
                       checked_effects = &target->second->parameter_effects;
                     } else if (target->second->static_dispatch) {
-                      const auto selected = checked_call_edge_specialization(
-                          p_, current_semantic_context_, target->second->name,
-                          statement.line);
-                      if (selected.kind == CheckedCallEdgeSelectionKind::Unique &&
-                          selected.unique &&
-                          selected.unique->parameter_effects.size() ==
-                              statement.args.size())
-                        checked_effects = &selected.unique->parameter_effects;
+                      const auto* selected = checked_static_specialization_for_occurrence(
+                          *target->second, call.est_arena_index,
+                          call.est_expr_id, statement.line);
+                      if (selected->parameter_effects.size() ==
+                          statement.args.size())
+                        checked_effects = &selected->parameter_effects;
                     }
                   }
                   if (checked_effects) {
@@ -37118,11 +37178,14 @@ class Checker {
                 ? resolve_method(canonical_type_name(*receiver_type),
                                  method_name, argument_types, true, nullptr)
                 : nullptr;
-            if (!selected_method ||
-                selected_method->spec_id == InvalidSpecId ||
-                selected_method->spec_id >= p_.specialization_table.size())
+            const MethodSpecializationIdentity* selected_method_body =
+                selected_method && selected_method->specializations.size() == 1
+                    ? &selected_method->specializations.front() : nullptr;
+            if (!selected_method || !selected_method_body ||
+                selected_method_body->spec_id == InvalidSpecId ||
+                selected_method_body->spec_id >= p_.specialization_table.size())
               err(line,
-                  "checked method Call has missing or ambiguous declaration SpecId",
+                  "checked method Call has missing or ambiguous body specialization SpecId",
                   "MOSS_INTERNAL_INVARIANT");
             vector<SemanticCallEdge*> exact_rows;
             for (auto& edge : p_.semantic_call_edges)
@@ -37142,10 +37205,10 @@ class Checker {
               edge.source_file = current_source_file_;
               edge.invocation_kind = "ordinary_call";
               edge.caller_spec_id = spec_id;
-              edge.callee_spec_id = selected_method->spec_id;
+              edge.callee_spec_id = selected_method_body->spec_id;
               edge.target_kind = SemanticCallTargetKind::Static;
               edge.target_callable_identity =
-                  p_.specialization_table[selected_method->spec_id]
+                  p_.specialization_table[selected_method_body->spec_id]
                       .semantic_callable_identity;
               edge.call_est_arena_index = cursor.arena_index;
               edge.call_expression_occurrence_id = cursor.expr;
@@ -37153,14 +37216,14 @@ class Checker {
             } else {
               auto& edge = *exact_rows.front();
               if (edge.callee_spec_id != InvalidSpecId &&
-                  edge.callee_spec_id != selected_method->spec_id)
+                  edge.callee_spec_id != selected_method_body->spec_id)
                 err(line,
                     "checked method Call acquired contradictory SpecIds",
                     "MOSS_INTERNAL_INVARIANT");
-              edge.callee_spec_id = selected_method->spec_id;
+              edge.callee_spec_id = selected_method_body->spec_id;
               edge.target_kind = SemanticCallTargetKind::Static;
               edge.target_callable_identity =
-                  p_.specialization_table[selected_method->spec_id]
+                  p_.specialization_table[selected_method_body->spec_id]
                       .semantic_callable_identity;
             }
           }

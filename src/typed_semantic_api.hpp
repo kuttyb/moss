@@ -4061,6 +4061,8 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
   for (auto& object : provider.objects)
     for (auto& method : object.methods) {
       remap_id(method.spec_id);
+      for (auto& specialization : method.specializations)
+        remap_id(specialization.spec_id);
       remap_body(remap_body, method.body);
     }
   for (auto& domain : provider.domains)
