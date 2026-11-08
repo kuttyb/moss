@@ -151,7 +151,11 @@ fn main():
                              f"{source_free_fast.stdout!r}/"
                              f"{source_free_fast.stderr!r}")
     for hook in ("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION",
-                 "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"):
+                 "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID",
+                 "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_REQUIREMENT",
+                 "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_REQUIREMENT",
+                 "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT",
+                 "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT"):
         shutil.rmtree(source_free_project / "build", ignore_errors=True)
         corrupted = run([margo, "debug"],
                         {**source_free_env, hook: "1"}, source_free_project)

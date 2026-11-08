@@ -251,10 +251,13 @@ string module_name_from_symbol(const string& symbol) {
 void build_type_context(Program& program) {
   auto context = std::make_shared<moss::TypeContext>();
   for (auto& function : program.functions) {
+    if (!function.semantic_callable_id.empty()) continue;
     const string& declaration = function.declaration_name.empty()
         ? function.name : function.declaration_name;
+    const string& defining_module = function.defining_module.empty()
+        ? program.module_name : function.defining_module;
     function.semantic_callable_id = "callable-v1:" +
-        program_module_identity(program, function.defining_module) +
+        program_module_identity(program, defining_module) +
         ":fn:" + declaration;
   }
   auto declare = [&](moss::DeclarationKind kind, const string& program_name,

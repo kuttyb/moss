@@ -19157,3 +19157,29 @@ untouched.
 - `git diff --check` passes. Feedback JSONL includes the updated body-mapping
   finding and the new exact nested-cursor/constructor-authority observation;
   validate feedback before any integration checkpoint.
+
+## Team B follow-up after snapshot `4ae3aa71` (2026-11-07)
+
+- Source-free method ReturnValue gate is green on the isolated Team B branch:
+  source-visible and source-free Native/Fast Debug both output `9`; source-free
+  ReturnValue requirement/fact DROP and DUPLICATE hooks all fail closed. The
+  fixture uses a provider-only artifact, avoiding unrelated app SpecIds.
+- Imported function effect inference still resets and analyzes using only the
+  `.mossi` filename suffix, while module resolution preserves provider `.moss`
+  source provenance and separately records the imported `defining_module`.
+  Team A owns the checker correction; no `semantic_checker.cpp` change remains
+  in this branch.
+- A source-free generic `identity(Payload)` probe is not green. Under
+  `MOSS_STAGED_ABI=v10`, consumer check fails before Fast Debug with
+  `imported parameter-return EST expression has no checker SpecId owner`.
+  Under ABI-v9, Fast Debug exited 245 without output after Native printed `9`.
+  The canonical imported `pair(normalize(10), normalize(3.5))` gate remains
+  blocked by the separate generic-template ReturnValue artifact producer issue.
+- `build_type_context()` has an uncommitted WIP change to preserve existing
+  callable identities and use the Program module when assigning a fresh
+  identity. It compiles, but the generic source-free repro has not passed; do
+  not treat this as independently green or integrate it yet.
+- Latest focused validation: `make --jobs=2 MOSS_LDFLAGS= moss-dev`, Python
+  compilation for the method gate, the method gate itself, feedback validation,
+  and `git diff --check` pass. Full identity gate, field grid, full suites, and
+  corpus were not rerun as acceptance evidence.
