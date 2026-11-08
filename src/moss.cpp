@@ -15968,6 +15968,18 @@ static string execution_body_resolve_source_path(
   return (*root / path).lexically_normal().string();
 }
 
+// Generic declarations carry a checked open scheme, not an executable concrete
+// ownership decision. Concrete instantiations must produce their own authority.
+static bool uninstantiated_open_return_template(const Function& function) {
+  if (!(function.generic || function.static_dispatch) ||
+      !function.specializations.empty()) return false;
+  if (function.return_type_ref)
+    return !function.return_type_ref->is_closed();
+  if (!function.return_type) return false;
+  const auto type = Type::parse_canonical(*function.return_type);
+  return type && !(*type)->is_closed();
+}
+
 static void parse_execution_body_payload(ExecutionBodySectionView& section,
                                          Program& provider,
                                          const std::filesystem::path& file) {
@@ -16379,7 +16391,11 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         std::set<std::uint32_t> artifact_return_ordinals;
         for (const auto& artifact : artifact_ordinals)
           artifact_return_ordinals.insert(artifact.first);
-        if (artifact_return_ordinals != valued_return_ordinals)
+        const bool deferred_template = section.version >= 3 &&
+            artifact_ordinals.empty() &&
+            uninstantiated_open_return_template(*function);
+        if (artifact_return_ordinals != valued_return_ordinals &&
+            !deferred_template)
           throw CompileError(std::max(declaration_line, 0),
               "source-free execution body has missing or duplicate ReturnValue authority",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -23634,7 +23650,8 @@ static void write_execution_body_statement(std::ostream& out,
 
 static vector<string> execution_return_value_artifact_records(
     const ProjectManifest& manifest, const Program& program,
-    const vector<Stmt>& body, const string& callable_identity) {
+    const vector<Stmt>& body, const string& callable_identity,
+    bool deferred_template = false) {
   vector<string> records;
   const string body_hash = execution_body_statements_hash(body);
   for (size_t ordinal = 0; ordinal < body.size(); ++ordinal) {
@@ -23698,6 +23715,18 @@ static vector<string> execution_return_value_artifact_records(
       }
     }
 #endif
+    if (matching_facts.empty() && deferred_template) {
+      const bool has_requirement = std::any_of(
+          program.typed_semantics->required_return_value_occurrences.begin(),
+          program.typed_semantics->required_return_value_occurrences.end(),
+          [&](const TypedReturnValueRequirementV1& requirement) {
+        return requirement.statement_occurrence_id ==
+                   statement.checked_statement_occurrence_id &&
+               requirement.est_arena_index == handle->arena_index &&
+               requirement.expression_occurrence_id == handle->expr;
+      });
+      if (!has_requirement) continue;
+    }
     if (matching_facts.empty())
       throw CompileError(statement.line,
           "source-free body has missing or ambiguous checked ReturnValue fact",
@@ -23773,7 +23802,8 @@ static vector<string> execution_return_value_artifact_records(
     const ProjectManifest& manifest, const Program& program,
     const Function& function) {
   return execution_return_value_artifact_records(
-      manifest, program, function.body, "fn:" + function.name);
+      manifest, program, function.body, "fn:" + function.name,
+      uninstantiated_open_return_template(function));
 }
 
 static vector<string> execution_return_value_artifact_records(
