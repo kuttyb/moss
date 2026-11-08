@@ -15762,7 +15762,8 @@ static string encode_return_value_artifact_record(
       << std::quoted(fact.provenance.source_file) << " "
       << fact.provenance.line << " "
       << std::quoted(fact.provenance.defining_module_id) << " "
-      << std::quoted(fact.provenance.enclosing_callable_id);
+      << std::quoted(fact.provenance.enclosing_callable_id) << " "
+      << fact.specialization_id;
   return record.str();
 }
 
@@ -15787,7 +15788,8 @@ static TypedReturnValueArtifactFactV1 decode_return_value_artifact_record(
         owned_rvalue >> std::quoted(fact.provenance.source_file) >>
         fact.provenance.line >>
         std::quoted(fact.provenance.defining_module_id) >>
-        std::quoted(fact.provenance.enclosing_callable_id)))
+        std::quoted(fact.provenance.enclosing_callable_id) >>
+        fact.specialization_id))
     throw std::invalid_argument("malformed ReturnValue artifact record");
   string trailing;
   if (record >> trailing || slot != static_cast<unsigned>(
@@ -15807,6 +15809,19 @@ static TypedReturnValueArtifactFactV1 decode_return_value_artifact_record(
   if (!fact.is_well_formed())
     throw std::invalid_argument("ReturnValue artifact record is not authoritative");
   return fact;
+}
+
+static void validate_return_value_artifact_spec_id(
+    const Program& provider,
+    const TypedReturnValueArtifactFactV1& artifact) {
+  const auto module = provider.module_identities.find(provider.module_name);
+  if (module == provider.module_identities.end() || module->second.empty() ||
+      artifact.specialization_id == InvalidSpecId ||
+      artifact.specialization_id >= provider.specialization_table.size() ||
+      provider.specialization_table[artifact.specialization_id].module_identity !=
+          module->second)
+    throw std::invalid_argument(
+        "ReturnValue artifact references an unknown or foreign provider SpecId");
 }
 
 static string execution_body_short_name(const string& qualified) {
@@ -15848,6 +15863,16 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
   if (section.version >= 3)
     parse_execution_specialization_rows(input, provider, section);
   std::set<string> function_bodies, method_bodies, handler_bodies;
+  std::map<SpecId, string> execution_body_spec_owners;
+  auto register_execution_body_spec_owner = [&](SpecId id,
+                                                const string& body_identity) {
+    const auto [found, inserted] = execution_body_spec_owners.emplace(
+        id, body_identity);
+    if (!inserted && found->second != body_identity)
+      throw CompileError(0,
+          "one checker SpecId is assigned to contradictory execution bodies",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  };
   while (std::getline(input, line)) {
     if (line.empty())
       throw CompileError(0, "empty record in ABI-v9 execution-body section",
@@ -16060,6 +16085,8 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
               "function SpecId contradicts Section 1 declaration",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
         function->spec_id = function_spec_id;
+        register_execution_body_spec_owner(function_spec_id,
+                                            "function:" + function->name);
         if (!function->specializations.empty() &&
             function->specializations.size() != specialization_spec_ids.size())
           throw CompileError(std::max(declaration_line, 0),
@@ -16067,14 +16094,16 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
         if (function->specializations.empty())
           function->specializations.resize(specialization_spec_ids.size());
-        for (size_t index = 0; index < specialization_spec_ids.size(); ++index)
+        for (size_t index = 0; index < specialization_spec_ids.size(); ++index) {
+          register_execution_body_spec_owner(
+              specialization_spec_ids[index], "function:" + function->name);
           function->specializations[index].spec_id = specialization_spec_ids[index];
+        }
       }
-      if (function->generic || function->static_dispatch ||
-          (function->name.find("::") != string::npos &&
-           module_name_from_symbol(function->name) != provider.module_name))
+      if (function->name.find("::") != string::npos &&
+          module_name_from_symbol(function->name) != provider.module_name)
         throw CompileError(std::max(declaration_line, 0),
-            "execution body attempts to replace a generic or foreign function",
+            "execution body attempts to replace a foreign function",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       if (function->exported && function->params.size() != parameter_count)
         throw CompileError(std::max(declaration_line, 0),
@@ -16160,18 +16189,19 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       const string body_hash =
           execution_body_statements_hash(execution_statements);
-      std::set<std::uint32_t> artifact_ordinals;
+      std::set<std::pair<std::uint32_t, SpecId>> artifact_ordinals;
       vector<string> normalized_artifacts;
       for (const auto& encoded : return_value_artifact_records) {
         try {
           auto artifact = decode_return_value_artifact_record(encoded);
+          validate_return_value_artifact_spec_id(provider, artifact);
           const string source_callable = function->name.find("__") == string::npos
               ? provider.module_name + "__" + function->name : function->name;
           if (artifact.callable_identity != "fn:" + source_callable ||
               artifact.execution_body_hash != body_hash ||
               artifact.statement_preorder_ordinal >= execution_statements.size() ||
-              !artifact_ordinals.insert(
-                  artifact.statement_preorder_ordinal).second)
+              !artifact_ordinals.emplace(artifact.statement_preorder_ordinal,
+                                         artifact.specialization_id).second)
             throw std::invalid_argument(
                 "ReturnValue artifact callable, body, or ordinal mismatch");
           const auto ordinal = artifact.statement_preorder_ordinal;
@@ -16205,11 +16235,15 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         }
       }
       if (section.version >= 2) {
-        size_t valued_return_count = 0;
+        std::set<std::uint32_t> valued_return_ordinals;
         for (size_t ordinal = 0; ordinal < execution_statements.size(); ++ordinal)
           if (execution_statements[ordinal].kind == Stmt::Kind::Return &&
-              !execution_statements[ordinal].a.empty()) ++valued_return_count;
-        if (normalized_artifacts.size() != valued_return_count)
+              !execution_statements[ordinal].a.empty())
+            valued_return_ordinals.insert(static_cast<std::uint32_t>(ordinal));
+        std::set<std::uint32_t> artifact_return_ordinals;
+        for (const auto& artifact : artifact_ordinals)
+          artifact_return_ordinals.insert(artifact.first);
+        if (artifact_return_ordinals != valued_return_ordinals)
           throw CompileError(std::max(declaration_line, 0),
               "source-free execution body has missing or duplicate ReturnValue authority",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -16383,11 +16417,12 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       const string body_hash =
           execution_body_statements_hash(execution_statements);
-      std::set<std::uint32_t> artifact_ordinals;
+      std::set<std::pair<std::uint32_t, SpecId>> artifact_ordinals;
       vector<string> normalized_artifacts;
       for (const auto& encoded : return_value_artifact_records) {
         try {
           auto artifact = decode_return_value_artifact_record(encoded);
+          validate_return_value_artifact_spec_id(provider, artifact);
           const string method_owner = object->name.find("__") == string::npos
               ? provider.module_name + "__" + object->name : object->name;
           const string callable_identity =
@@ -16403,8 +16438,8 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
               execution_statements.size())
             throw std::invalid_argument(
                 "ReturnValue artifact statement ordinal is out of range");
-          if (!artifact_ordinals.insert(
-                  artifact.statement_preorder_ordinal).second)
+          if (!artifact_ordinals.emplace(artifact.statement_preorder_ordinal,
+                                         artifact.specialization_id).second)
             throw std::invalid_argument(
                 "duplicate ReturnValue artifact statement ordinal");
           const auto ordinal = artifact.statement_preorder_ordinal;
@@ -16627,11 +16662,12 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
       const string handler_callable = "handler:" + owner + "." + name;
       const string handler_body_hash =
           execution_body_statements_hash(handler_execution_statements);
-      std::set<std::uint32_t> handler_artifact_ordinals;
+      std::set<std::pair<std::uint32_t, SpecId>> handler_artifact_ordinals;
       vector<string> normalized_handler_artifacts;
       for (const auto& encoded : handler_return_value_artifact_records) {
         try {
           auto artifact = decode_return_value_artifact_record(encoded);
+          validate_return_value_artifact_spec_id(provider, artifact);
 #ifdef MOSS_TEST_BUILD
           if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_OWNER"))
             artifact.callable_identity += ":wrong-owner";
@@ -16644,8 +16680,9 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
               artifact.execution_body_hash != handler_body_hash ||
               artifact.statement_preorder_ordinal >=
                   handler_execution_statements.size() ||
-              !handler_artifact_ordinals.insert(
-                  artifact.statement_preorder_ordinal).second)
+              !handler_artifact_ordinals.emplace(
+                  artifact.statement_preorder_ordinal,
+                  artifact.specialization_id).second)
             throw std::invalid_argument(
                 "Reply artifact callable, body, or ordinal mismatch");
           const auto& statement = handler_execution_statements[
@@ -16753,10 +16790,11 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         arm.execution_return_value_body_hash =
             execution_body_statements_hash(arm.body);
         arm.execution_body_section_version = section.version;
-        std::set<std::uint32_t> arm_artifact_ordinals;
+        std::set<std::pair<std::uint32_t, SpecId>> arm_artifact_ordinals;
         for (const auto& encoded : arm_artifact_records) {
           try {
             auto artifact = decode_return_value_artifact_record(encoded);
+            validate_return_value_artifact_spec_id(provider, artifact);
 #ifdef MOSS_TEST_BUILD
             if (std::getenv("MOSS_TEST_PERTURB_RETURN_VALUE_HANDLER_ARTIFACT_OWNER"))
               artifact.callable_identity += ":wrong-owner";
@@ -16769,8 +16807,9 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
                 artifact.execution_body_hash !=
                     arm.execution_return_value_body_hash ||
                 artifact.statement_preorder_ordinal >= arm.body.size() ||
-                !arm_artifact_ordinals.insert(
-                    artifact.statement_preorder_ordinal).second)
+                !arm_artifact_ordinals.emplace(
+                    artifact.statement_preorder_ordinal,
+                    artifact.specialization_id).second)
               throw std::invalid_argument(
                   "failure-arm Reply artifact callable, body, or ordinal mismatch");
             const auto& statement = arm.body[artifact.statement_preorder_ordinal];
@@ -19779,6 +19818,7 @@ static void project_imported_return_value_artifact_facts(Program& program) {
       throw CompileError(std::max(declaration_line, 0),
           "ReturnValue artifact does not belong to a unique external module",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    std::set<std::pair<std::uint32_t, SpecId>> seen_authorities;
     std::set<std::uint32_t> seen_ordinals;
     for (const auto& encoded : records) {
       try {
@@ -19791,9 +19831,32 @@ static void project_imported_return_value_artifact_facts(Program& program) {
           throw std::invalid_argument("ReturnValue artifact body hash mismatch");
         if (artifact.provenance.defining_module_id != module_identity->second)
           throw std::invalid_argument("ReturnValue artifact module identity mismatch");
-        if (!seen_ordinals.insert(
-                artifact.statement_preorder_ordinal).second)
-          throw std::invalid_argument("duplicate ReturnValue artifact ordinal");
+        if (artifact.specialization_id == InvalidSpecId)
+          throw std::invalid_argument("ReturnValue artifact has no checker SpecId");
+        SpecId remapped_specialization_id = InvalidSpecId;
+        size_t matching_specializations = 0;
+        for (const auto& identity : program.specialization_table) {
+          const string& provider_module =
+              identity.provider_module_identity.empty()
+                  ? identity.module_identity
+                  : identity.provider_module_identity;
+          const SpecId provider_spec_id =
+              identity.provider_module_identity.empty()
+                  ? identity.id : identity.provider_spec_id;
+          if (provider_module == module_identity->second &&
+              provider_spec_id == artifact.specialization_id) {
+            remapped_specialization_id = identity.id;
+            ++matching_specializations;
+          }
+        }
+        if (matching_specializations != 1)
+          throw std::invalid_argument(
+              "ReturnValue artifact SpecId does not resolve to one qualified provider identity");
+        if (!seen_authorities.emplace(artifact.statement_preorder_ordinal,
+                                      artifact.specialization_id).second)
+          throw std::invalid_argument(
+              "duplicate ReturnValue artifact ordinal and SpecId");
+        seen_ordinals.insert(artifact.statement_preorder_ordinal);
         if (artifact.statement_preorder_ordinal >= body->size())
           throw std::invalid_argument(
               "ReturnValue artifact ordinal " +
@@ -19834,6 +19897,7 @@ static void project_imported_return_value_artifact_facts(Program& program) {
         // in-memory fact instead binds to the exact rebuilt EST span, which
         // can use a different column convention after Section 2 reconstruction.
         fact.specialization_identity = artifact.specialization_identity;
+        fact.specialization_id = remapped_specialization_id;
         fact.specialization_context = artifact.specialization_context;
         fact.est_fact_context = artifact.est_fact_context;
         fact.provenance = artifact.provenance;
@@ -23214,9 +23278,7 @@ static vector<string> execution_return_value_artifact_records(
       throw CompileError(statement.line,
           "source-free body has no exact checked ReturnValue handle",
           "MOSS_INTERNAL_INVARIANT");
-    const TypedReturnValueFactV1* fact = nullptr;
-    const TypedReturnValueRequirementV1* requirement = nullptr;
-    size_t fact_count = 0, requirement_count = 0;
+    vector<const TypedReturnValueFactV1*> matching_facts;
     for (const auto& candidate : program.typed_semantics->return_value_facts) {
       if (candidate.statement_occurrence_id !=
               statement.checked_statement_occurrence_id ||
@@ -23224,61 +23286,75 @@ static vector<string> execution_return_value_artifact_records(
           candidate.expression_occurrence_id != handle->expr ||
           candidate.provenance.enclosing_callable_id != callable_identity)
         continue;
-      fact = &candidate;
-      ++fact_count;
+      matching_facts.push_back(&candidate);
     }
-    for (const auto& candidate :
-         program.typed_semantics->required_return_value_occurrences) {
-      if (candidate.statement_occurrence_id !=
-              statement.checked_statement_occurrence_id ||
-          candidate.est_arena_index != handle->arena_index ||
-          candidate.expression_occurrence_id != handle->expr ||
-          candidate.provenance.enclosing_callable_id != callable_identity)
-        continue;
-      requirement = &candidate;
-      ++requirement_count;
-    }
-    if (fact_count != 1 || requirement_count != 1 || !fact || !requirement ||
-        fact->provenance.line != statement.line ||
-        !fact->is_authoritative() ||
-        program.typed_semantics->find_return_value_fact(*requirement) != fact)
+    if (matching_facts.empty())
       throw CompileError(statement.line,
           "source-free body has missing or ambiguous checked ReturnValue fact",
           "MOSS_INTERNAL_INVARIANT");
-    const auto& span = fact->expression_occurrence_span;
-    TypedReturnValueArtifactFactV1 artifact;
-    artifact.callable_identity = callable_identity;
-    artifact.execution_body_hash = body_hash;
-    artifact.statement_preorder_ordinal = static_cast<std::uint32_t>(ordinal);
-    artifact.value_slot = TypedReturnValueArtifactFactV1::ValueSlot::ReturnValue;
-    artifact.value_argument_index = 0;
-    artifact.source_line = fact->provenance.line;
-    artifact.expression_span_line = span.line;
-    artifact.expression_span_column = span.column;
-    artifact.expression_source_begin = span.source_begin;
-    artifact.expression_source_end = span.source_end;
-    artifact.expression_source_fingerprint = handle->source_fingerprint;
-    artifact.specialization_identity = fact->specialization_identity;
-    artifact.specialization_context = fact->specialization_context;
-    artifact.est_fact_context = fact->est_fact_context;
-    artifact.expression_type = fact->expression_type;
-    artifact.source_binding_identity = fact->source_binding_identity;
-    artifact.source_definition_identity = fact->source_definition_identity;
-    artifact.required_access = fact->required_access;
-    artifact.action = fact->action;
-    artifact.checker_proved_owned_rvalue = fact->checker_proved_owned_rvalue;
-    artifact.provenance = fact->provenance;
-    artifact.provenance.source_file = project_relative_path(
-        manifest, fact->provenance.source_file);
-    if (!artifact.is_well_formed())
-      throw CompileError(statement.line,
-          "source-free body ReturnValue authority cannot be transported",
-          "MOSS_INTERNAL_INVARIANT");
-    string encoded = encode_return_value_artifact_record(artifact);
-    const string prefix = "return_value_fact_v1 ";
-    if (!starts_with(encoded, prefix))
-      throw std::logic_error("ReturnValue artifact encoder omitted its record tag");
-    records.push_back(encoded.substr(prefix.size()));
+    std::set<SpecId> serialized_spec_ids;
+    for (const auto* fact : matching_facts) {
+      if (!fact || fact->specialization_id == InvalidSpecId ||
+          !serialized_spec_ids.insert(fact->specialization_id).second ||
+          fact->provenance.line != statement.line || !fact->is_authoritative())
+        throw CompileError(statement.line,
+            "source-free body has duplicate or malformed checked ReturnValue authority",
+            "MOSS_INTERNAL_INVARIANT");
+      const TypedReturnValueRequirementV1* requirement = nullptr;
+      size_t requirement_count = 0;
+      for (const auto& candidate :
+           program.typed_semantics->required_return_value_occurrences) {
+        if (candidate.statement_occurrence_id !=
+                statement.checked_statement_occurrence_id ||
+            candidate.est_arena_index != handle->arena_index ||
+            candidate.expression_occurrence_id != handle->expr ||
+            candidate.specialization_id != fact->specialization_id ||
+            candidate.provenance.enclosing_callable_id != callable_identity)
+          continue;
+        requirement = &candidate;
+        ++requirement_count;
+      }
+      if (requirement_count != 1 || !requirement ||
+          program.typed_semantics->find_return_value_fact(*requirement) != fact)
+        throw CompileError(statement.line,
+            "source-free body has missing or ambiguous checked ReturnValue requirement",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto& span = fact->expression_occurrence_span;
+      TypedReturnValueArtifactFactV1 artifact;
+      artifact.callable_identity = callable_identity;
+      artifact.execution_body_hash = body_hash;
+      artifact.statement_preorder_ordinal = static_cast<std::uint32_t>(ordinal);
+      artifact.value_slot = TypedReturnValueArtifactFactV1::ValueSlot::ReturnValue;
+      artifact.value_argument_index = 0;
+      artifact.source_line = fact->provenance.line;
+      artifact.expression_span_line = span.line;
+      artifact.expression_span_column = span.column;
+      artifact.expression_source_begin = span.source_begin;
+      artifact.expression_source_end = span.source_end;
+      artifact.expression_source_fingerprint = handle->source_fingerprint;
+      artifact.specialization_identity = fact->specialization_identity;
+      artifact.specialization_id = fact->specialization_id;
+      artifact.specialization_context = fact->specialization_context;
+      artifact.est_fact_context = fact->est_fact_context;
+      artifact.expression_type = fact->expression_type;
+      artifact.source_binding_identity = fact->source_binding_identity;
+      artifact.source_definition_identity = fact->source_definition_identity;
+      artifact.required_access = fact->required_access;
+      artifact.action = fact->action;
+      artifact.checker_proved_owned_rvalue = fact->checker_proved_owned_rvalue;
+      artifact.provenance = fact->provenance;
+      artifact.provenance.source_file = project_relative_path(
+          manifest, fact->provenance.source_file);
+      if (!artifact.is_well_formed())
+        throw CompileError(statement.line,
+            "source-free body ReturnValue authority cannot be transported",
+            "MOSS_INTERNAL_INVARIANT");
+      string encoded = encode_return_value_artifact_record(artifact);
+      const string prefix = "return_value_fact_v1 ";
+      if (!starts_with(encoded, prefix))
+        throw std::logic_error("ReturnValue artifact encoder omitted its record tag");
+      records.push_back(encoded.substr(prefix.size()));
+    }
   }
   return records;
 }
@@ -23717,9 +23793,12 @@ static string encode_execution_body_payload(
 
   vector<const Function*> functions;
   for (const auto& function : program.functions) {
+    const bool exported_template = function.exported &&
+        (function.generic || function.static_dispatch);
     if (module_name_from_symbol(function.name) != module ||
-        program.external_modules.count(module) || function.generic ||
-        function.static_dispatch || !function.provider_origin_file.empty() ||
+        program.external_modules.count(module) ||
+        ((function.generic || function.static_dispatch) &&
+         !exported_template) || !function.provider_origin_file.empty() ||
         (!function.exported &&
          !execution_callables.count("fn:" + function.name)))
       continue;

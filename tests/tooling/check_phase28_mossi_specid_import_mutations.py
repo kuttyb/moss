@@ -114,6 +114,36 @@ def edit_call_row_count(text: str, *, duplicate: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
+def edit_function_owner(text: str, *, mode: str) -> str:
+    lines = text.splitlines()
+    rows = [index for index, line in enumerate(lines)
+            if line.startswith("function ")]
+    if not rows:
+        raise AssertionError("provider fixture emitted no function body owner")
+    parsed = [(index, shlex.split(lines[index])) for index in rows]
+    if mode == "missing":
+        parsed[0][1][11] = str(2**32 - 1)
+    elif mode == "contradictory":
+        if len(parsed) < 2:
+            raise AssertionError("provider fixture needs two callable bodies")
+        parsed[0][1][11] = parsed[1][1][11]
+    elif mode == "duplicate_record":
+        start = rows[0]
+        end = next((index for index in range(start + 1, len(lines))
+                    if lines[index] == "function_end"), None)
+        if end is None:
+            raise AssertionError("unterminated provider function body")
+        lines[end + 1:end + 1] = lines[start:end + 1]
+        return "\n".join(lines) + "\n"
+    else:
+        raise AssertionError(f"unknown function owner mutation {mode}")
+    index, fields = parsed[0]
+    lines[index] = "function " + " ".join(
+        json.dumps(value) if offset in (0, 5, 6, 7, 9)
+        else value for offset, value in enumerate(fields[1:]))
+    return "\n".join(lines) + "\n"
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_phase28_mossi_specid_import_mutations.py COMPILER",
@@ -157,6 +187,15 @@ def main() -> int:
             (str(provider_artifacts), str(base_artifacts)))}
         originals = interface.read_text(encoding="utf-8")
         mutation_cases = (
+            ("missing template body owner", lambda text: edit_function_owner(
+                text, mode="missing"),
+             "missing function SpecId ownership"),
+            ("duplicate template body owner", lambda text: edit_function_owner(
+                text, mode="duplicate_record"),
+             "execution-body function is undeclared or duplicated"),
+            ("contradictory template body owner", lambda text: edit_function_owner(
+                text, mode="contradictory"),
+             "one checker SpecId is assigned to contradictory execution bodies"),
             ("duplicate call row", lambda text: edit_call_row_count(
                 text, duplicate=True),
              "invalid, duplicate, or unknown-ID call edge"),
