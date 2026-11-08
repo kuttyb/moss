@@ -24,6 +24,7 @@
 #include "ast.hpp"
 #include "numeric_literal.hpp"
 #include "numeric_runtime.hpp"
+#include "program_identity.hpp"
 #include "rust_float_display.hpp"
 #include "type_placeholders.hpp"
 #include "semantic_checker_support.hpp"
@@ -141,6 +142,41 @@ class FastInterpreter {
 
 #ifdef MOSS_TEST_BUILD
   void init_test_hooks() {
+    const char* constructor_mutation =
+        std::getenv("MOSS_TEST_CONSTRUCTOR_OBJECT_MUTATION");
+    const char* constructor_target =
+        std::getenv("MOSS_TEST_CONSTRUCTOR_TARGET_ID");
+    if (constructor_mutation && constructor_target) {
+      test_constructor_object_table_ = program_.objects;
+      auto& objects = *test_constructor_object_table_;
+      std::vector<std::size_t> matches;
+      for (std::size_t index = 0; index < objects.size(); ++index) {
+        const auto& candidate = objects[index];
+        std::string module_identity;
+        try {
+          module_identity = program_module_identity(
+              program_, candidate.defining_module);
+        } catch (const std::exception&) {
+          continue;
+        }
+        const std::string candidate_name = candidate.declaration_name.empty()
+            ? candidate.name : candidate.declaration_name;
+        if (declaration_identity(DeclarationKind::Record, module_identity,
+                                 candidate_name) == constructor_target)
+          matches.push_back(index);
+      }
+      if (matches.size() == 1) {
+        const std::size_t index = matches.front();
+        if (std::string_view(constructor_mutation) == "drop") {
+          objects.erase(objects.begin() + static_cast<std::ptrdiff_t>(index));
+        } else if (std::string_view(constructor_mutation) == "duplicate") {
+          objects.push_back(objects[index]);
+        } else if (std::string_view(constructor_mutation) == "wrong-module") {
+          objects[index].defining_module = "__moss_test_wrong_module__";
+        }
+      }
+    }
+
     auto* semantics = program_.typed_semantics.get();
     if (!semantics) return;
 
@@ -990,6 +1026,9 @@ class FastInterpreter {
   };
 
   const Program& program_;
+#ifdef MOSS_TEST_BUILD
+  std::optional<std::vector<ObjectType>> test_constructor_object_table_;
+#endif
   const TypedConditionalCollectionErrorFactV1*
       active_conditional_collection_error_fact_ = nullptr;
   const TypedCollectionViewFactV1* active_collection_view_fact_ = nullptr;
@@ -2005,16 +2044,24 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT checked constructor declaration identity is missing or contradictory");
     const ObjectType* selected = nullptr;
     std::size_t matches = 0;
-    for (const auto& candidate : program_.objects) {
-      const auto candidate_module = program_.module_identities.find(
-          candidate.defining_module);
-      if (candidate_module == program_.module_identities.end() ||
-          candidate_module->second.empty())
+#ifdef MOSS_TEST_BUILD
+    const auto& object_table = test_constructor_object_table_
+        ? *test_constructor_object_table_ : program_.objects;
+#else
+    const auto& object_table = program_.objects;
+#endif
+    for (const auto& candidate : object_table) {
+      std::string candidate_module_identity;
+      try {
+        candidate_module_identity = program_module_identity(
+            program_, candidate.defining_module);
+      } catch (const std::exception&) {
         continue;
+      }
       const std::string candidate_name = candidate.declaration_name.empty()
           ? candidate.name : candidate.declaration_name;
       if (declaration_identity(DeclarationKind::Record,
-                               candidate_module->second, candidate_name) !=
+                               candidate_module_identity, candidate_name) !=
           declaration->id)
         continue;
       selected = &candidate;

@@ -150,6 +150,22 @@ fn main():
                              f"{source_free_fast.returncode}/"
                              f"{source_free_fast.stdout!r}/"
                              f"{source_free_fast.stderr!r}")
+    constructor_target = (
+        "nominal-template-v1:module-v1:phase28_method_parameter_return@0.1.0::provider:type:Payload")
+    constructor_diagnostic = (
+        "MOSS_INTERNAL_INVARIANT checked constructor declaration has no unique ObjectType")
+    for mutation in ("drop", "duplicate", "wrong-module"):
+        corrupted = run(
+            [margo, "debug"],
+            {**source_free_env,
+             "MOSS_TEST_CONSTRUCTOR_OBJECT_MUTATION": mutation,
+             "MOSS_TEST_CONSTRUCTOR_TARGET_ID": constructor_target},
+            source_free_project)
+        combined = corrupted.stdout + corrupted.stderr
+        if corrupted.returncode == 0 or constructor_diagnostic not in combined:
+            raise AssertionError(
+                f"source-free constructor {mutation} did not reach the production "
+                f"ObjectType validator: exit={corrupted.returncode}, {combined!r}")
     for hook in ("MOSS_TEST_DROP_RETURN_VALUE_FACT",
                  "MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT",
                  "MOSS_TEST_PERTURB_RETURN_VALUE_FACT"):
