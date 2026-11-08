@@ -3325,6 +3325,52 @@ class Checker {
     return id;
   }
 
+  bool is_imported_declaration_module(const string& defining_module) const {
+    return !defining_module.empty() &&
+        p_.external_modules.count(defining_module) != 0;
+  }
+
+  const ProgramSpecializationIdentity& require_declared_specification(
+      SpecId id, const string& module_identity,
+      const string& semantic_callable_identity, bool imported,
+      int line, const string& description) {
+    if (id == InvalidSpecId || id >= p_.specialization_table.size())
+      err(line, description + " has a missing or unknown checker SpecId",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto& row = p_.specialization_table[id];
+    if (row.id != id || row.module_identity != module_identity ||
+        row.semantic_callable_identity != semantic_callable_identity)
+      err(line, description + " SpecId contradicts its checked module/callable row",
+          "MOSS_INTERNAL_INVARIANT");
+    if (imported) {
+      if (row.provider_module_identity != module_identity ||
+          row.provider_spec_id == InvalidSpecId)
+        err(line, description + " imported SpecId lost its qualified provider origin",
+            "MOSS_INTERNAL_INVARIANT");
+    } else if (!row.provider_module_identity.empty() ||
+               row.provider_spec_id != InvalidSpecId) {
+      err(line, description + " source-owned SpecId has an imported provider origin",
+          "MOSS_INTERNAL_INVARIANT");
+    }
+    return row;
+  }
+
+  void validate_existing_specialization_table() {
+    std::set<std::pair<string, SpecId>> provider_ids;
+    for (std::size_t index = 0; index < p_.specialization_table.size(); ++index) {
+      const auto& row = p_.specialization_table[index];
+      if (row.id != index || row.id == InvalidSpecId ||
+          row.semantic_callable_identity.empty() || row.module_identity.empty() ||
+          (row.provider_module_identity.empty() !=
+           (row.provider_spec_id == InvalidSpecId)) ||
+          (!row.provider_module_identity.empty() &&
+           !provider_ids.emplace(row.provider_module_identity,
+                                 row.provider_spec_id).second))
+        err(0, "existing checker SpecId table is malformed or contradictory",
+            "MOSS_INTERNAL_INVARIANT");
+    }
+  }
+
   const FunctionSpecialization* checked_static_specialization_for_occurrence(
       const Function& target, std::uint32_t arena, est::ExprId expression,
       int line) const {
@@ -3354,28 +3400,61 @@ class Checker {
   }
 
   void assign_declared_spec_ids() {
-    p_.specialization_table.clear();
+    // Imported Section 2 rows and their EST fact keys were restored and
+    // remapped once by the project loader. Keep those destination-local IDs
+    // and provider origins intact; this pass only appends source-owned rows.
+    validate_existing_specialization_table();
     for (auto& function : p_.functions) {
-      const auto callable = function.semantic_callable_id.empty()
-          ? function_semantic_identity(function)
-          : function.semantic_callable_id;
-      function.spec_id = register_program_specification(
-          callable,
-          "fn:" + function.name, std::nullopt,
-          program_module_identity(p_, function.defining_module));
+      const bool imported =
+          is_imported_declaration_module(function.defining_module);
+      if (imported && function.semantic_callable_id.empty())
+        err(function.line,
+            "imported function has no canonical callable identity for SpecId validation",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto callable = imported ? function.semantic_callable_id
+          : function.semantic_callable_id.empty()
+              ? function_semantic_identity(function)
+              : function.semantic_callable_id;
+      function.semantic_callable_id = callable;
+      const auto module_identity =
+          program_module_identity(p_, function.defining_module);
+      if (imported) {
+        require_declared_specification(function.spec_id, module_identity,
+            callable, true, function.line, "imported function declaration");
+      } else if (function.spec_id == InvalidSpecId) {
+        function.spec_id = register_program_specification(callable,
+            "fn:" + function.name, std::nullopt, module_identity);
+      } else {
+        require_declared_specification(function.spec_id, module_identity,
+            callable, false, function.line, "function declaration");
+      }
+      std::set<SpecId> function_spec_ids{function.spec_id};
       for (auto& specialization : function.specializations) {
-        if (specialization.stable_type_key.empty()) continue;
-        specialization.spec_id = register_program_specification(
-            callable, specialization.stable_type_key,
-            specialization.semantic_key,
-            program_module_identity(p_, function.defining_module),
-            compiled_interface_file(function.source_file)
-                ? program_module_identity(p_, function.defining_module)
-                : string(),
-            specialization.spec_id);
+        if (!imported && specialization.stable_type_key.empty()) continue;
+        if (imported) {
+          require_declared_specification(specialization.spec_id,
+              module_identity, callable, true, function.line,
+              "imported function specialization");
+        } else if (specialization.spec_id == InvalidSpecId) {
+          specialization.spec_id = register_program_specification(
+              callable, specialization.stable_type_key,
+              specialization.semantic_key, module_identity);
+        } else {
+          require_declared_specification(specialization.spec_id,
+              module_identity, callable, false, function.line,
+              "function specialization");
+        }
+        if (!function_spec_ids.insert(specialization.spec_id).second)
+          err(function.line,
+              "function declaration and specialization share a checker SpecId",
+              "MOSS_INTERNAL_INVARIANT");
       }
     }
     for (auto& object : p_.objects) {
+      const bool imported =
+          is_imported_declaration_module(object.defining_module);
+      const auto module_identity =
+          program_module_identity(p_, object.defining_module);
       const string owner = object.declaration_name.empty()
           ? object.name : object.declaration_name;
       for (auto& method : object.methods) {
@@ -3386,13 +3465,37 @@ class Checker {
           signature += ":" + std::to_string(type.size()) + ":" + type;
         }
         signature += ":source-line:" + std::to_string(method.line);
+        if (imported) {
+          if (method.semantic_callable_id.empty())
+            err(method.line,
+                "imported method has no canonical callable identity for SpecId validation",
+                "MOSS_INTERNAL_INVARIANT");
+          require_declared_specification(method.spec_id, module_identity,
+              method.semantic_callable_id + ":declaration", true,
+              method.line, "imported method declaration");
+          std::set<SpecId> method_spec_ids{method.spec_id};
+          for (const auto& specialization : method.specializations) {
+            require_declared_specification(specialization.spec_id,
+                module_identity, method.semantic_callable_id, true,
+                method.line, "imported method body specialization");
+            if (!method_spec_ids.insert(specialization.spec_id).second)
+              err(method.line,
+                  "method declaration and body specialization share a checker SpecId",
+                  "MOSS_INTERNAL_INVARIANT");
+          }
+          continue;
+        }
         const string declaration_signature = signature;
         method.semantic_callable_id = "method-v1:" + declaration_signature;
-        method.spec_id = register_program_specification(
-            method.semantic_callable_id + ":declaration",
-            "method:" + object.name + "." + method.name,
-            std::nullopt,
-            program_module_identity(p_, object.defining_module));
+        if (method.spec_id == InvalidSpecId)
+          method.spec_id = register_program_specification(
+              method.semantic_callable_id + ":declaration",
+              "method:" + object.name + "." + method.name,
+              std::nullopt, module_identity);
+        else
+          require_declared_specification(method.spec_id, module_identity,
+              method.semantic_callable_id + ":declaration", false,
+              method.line, "method declaration");
         // A declaration identity is not a checked body identity. Methods are
         // currently checked once per closed source signature, so create one
         // explicit body specialization row for that checked body. Keeping the
@@ -3410,14 +3513,16 @@ class Checker {
         const SpecId body_spec_id = register_program_specification(
             method.semantic_callable_id,
             "method-body:" + object.name + "." + method.name,
-            std::nullopt,
-            program_module_identity(p_, object.defining_module));
-        method.specializations.clear();
-        method.specializations.push_back(
-            {body_key, std::move(parameter_types), body_spec_id});
+            std::nullopt, module_identity);
+        method.specializations = {{body_key, std::move(parameter_types),
+                                   body_spec_id}};
       }
     }
     for (auto& domain : p_.domains) {
+      const bool imported =
+          is_imported_declaration_module(domain.defining_module);
+      const auto module_identity =
+          program_module_identity(p_, domain.defining_module);
       const string owner = program_module_identity(p_, domain.defining_module) + ":" +
           (domain.declaration_name.empty() ? domain.name
                                             : domain.declaration_name);
@@ -3429,26 +3534,56 @@ class Checker {
           signature += ":" + std::to_string(type.size()) + ":" + type;
         }
         signature += ":source-line:" + std::to_string(handler.line);
-        handler.spec_id = register_program_specification(
-            std::move(signature), "handler:" + domain.name + "." + handler.name,
-            std::nullopt,
-            program_module_identity(p_, domain.defining_module));
+        if (imported) {
+          require_declared_specification(handler.spec_id, module_identity,
+              signature, true, handler.line, "imported handler declaration");
+        } else if (handler.spec_id == InvalidSpecId) {
+          handler.spec_id = register_program_specification(
+              std::move(signature), "handler:" + domain.name + "." + handler.name,
+              std::nullopt, module_identity);
+        } else {
+          require_declared_specification(handler.spec_id, module_identity,
+              signature, false, handler.line, "handler declaration");
+        }
       }
     }
-    if (p_.main)
-      p_.main->spec_id = register_program_specification("program:main", "main",
-          std::nullopt, program_module_identity(p_, p_.main_module));
+    if (p_.main) {
+      const auto module_identity =
+          program_module_identity(p_, p_.main_module);
+      if (p_.main->spec_id == InvalidSpecId)
+        p_.main->spec_id = register_program_specification("program:main",
+            "main", std::nullopt, module_identity);
+      else
+        require_declared_specification(p_.main->spec_id, module_identity,
+            "program:main", is_imported_declaration_module(p_.main_module),
+            p_.main->line, "main body");
+    }
     for (auto& test : p_.tests)
-      test.spec_id = register_program_specification(
-          "test:" + test.name + "@" + test.source_file + ":" +
-              std::to_string(test.line), "test:" + test.name, std::nullopt,
-          program_module_identity(p_, p_.main_module));
+      if (test.spec_id == InvalidSpecId)
+        test.spec_id = register_program_specification(
+            "test:" + test.name + "@" + test.source_file + ":" +
+                std::to_string(test.line), "test:" + test.name, std::nullopt,
+            program_module_identity(p_, p_.main_module));
+      else
+        require_declared_specification(test.spec_id,
+            program_module_identity(p_, p_.main_module),
+            "test:" + test.name + "@" + test.source_file + ":" +
+                std::to_string(test.line),
+            is_imported_declaration_module(p_.main_module), test.line,
+            "test body");
     for (auto& benchmark : p_.benchmarks)
-      benchmark.spec_id = register_program_specification(
-          "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
-              std::to_string(benchmark.line), "bench:" + benchmark.name,
-          std::nullopt,
-          program_module_identity(p_, p_.main_module));
+      if (benchmark.spec_id == InvalidSpecId)
+        benchmark.spec_id = register_program_specification(
+            "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
+                std::to_string(benchmark.line), "bench:" + benchmark.name,
+            std::nullopt, program_module_identity(p_, p_.main_module));
+      else
+        require_declared_specification(benchmark.spec_id,
+            program_module_identity(p_, p_.main_module),
+            "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
+                std::to_string(benchmark.line),
+            is_imported_declaration_module(p_.main_module), benchmark.line,
+            "benchmark body");
   }
 
   void assign_domain_instance_handler_spec_ids() {
@@ -3460,15 +3595,58 @@ class Checker {
           break;
         }
       if (!domain) continue;
-      instance.handler_spec_ids.clear();
-      instance.handler_spec_ids.reserve(domain->handlers.size());
-      for (const auto& handler : domain->handlers) {
+      if (instance.handler_spec_ids.size() > domain->handlers.size())
+        err(domain->line,
+            "domain instance has more handler SpecIds than its checked declaration",
+            "MOSS_INTERNAL_INVARIANT");
+      instance.handler_spec_ids.resize(domain->handlers.size(), InvalidSpecId);
+      const auto module_identity =
+          program_module_identity(p_, domain->defining_module);
+      for (std::size_t index = 0; index < domain->handlers.size(); ++index) {
+        const auto& handler = domain->handlers[index];
         const string identity = "domain-instance-handler:" +
             std::to_string(handler.spec_id) + ":" + instance.identity();
-        instance.handler_spec_ids.push_back(register_program_specification(
-            identity, "handler:" + instance.source_domain + "." +
-                handler.name + "@" + instance.instance, std::nullopt,
-            program_module_identity(p_, domain->defining_module)));
+        auto& instance_spec_id = instance.handler_spec_ids[index];
+        if (instance_spec_id == InvalidSpecId) {
+          instance_spec_id = register_program_specification(identity,
+              "handler:" + instance.source_domain + "." + handler.name +
+                  "@" + instance.instance,
+              std::nullopt, module_identity);
+          continue;
+        }
+        if (instance_spec_id >= p_.specialization_table.size() ||
+            p_.specialization_table[instance_spec_id].id != instance_spec_id ||
+            p_.specialization_table[instance_spec_id].module_identity !=
+                module_identity)
+          err(handler.line,
+              "domain instance handler SpecId has a missing or contradictory owner row",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto& instance_row =
+            p_.specialization_table[instance_spec_id];
+        SpecId source_handler_spec_id = handler.spec_id;
+        if (!instance_row.provider_module_identity.empty()) {
+          if (instance_row.provider_module_identity != module_identity ||
+              instance_row.provider_spec_id == InvalidSpecId)
+            err(handler.line,
+                "imported domain instance handler lost its qualified provider origin",
+                "MOSS_INTERNAL_INVARIANT");
+          if (handler.spec_id < p_.specialization_table.size()) {
+          const auto& source_handler_row =
+              p_.specialization_table[handler.spec_id];
+            if (source_handler_row.provider_module_identity != module_identity ||
+                source_handler_row.provider_spec_id == InvalidSpecId)
+              err(handler.line,
+                  "imported handler declaration has a malformed provider origin",
+                  "MOSS_INTERNAL_INVARIANT");
+            source_handler_spec_id = source_handler_row.provider_spec_id;
+          }
+        }
+        const string expected_identity = "domain-instance-handler:" +
+            std::to_string(source_handler_spec_id) + ":" + instance.identity();
+        if (instance_row.semantic_callable_identity != expected_identity)
+          err(handler.line,
+              "domain instance handler SpecId contradicts its checked handler instance",
+              "MOSS_INTERNAL_INVARIANT");
       }
     }
   }
