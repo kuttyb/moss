@@ -1,0 +1,17 @@
+type State:
+  frontier: Vector[Int]
+
+fn read(s: State, t: State, flag: Bool) -> Int:
+  b = s.frontier
+  if flag:
+    b = s.frontier
+  else:
+    b = t.frontier
+  c = b
+  return (c |> count)
+
+fn main():
+  s = State(frontier = [1, 2, 3])
+  t = State(frontier = [4, 5, 6])
+  echo read(s, t, true)
+  echo (s.frontier |> count)

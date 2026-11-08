@@ -1,0 +1,9 @@
+type State:
+  frontier: Vector[Int]
+
+fn main():
+  s = State(frontier = [1, 2, 3])
+  b = s.frontier
+  c = b
+  echo (c |> count)
+  echo (s.frontier |> count)

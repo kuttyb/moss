@@ -1,0 +1,15 @@
+type State:
+  frontier: Vector[Int]
+
+fn keep(items: Vector[Int]) -> Vector[Int]:
+  return items
+
+fn probe(s: State, flag: Bool):
+  b = s.frontier
+  if flag:
+    escaped = keep(b)
+  else:
+    echo (b |> count)
+
+fn main():
+  probe(State(frontier = [1, 2, 3]), true)

@@ -19023,5 +19023,89 @@ untouched.
   losses, all in the baseline loss list, and no gains. The differential
   comparison against rebuilt `00b54a51` reports zero new losses. The two
   requested diagnostic strings currently have zero source/test occurrences.
-- Exact-SHA Agent 2 review, its three independent field probes, Default and
-  Shadow suites, final commit/push remain pending. No merge is authorized.
+- Agent 2 returned NO-GO on exact SHA
+  `019451b884c4a3941d5ddbf8948333f813e918b9`: its independently written
+  alias-chain READ probe fails in Fast Debug and Native at line 6. The reviewer
+  also found a prohibited lookup-miss fallback to identifier text scanning,
+  plus an alias-name fallback in pipeline classification. The task stop rule
+  applies; no further code edits, commit, push, or merge were made.
+- `make --jobs="$(nproc)" check TEST_JOBS="$(nproc)"` was interrupted after
+  earlier authority gates passed and while
+  `check_phase28_local_transfer_authority.py` was running. It is incomplete and
+  supplies no Default suite count. Shadow was not run.
+- After the NO-GO, no source or test implementation was changed. Agent 1
+  submitted `docs/phase28/agent2-reviews/F1-FIELD-ALIAS-ATTACK-PLAN.md` for
+  Agent 2 review before coding. Agent 2 requested six plan clarifications;
+  Agent 1 revised chain propagation, WRITE handling, pipeline fact authority,
+  early parameter inference, suite baseline artifacts, diagnostic transcript
+  counting, and the nonbinding line estimate. Agent 2's second plan review is
+  NO-GO pending four additions: mixed READ/CONSUME branch-join rejection,
+  rebinding after an existing alias edge, the exact source of Agent 2's
+  independent failing probe, and a direct-field-write baseline control before
+  asserting alias WRITE behavior. These are now included, with Agent 2's probe
+  source verbatim; final plan review is pending. No source code or
+  implementation tests have been changed or run.
+
+## Phase 28 Task F1 resumed after plan approval — stopped at field-control failures
+
+- The approved attack plan is recorded at
+  `docs/phase28/agent2-reviews/F1-FIELD-ALIAS-ATTACK-PLAN.md`. No commit has
+  been pushed. The branch remains `phase28-f1-field`, based on
+  `00b54a51`; the only preexisting field-repair commit is `019451b8` and was
+  previously rejected by Agent 2.
+- Continued the exact-reaching-definition checker work and registered the
+  approved alias-chain probes in `check_phase28_l8_field_controls.py`. The
+  focused field-control gate still fails: the new chain through a branch join
+  rejects the first field alias (`moss:7`), and the post-edge rebind probe
+  disagrees between Fast Debug (`1\n1`) and Native (`3\n3`). Other registered
+  field probes pass in both engines, including two/three-hop chains, function
+  call chain, alias-chain write, and field-alias consume rejections. The
+  existing one-hop branch join and field parameter control also pass.
+- Per the F1 stop rule, corpus and diagnostic counts were not rerun after this
+  final edit; the previously recorded corpus result remains 24 losses with no
+  new names on `019451b8` and does not validate this working tree. Default and
+  Shadow suites and a fresh Agent 2 implementation review were not run. No
+  commit or push was made. Current implementation status is NO-GO pending
+  resolution of the two focused gate failures under the approved scope.
+
+## F1 two-step triage — baseline probe disposition and plan amendment pending
+
+- Ran both current chain probes with `tmp/phase28-f1-baseline-00b/moss`, whose
+  source HEAD is exactly `00b54a515364f9237ce758eb866fa621da5375b5`.
+- `f1_alias_chain_rebind_after_edge.moss` source is the checked-in fixture:
+  `b = s.frontier; c = b; b = [9]; echo count(c); echo count(s.frontier)`.
+  Baseline Fast Debug and Native both reject at `moss:8` with
+  `OWNERSHIP_SOURCE_BORROWED`; stdout is empty. Current F1 instead yields Fast
+  Debug `1\n1`, Native `3\n3`. This is a new F1 engine mismatch. Per peer-review
+  proposal §3.1 (`docs/MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md`),
+  Native's `3\n3` is the specified whole-local rebind behavior; Fast Debug is
+  wrong. No separate pre-existing issue was logged because baseline does not
+  reproduce the mismatch.
+- `f1_alias_chain_branch_join_read.moss` baseline Fast Debug and Native both
+  reject at `moss:7` with `OWNERSHIP_ILLEGAL_CONSUME`; stdout is empty. This
+  branch-join chain remains in F1 scope.
+- Added Amendment 1 to the approved attack plan, specifying strongest-effect
+  propagation through all exact reachable join predecessor definitions and
+  incoming field-alias edges, fail-closed on missing/ambiguous edges, and the
+  branch-chain expected outputs. Agent 2 review of this amendment is pending.
+  No checker code changed during this triage/amendment step. Do not implement
+  branch-join repair until Agent 2 approves the amendment.
+
+## F1 after Agent 2-approved join amendment — stopped at focused gate
+
+- Agent 2 approved Amendment 1 for branch-join propagation. Added a second
+  checker fixed-point pass after CFG join predecessor identities are available,
+  propagating alias demand across exact source/join-predecessor identities.
+- Rebuilt `moss-dev` and reran `tests/tooling/check_phase28_l8_field_controls.py`.
+  The focused gate remains NO-GO: the branch-join chain still rejects at
+  `moss:7` with `OWNERSHIP_ILLEGAL_CONSUME`; the post-edge rebind probe remains
+  Fast Debug `1\n1` versus Native `3\n3`. Other registered read/consume/write
+  probes continue passing in both engines.
+- The rebind difference is new with the F1 changes, while exact baseline
+  `00b54a51` rejects in both engines at line 8. Proposal §3.1 specifies legal
+  whole-local rebinding without writing through the prior borrow, so Native's
+  output is semantically expected; the current checker-only scope has not
+  resolved Fast Debug's differing behavior.
+- Per the stop rule, no corpus/diagnostic measurements or full Default/Shadow
+  suites were run after this gate failure. No commit or push was made; no fresh
+  final implementation review was requested. Current worktree is not accepted.
