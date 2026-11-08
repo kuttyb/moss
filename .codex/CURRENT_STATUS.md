@@ -19007,3 +19007,36 @@ untouched.
   matrix passed. Full Default/Shadow suites were not run; no overall Step 0 or
   Step 1 GO is claimed. Pending feedback validation, exact-SHA freeze, review,
   and scoped checkpoint push.
+
+## R7-011 baseline restoration (2026-11-08)
+
+L8 accepted baseline remains 00b54a51: 117/170 Default and Shadow, 33
+corpus losses against 150ab36. fbedd74f is preserved remotely as
+phase28-r7-011-rejected-fbedd74f and is not an implementation base.
+
+Narrow replays were committed and pushed individually: A field effects at
+6aace7bc; the baseline-compatible imported-method effect-preservation part of
+4ae3aa71 at 9f63c0f9; C Map-key copy changes at d4ce0d3a. Each corpus run
+compiled the same 238 frozen sources (236 baseline-compiling), retained 33
+losses, and changed no loss paths. The strict SpecId portion of 4ae3aa71 was
+withheld because this baseline has no producer SpecId representation.
+
+Full Default and Shadow on d4ce0d3a both completed at 113/171, 58 failed,
+0 skipped. This is rejected, despite unchanged corpus results. All replay
+changes were automatically reverted in f4dbbafd and pushed normally; its
+whole Git tree exactly equals 00b54a51. Candidate remote branches
+phase28-r7-011-replay-a-field, phase28-r7-011-replay-b-effects and
+phase28-r7-011-replay-c-map-keys preserve the work. No production branch,
+existing worktree or stash was removed.
+
+Durable exact failing-job sets, corpus summaries and rejected-fbedd diagnostic
+counts: docs/phase28/r7-011-recovery/recovery-evidence.json. Raw replay
+suite logs: tmp/recovery-00b54a51/suites-d4ce0d3a/{default,shadow}.log
+in the combined-checkpoint worktree. Historical baseline numbers have not
+been relabeled as fresh validation of the revert commit.
+
+Pending: isolated full-suite measurement of replay A at 6aace7bc to locate
+the first breaking integration step (its corpus already passed); producer-only
+reachable-call SpecId census on a separate checkout from accepted 00b54a51.
+No fix-forward on a below-baseline tree; no strict consumers until missing
+reachable-call SpecId count is zero. No runtime clone authorization.
