@@ -25,6 +25,8 @@ def main() -> int:
     compiler = str(Path(sys.argv[1]).resolve())
     margo = str(ROOT / "margo")
     base_env = os.environ.copy()
+    base_env.pop("MOSS_MODULE_PATH", None)
+    base_env.pop("MOSS_EST", None)
     shutil.rmtree(SCRATCH, ignore_errors=True)
     provider_project = SCRATCH / "provider"
     provider_source = provider_project / "src"
@@ -330,7 +332,61 @@ fn main():
                              f"{paired_fast.stdout!r}/"
                              f"{paired_fast.stderr!r}")
 
-    print("Phase 28 method, function, Payload, and generic pair ReturnValue authority: PASS")
+    id_only_provider = SCRATCH / "id_only_provider"
+    id_only_source_dir = id_only_provider / "src"
+    id_only_source_dir.mkdir(parents=True, exist_ok=True)
+    (id_only_provider / "moss.toml").write_text(
+        '[project]\nname = "phase28_id_only_provider"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (id_only_source_dir / "provider.moss").write_text(
+        "module provider\n"
+        "export fn normalize(value):\n  return value\n"
+        "export fn exercise():\n  echo normalize(1)\n",
+        encoding="utf-8")
+    id_only_provider_build = run(
+        [margo, "build", "--json"],
+        {**base_env, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"},
+        id_only_provider)
+    id_only_response = json.loads(id_only_provider_build.stdout)
+    if id_only_provider_build.returncode or not id_only_response.get("ok"):
+        raise AssertionError("ID-only specialization provider failed to build: "
+                             f"{id_only_response!r}\n"
+                             f"{id_only_provider_build.stderr}")
+
+    id_only_consumer = SCRATCH / "id_only_consumer"
+    id_only_consumer_src = id_only_consumer / "src"
+    id_only_consumer_src.mkdir(parents=True, exist_ok=True)
+    (id_only_consumer / "moss.toml").write_text(
+        '[project]\nname = "phase28_id_only_consumer"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    id_only_main = id_only_consumer_src / "main.moss"
+    id_only_main.write_text(
+        "module app\nimport provider\nfn main():\n  echo 0\n",
+        encoding="utf-8")
+    id_only_env = {
+        **base_env,
+        "MOSS_STAGED_ABI": "v10",
+        "MOSS_MODULE_PATH": str(id_only_provider / "build" / "debug"),
+    }
+    id_only_check = run(
+        [compiler, "check", str(id_only_main), "--json"],
+        id_only_env, id_only_consumer)
+    try:
+        id_only_check_response = json.loads(id_only_check.stdout)
+    except json.JSONDecodeError as error:
+        raise AssertionError(
+            "ID-only imported specialization did not fail with structured "
+            f"checker output: exit={id_only_check.returncode}, "
+            f"stdout={id_only_check.stdout!r}, stderr={id_only_check.stderr!r}") from error
+    id_only_error = id_only_check_response.get("error", {})
+    if (id_only_check.returncode == 0 or id_only_error.get("code") !=
+            "MOSS_INTERNAL_INVARIANT" or
+            id_only_error.get("message") !=
+            "checked function specialization has missing or contradictory parameter metadata"):
+        raise AssertionError("ID-only imported specialization was not rejected "
+                             f"at the metadata boundary: {id_only_check_response!r}")
+
+    print("Phase 28 method/function ReturnValue, generic pair, and ID-only metadata guard: PASS")
     return 0
 
 

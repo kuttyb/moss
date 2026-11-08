@@ -24804,6 +24804,15 @@ class Checker {
       function.result_functional_expression_plans_by_spec_id.clear();
       if (function.static_dispatch && !function.specializations.empty()) {
         for (const auto& specialization : function.specializations) {
+          if (specialization.spec_id == InvalidSpecId ||
+              specialization.spec_id >= p_.specialization_table.size() ||
+              specialization.parameter_types.size() != function.params.size() ||
+              std::any_of(specialization.parameter_types.begin(),
+                          specialization.parameter_types.end(),
+                          [](const string& type) { return type.empty(); }))
+            err(function.line,
+                "checked function specialization has missing or contradictory parameter metadata",
+                "MOSS_INTERNAL_INVARIANT");
           SpecIdScope spec_id_scope(current_spec_id_, specialization.spec_id);
           TypeEnv env;
           for (size_t index = 0; index < function.params.size(); ++index) {
