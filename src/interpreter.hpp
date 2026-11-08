@@ -2076,8 +2076,14 @@ class FastInterpreter {
     };
     if (!std::holds_alternative<est::Pipeline>(tree.arena->at(root)))
       return std::nullopt;
-    return est::functional_pipeline(*tree.arena, root,
+    auto parsed = est::functional_pipeline(*tree.arena, root,
         expression_node_text(tree, root), resolve_stage);
+    if (parsed) {
+      parsed->arena_index = tree.arena_index;
+      for (auto& stage : parsed->stages)
+        stage.arena_index = tree.arena_index;
+    }
+    return parsed;
   }
 
   Value invoke_pipeline_callable(const std::vector<Value>& values,
