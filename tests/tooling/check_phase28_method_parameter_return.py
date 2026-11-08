@@ -162,6 +162,17 @@ fn main():
         if corrupted.returncode == 0:
             raise AssertionError(
                 f"source-free ReturnValue consumer accepted contradictory {hook}")
+        expected_failure = (
+            "MOSS_INTERNAL_INVARIANT return-value requirement/fact missing or ambiguous")
+        if hook in {
+                "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_REQUIREMENT",
+                "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_REQUIREMENT",
+                "MOSS_TEST_CONSUMER_DROP_RETURN_VALUE_FACT",
+                "MOSS_TEST_CONSUMER_DUPLICATE_RETURN_VALUE_FACT"} and \
+                expected_failure not in corrupted.stderr:
+            raise AssertionError(
+                f"source-free {hook} failed without the expected invariant: "
+                f"{corrupted.stderr!r}")
 
     for hook in ("MOSS_TEST_DROP_RETURN_VALUE_FACT",
                  "MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT",
