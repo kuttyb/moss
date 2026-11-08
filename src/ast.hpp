@@ -317,6 +317,12 @@ struct Stmt {
   // the inferred binding type for each checked specialization.
   // SpecId keyed checker result map.
   std::unordered_map<SpecId,string> semantic_types_by_spec_id;
+  // Exact custom Iterator protocol bodies selected for this checked For
+  // source, ordered as [next] or [iter, next]. Built-in collection/range
+  // traversal has no user method row. Consumers select only by caller SpecId
+  // and these checker-issued body IDs; they do not resolve methods by type.
+  mutable std::unordered_map<SpecId,vector<SpecId>>
+      iterator_method_spec_ids_by_spec_id;
   // `echo` argument types the checker accepted under the display contract.
   // Native lowering selects the display helper from this checked fact.
   std::unordered_map<SpecId,vector<string>> echo_types_by_spec_id;

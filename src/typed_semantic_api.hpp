@@ -4019,6 +4019,14 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
       throw std::invalid_argument("imported semantic row references unknown SpecId");
     id = found->second;
   };
+  const auto destination_spec_row = [&](SpecId id)
+      -> const ProgramSpecializationIdentity* {
+    if (id < destination.specialization_table.size())
+      return &destination.specialization_table[id];
+    const std::size_t appended_index =
+        static_cast<std::size_t>(id) - destination.specialization_table.size();
+    return appended_index < appended.size() ? &appended[appended_index] : nullptr;
+  };
   const auto remap_statement = [&](auto&& self, Stmt& statement) -> void {
     const auto remap_map_keys = [&](auto& map) {
       using Map = std::decay_t<decltype(map)>;
@@ -4039,6 +4047,25 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
     remap_map_keys(statement.nested_open_call_keys_by_spec_id);
     remap_map_keys(statement.receiver_types_by_spec_id);
     remap_map_keys(statement.semantic_types_by_spec_id);
+    remap_map_keys(statement.iterator_method_spec_ids_by_spec_id);
+    for (auto& [caller_spec_id, method_spec_ids] :
+         statement.iterator_method_spec_ids_by_spec_id) {
+      if (caller_spec_id == InvalidSpecId ||
+          (method_spec_ids.size() != 1 && method_spec_ids.size() != 2))
+        throw std::invalid_argument(
+            "imported iterator method authority has invalid caller or cardinality");
+      std::set<SpecId> unique_targets;
+      for (auto& method_spec_id : method_spec_ids) {
+        remap_id(method_spec_id);
+        const auto* target_row = destination_spec_row(method_spec_id);
+        if (method_spec_id == InvalidSpecId ||
+            !unique_targets.insert(method_spec_id).second ||
+            !target_row ||
+            target_row->semantic_callable_identity.rfind("method-v1:", 0) != 0)
+          throw std::invalid_argument(
+              "imported iterator method authority has missing, duplicate, or non-method target");
+      }
+    }
     remap_map_keys(statement.echo_types_by_spec_id);
     remap_map_keys(statement.joined_types_by_spec_id);
     remap_map_keys(statement.functional_pipeline_ids_by_spec_id);
@@ -4103,9 +4130,13 @@ inline std::unordered_map<SpecId, SpecId> remap_imported_program_spec_ids(
     for (auto& argument_id : edge.argument_callable_spec_ids)
       remap_id(argument_id);
     if (edge.target_module_identity.empty() &&
-        edge.callee_spec_id != InvalidSpecId)
-      edge.target_module_identity =
-          destination.specialization_table[edge.callee_spec_id].module_identity;
+        edge.callee_spec_id != InvalidSpecId) {
+      const auto* target_row = destination_spec_row(edge.callee_spec_id);
+      if (!target_row)
+        throw std::invalid_argument(
+            "imported call target has no exact remapped specialization row");
+      edge.target_module_identity = target_row->module_identity;
+    }
   }
   if (provider.typed_semantics) {
     auto& typed = *provider.typed_semantics;
