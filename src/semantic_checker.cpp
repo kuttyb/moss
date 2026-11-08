@@ -11842,6 +11842,22 @@ class Checker {
     infer_statement_expressions(f.body, inferred_env);
     static_bindings_for_body(f.body, entry_env);
     env = check_stmts(f.body, entry_env, nullptr, nullptr, &f);
+    const bool unresolved_specialization_owner =
+        (f.generic || f.static_dispatch) &&
+        (std::any_of(f.params.begin(), f.params.end(), [&](const Param& param) {
+           return param.type.empty() || open_generic(param.type) ||
+               contains_internal_placeholder(param.type);
+         }) ||
+         (f.return_type && contains_internal_placeholder(*f.return_type)));
+    // The declaration pass checks syntax, types, and open constraints, but it
+    // cannot assign concrete call targets or ownership effects for unresolved
+    // generic parameters. Defer only this template body's ownership flow to
+    // register_static_specialization(), which rechecks the retained body with
+    // concrete types, a concrete SpecId, and exact call facts before execution
+    // or lowering. Closed and non-generic functions keep the normal ownership
+    // pass below.
+    const bool defer_template_ownership = unresolved_specialization_owner &&
+        !checking_specialization_;
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
       if (statement.kind != Stmt::Kind::Match) return false;
       return std::any_of(f.params.begin(), f.params.end(), [&](const Param& parameter) {
@@ -11853,14 +11869,16 @@ class Checker {
     for (std::size_t index = 0; index < f.params.size(); ++index)
       ownership.binding_identities[f.params[index].name] =
           "parameter:" + std::to_string(index);
-    OwnershipEnv final_ownership = deferred_match ? std::move(ownership) :
+    OwnershipEnv final_ownership = deferred_match || defer_template_ownership
+        ? std::move(ownership) :
         check_ownership(f.body, std::move(ownership), nullptr, nullptr);
     check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
                            f.result_expression);
     if (f.result_expression) {
-      check_ownership_expression(f.result_line ? f.result_line : f.line,
-                                 *f.result_expression, final_ownership,
-                                 Effect::Consume);
+      if (!defer_template_ownership)
+        check_ownership_expression(f.result_line ? f.result_line : f.line,
+                                   *f.result_expression, final_ownership,
+                                   Effect::Consume);
       check_expression_root_in_body(f.body,
           f.result_line ? f.result_line : f.line,
           *f.result_expression, env, "return-value",
@@ -33653,6 +33671,26 @@ class Checker {
                                            "fn:" + function.name);
     StaticBindingScope specialization_bounds(static_bound_bindings_);
     static_bound_bindings_.clear();
+    struct EstBodyCursorScope {
+      vector<std::optional<EstExpressionCursor>>& active;
+      std::optional<EstExpressionCursor>& forced;
+      vector<std::optional<EstExpressionCursor>> saved_active;
+      std::optional<EstExpressionCursor> saved_forced;
+      EstBodyCursorScope(
+          vector<std::optional<EstExpressionCursor>>& active_cursors,
+          std::optional<EstExpressionCursor>& forced_cursor)
+          : active(active_cursors), forced(forced_cursor),
+            saved_active(std::move(active_cursors)),
+            saved_forced(std::move(forced_cursor)) {
+        active.clear();
+        forced.reset();
+      }
+      ~EstBodyCursorScope() {
+        active = std::move(saved_active);
+        forced = std::move(saved_forced);
+      }
+    } est_body_cursor_scope(active_est_expression_cursors_,
+                            forced_root_expression_cursor_);
     infer_statement_expressions(specialization_body, specialized_env);
     static_bindings_for_body(specialization_body, specialized_env);
     Function concrete_function = function;
@@ -33668,6 +33706,25 @@ class Checker {
       specialized_ownership.binding_identities[function.params[index].name] =
           "parameter:" + std::to_string(index);
     }
+    if (function.result_expression) {
+      auto result_cursor = root_expression_cursor(
+          *function.result_expression, "return-value");
+      if (!result_cursor)
+        err(function.result_line ? function.result_line : function.line,
+            "checked callable result has no unique retained ReturnValue occurrence",
+            "MOSS_INTERNAL_INVARIANT");
+      struct ResultRootCursorScope {
+        std::optional<EstExpressionCursor>& slot;
+        std::optional<EstExpressionCursor> prior;
+        ResultRootCursorScope(std::optional<EstExpressionCursor>& target,
+                              EstExpressionCursor cursor)
+            : slot(target), prior(target) { slot = std::move(cursor); }
+        ~ResultRootCursorScope() { slot = std::move(prior); }
+      } result_root_scope(forced_root_expression_cursor_,
+                          std::move(*result_cursor));
+      check_expression(function.result_line ? function.result_line : function.line,
+                       *function.result_expression, specialized_env);
+    }
     {
       SourceFileScope semantic_context(
           current_semantic_context_, "fn:" + function.name);
@@ -33677,10 +33734,6 @@ class Checker {
       if (function.result_expression)
         check_ownership_expression(function.result_line ? function.result_line : function.line,
                                    *function.result_expression, final_ownership, Effect::Consume);
-    }
-    if (function.result_expression) {
-      check_expression(function.result_line ? function.result_line : function.line,
-                       *function.result_expression, specialized_env);
     }
     } catch (CompileError& error) {
       if (profile_spec) {
@@ -34982,14 +35035,14 @@ class Checker {
           p_.semantic_call_edges.push_back(std::move(checked_edge));
         }
       }
-      if (!open_result && function->second->static_dispatch) {
-        const auto key = specialization_key_inputs(
-            function->second->semantic_callable_id,
-            semantic_specialization_arguments(line, actual_types));
-        if (!key || !key->stable_key())
+      if (function->second->static_dispatch) {
+        // Open-result calls still select a concrete specialization. Reuse the
+        // exact key closed above with the result bindings; omitting this row
+        // would leave ownership and consumers without the checker decision.
+        if (exact_callee_specialization_key.empty())
           err(line, "static call specialization has unresolved type bindings",
               "TYPE_AMBIGUOUS_OPEN_RESULT");
-        const string exact_key = *key->stable_key();
+        const string exact_key = exact_callee_specialization_key;
         const string caller_key = checking_specialization_
             ? checking_specialization_->stable_type_key : string();
         auto edge_arguments_match = [&](const SemanticCallEdge& edge) {
@@ -37062,6 +37115,24 @@ class Checker {
 
   std::optional<EstExpressionCursor> root_expression_cursor(
       std::string_view source, std::string_view root_slot) const {
+    if (current_check_result_function_ &&
+        current_check_result_function_->result_expression &&
+        est::fingerprint(*current_check_result_function_->result_expression) ==
+            est::fingerprint(std::string(source))) {
+      std::optional<EstExpressionCursor> result;
+      for (const auto& handle :
+           current_check_result_function_->expression_handles) {
+        if (handle.slot != est::ExprSlot::ReturnValue ||
+            handle.source_fingerprint !=
+                est::fingerprint(std::string(source)) ||
+            !expression_arena(handle.arena_index))
+          continue;
+        if (result) return std::nullopt;
+        result = EstExpressionCursor{handle.arena_index, handle.expr,
+                                     std::string(source)};
+      }
+      return result;
+    }
     if (!current_check_statement_) return std::nullopt;
     std::optional<est::ExprSlot> expected;
     const auto& statement = *current_check_statement_;
@@ -37104,6 +37175,17 @@ class Checker {
   std::optional<EstExpressionCursor> resolve_expression_cursor(
       std::string_view source, std::string_view root_slot,
       std::string_view child_role, std::uint32_t child_ordinal) const {
+    // A forced root is an exact retained occurrence. It replaces the ambient
+    // caller cursor only for its own source expression; recursive child checks
+    // continue from the active root as usual.
+    if (forced_root_expression_cursor_ &&
+        forced_root_expression_cursor_->source == source) {
+      const auto& forced = *forced_root_expression_cursor_;
+      if (!expression_arena(forced.arena_index) ||
+          forced.expr >= expression_arena(forced.arena_index)->size())
+        return std::nullopt;
+      return forced;
+    }
     if (!active_est_expression_cursors_.empty() &&
         active_est_expression_cursors_.back()) {
       const auto& parent = *active_est_expression_cursors_.back();
@@ -37115,14 +37197,7 @@ class Checker {
       return EstExpressionCursor{parent.arena_index, *child,
                                  std::string(source)};
     }
-    if (forced_root_expression_cursor_) {
-      const auto& forced = *forced_root_expression_cursor_;
-      if (forced.source != source ||
-          !expression_arena(forced.arena_index) ||
-          forced.expr >= expression_arena(forced.arena_index)->size())
-        return std::nullopt;
-      return forced;
-    }
+    if (forced_root_expression_cursor_) return std::nullopt;
     return root_expression_cursor(source, root_slot);
   }
 
