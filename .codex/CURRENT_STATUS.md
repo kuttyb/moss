@@ -19157,3 +19157,12 @@ untouched.
 - `git diff --check` passes. Feedback JSONL includes the updated body-mapping
   finding and the new exact nested-cursor/constructor-authority observation;
   validate feedback before any integration checkpoint.
+
+## Phase 28 R7-011 combined field-grid checkpoint (2026-11-07)
+
+- Combined source base is `b2a2ba0039e08fd536bd61ae1d0f7040d3cc8ea7` with uncommitted edits in `src/semantic_checker.cpp` and `tests/tooling/check_phase28_domain_handler_specids.cpp`.
+- Latest field grid after the parameter-alias checker edit: 26/60 runnable cells pass; 34 fail; four parameter-at-main cells are structurally unavailable. No full Default/Shadow suite, corpus, or identity-gate result has been rerun on this combined dirty tree.
+- Failure counts by axis: source local 8, parameter 12, vector element 6, nested field 8; binding new 17/reassigned 17; use READ 24/CONSUME 10; site main 4/function 6/method 12/handler 12.
+- Failure families are distinct: method call/ReturnValue SpecId authority (with indexed-read authority additionally failing for vector-element cases); handler pipeline caller SpecId (with parameter READ handler aliases still rejected as use-after-consume); Fast Debug parameter alias binding (`unknown local 'source'`); main indexed nonprimitive read authority; and Fast Debug nested-field call authority. The grid remains incomplete and shape-specific.
+- The handler specialization fixture is `Set(x): value = copy(x)`. The old `Echo(x): reply x` polymorphic expectation is incorrect for its String specialization under consolidated proposal `MOSS_PHASE_28_LOL_OWNERSHIP_PEER_REVIEW_PROPOSAL.md` §7.5: nonprimitive incoming message payloads cannot be replied as owned values, while explicit `copy(payload)` creates a separate owned value. The handler harness still fails later at functional-pipeline caller SpecId, so it is not validated.
+- Next: repair the distinct field and identity failure families on their isolated owner branches, integrate reviewed passing pieces into this combined tree, then run Default, Shadow, corpus, identity repro and full field-grid gates on the exact combined checkpoint. No production branch merge authorized.

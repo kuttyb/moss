@@ -16,14 +16,15 @@ static Program check_source(const string& source) {
 
 int main() {
   const string source = R"MOSS(domain Echoer:
-  fn Echo(x):
-    reply x
+  value
+  fn Set(x):
+    value = copy(x)
 
 fn main():
   int_echoer = Echoer()
   string_echoer = Echoer()
-  echo message int_echoer.Echo(3)
-  echo message string_echoer.Echo("word")
+  message int_echoer.Set(3)
+  message string_echoer.Set("word")
 )MOSS";
   Program program = check_source(source);
   const Domain* domain = nullptr;
@@ -49,8 +50,8 @@ fn main():
   assert(int_handler != InvalidSpecId && string_handler != InvalidSpecId);
   assert(int_handler != string_handler);
 
-  const auto int_parameter = int_instance->handler_parameter_types.find("Echo");
-  const auto string_parameter = string_instance->handler_parameter_types.find("Echo");
+  const auto int_parameter = int_instance->handler_parameter_types.find("Set");
+  const auto string_parameter = string_instance->handler_parameter_types.find("Set");
   assert(int_parameter != int_instance->handler_parameter_types.end());
   assert(string_parameter != string_instance->handler_parameter_types.end());
   assert(int_parameter->second.size() == 1 && int_parameter->second.front() == "int");
@@ -58,14 +59,15 @@ fn main():
          string_parameter->second.front() == "string");
 
   const Handler& handler = domain->handlers.front();
-  assert(!handler.body.empty());
-  const Stmt& reply = handler.body.back();
+  assert(handler.name == "Set" && !handler.body.empty());
+  const Stmt& assignment = handler.body.back();
+  assert(assignment.kind == Stmt::Kind::Assign);
   const auto handle = std::find_if(
-      reply.expression_handles.begin(), reply.expression_handles.end(),
+      assignment.expression_handles.begin(), assignment.expression_handles.end(),
       [](const est::Handle& candidate) {
-    return candidate.slot == est::ExprSlot::ReturnValue;
+    return candidate.slot == est::ExprSlot::RhsValue;
   });
-  assert(handle != reply.expression_handles.end());
+  assert(handle != assignment.expression_handles.end());
   assert(handle->arena_index < program.expression_arenas.size());
   auto& arena = *program.expression_arenas[handle->arena_index];
   const auto* int_facts = arena.facts(handle->expr, int_handler);
@@ -90,29 +92,67 @@ fn main():
   assert(!arena.facts(handle->expr, handler.spec_id) ||
          arena.facts(handle->expr, handler.spec_id)->type == nullptr);
 
-  // A duplicated checked invocation row for the int instance must remain
-  // visible as an ambiguity; exact lookup must never choose one by order.
-  auto checked_call = std::find_if(
-      program.semantic_call_edges.begin(), program.semantic_call_edges.end(),
-      [&](const SemanticCallEdge& edge) {
-    return edge.callee_spec_id == int_handler &&
+  auto int_call = std::find_if(program.semantic_call_edges.begin(),
+      program.semantic_call_edges.end(), [&](const SemanticCallEdge& edge) {
+    return edge.invocation_kind == "synchronous_message" &&
+           edge.callee_spec_id == int_handler &&
            edge.call_est_arena_index != UINT32_MAX &&
            edge.call_expression_occurrence_id != UINT32_MAX;
   });
-  assert(checked_call != program.semantic_call_edges.end());
-  const SpecId caller = checked_call->caller_spec_id;
-  const auto call_arena = checked_call->call_est_arena_index;
-  const auto call_expression = checked_call->call_expression_occurrence_id;
-  program.semantic_call_edges.push_back(*checked_call);
+  auto string_call = std::find_if(program.semantic_call_edges.begin(),
+      program.semantic_call_edges.end(), [&](const SemanticCallEdge& edge) {
+    return edge.invocation_kind == "synchronous_message" &&
+           edge.callee_spec_id == string_handler &&
+           edge.call_est_arena_index != UINT32_MAX &&
+           edge.call_expression_occurrence_id != UINT32_MAX;
+  });
+  assert(int_call != program.semantic_call_edges.end());
+  assert(string_call != program.semantic_call_edges.end());
+  assert(int_call->target_callable_identity ==
+         program.specialization_table[int_handler].semantic_callable_identity);
+  assert(string_call->target_callable_identity ==
+         program.specialization_table[string_handler].semantic_callable_identity);
+  const SpecId caller = int_call->caller_spec_id;
+  const auto call_arena = int_call->call_est_arena_index;
+  const auto call_expression = int_call->call_expression_occurrence_id;
+  const auto require_exact_int_call = [&]() {
+    const auto exact = select_exact_semantic_call_edge(
+        program, caller, call_arena, call_expression);
+    assert(exact.kind == ExactSemanticCallEdgeLookup::Kind::Unique);
+    assert(exact.edge && exact.edge->callee_spec_id == int_handler);
+    assert(exact.edge->target_callable_identity ==
+           program.specialization_table[int_handler].semantic_callable_identity);
+  };
+  require_exact_int_call();
+  const SemanticCallEdge original_int_call = *int_call;
+  program.semantic_call_edges.push_back(original_int_call);
   const auto duplicated = select_exact_semantic_call_edge(
       program, caller, call_arena, call_expression);
   assert(duplicated.kind == ExactSemanticCallEdgeLookup::Kind::Duplicate);
   assert(!duplicated.edge);
   program.semantic_call_edges.pop_back();
-  const auto unique = select_exact_semantic_call_edge(
+  require_exact_int_call();
+  auto int_call_row = std::find_if(program.semantic_call_edges.begin(),
+      program.semantic_call_edges.end(), [&](const SemanticCallEdge& edge) {
+    return edge.caller_spec_id == caller &&
+           edge.call_est_arena_index == call_arena &&
+           edge.call_expression_occurrence_id == call_expression;
+  });
+  assert(int_call_row != program.semantic_call_edges.end());
+  int_call_row->callee_spec_id = string_handler;
+  const auto wrong_owner = select_exact_semantic_call_edge(
       program, caller, call_arena, call_expression);
-  assert(unique.kind == ExactSemanticCallEdgeLookup::Kind::Unique);
-  assert(unique.edge && unique.edge->callee_spec_id == int_handler);
+  assert(wrong_owner.kind == ExactSemanticCallEdgeLookup::Kind::Unique);
+  assert(wrong_owner.edge && wrong_owner.edge->callee_spec_id != int_handler);
+  assert(wrong_owner.edge->target_callable_identity !=
+         program.specialization_table[string_handler].semantic_callable_identity);
+  int_call_row->callee_spec_id = int_handler;
+  require_exact_int_call();
+  program.semantic_call_edges.erase(int_call_row);
+  const auto dropped = select_exact_semantic_call_edge(
+      program, caller, call_arena, call_expression);
+  assert(dropped.kind == ExactSemanticCallEdgeLookup::Kind::Missing);
+  program.semantic_call_edges.push_back(original_int_call);
 
   const string callback_source = R"MOSS(fn twice(x: Int) -> Int:
   return x * 2
@@ -196,8 +236,10 @@ fn main():
   });
   assert(int_edge != methods.semantic_call_edges.end());
   assert(float_edge != methods.semantic_call_edges.end());
-  assert(int_edge->caller_spec_id == methods.main->spec_id);
-  assert(float_edge->caller_spec_id == methods.main->spec_id);
+  assert(int_edge->caller_spec_id ==
+         methods.moss_cli_entry_for_domain_handler_specids_test->spec_id);
+  assert(float_edge->caller_spec_id ==
+         methods.moss_cli_entry_for_domain_handler_specids_test->spec_id);
   assert(int_edge->target_callable_identity ==
          methods.specialization_table[int_body].semantic_callable_identity);
   assert(float_edge->target_callable_identity ==
@@ -212,12 +254,12 @@ fn main():
       int_edge->call_expression_occurrence_id);
   assert(exact_int.kind == ExactSemanticCallEdgeLookup::Kind::Unique);
   assert(exact_int.edge && exact_int.edge->callee_spec_id == int_body);
-  const auto wrong_owner = std::count_if(
+  const auto wrong_owner_count = std::count_if(
       int_method.specializations.begin(), int_method.specializations.end(),
       [&](const MethodSpecializationIdentity& specialization) {
     return specialization.spec_id == float_body;
   });
-  assert(wrong_owner == 0);
+  assert(wrong_owner_count == 0);
   methods.semantic_call_edges.erase(std::remove_if(
       methods.semantic_call_edges.begin(), methods.semantic_call_edges.end(),
       [&](const SemanticCallEdge& edge) {

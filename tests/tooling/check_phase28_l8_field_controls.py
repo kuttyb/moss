@@ -210,6 +210,23 @@ def run_field_grid(compiler: str, scratch: Path) -> tuple[list[str], int, int]:
         if not case_failed:
             passed += 1
             print(f"PASS {tag}" + (f": expected {expected_diagnostic}" if expected_diagnostic else ""))
+    # Report each failed cell once, retaining all independently observed causes.
+    cell_causes: dict[str, set[str]] = {}
+    for failure in failures:
+        tag = failure.split(":", 1)[0].split(" Fast Debug", 1)[0].split(" Native", 1)[0]
+        causes = cell_causes.setdefault(tag, set())
+        if "unknown local 'source'" in failure:
+            causes.add("FIELD: Fast Debug parameter alias binding")
+        elif "OWNERSHIP_USE_AFTER_CONSUME" in failure:
+            causes.add("FIELD-REVIEW: handler caller RootIngress transfer")
+        elif "indexed read lacks exact checked" in failure:
+            causes.add("STEP2: indexed-read authority")
+        elif any(text in failure for text in (
+                "checker call authority", "ReturnValue owner SpecId",
+                "checker-owned caller SpecId", "method edge")):
+            causes.add("STEP1: call/body SpecId authority")
+    for tag, causes in sorted(cell_causes.items()):
+        print(f"FAIL-CELL {tag}: " + "; ".join(sorted(causes or {"UNCLASSIFIED: inspect diagnostics"})))
     return failures, passed, unavailable
 
 
