@@ -17314,13 +17314,18 @@ static void bind_imported_return_value_artifact_handles(Program& provider) {
         statement.checked_statement_occurrence_id =
             0x80000000u + static_cast<std::uint32_t>(ordinal);
     }
-    std::set<std::uint32_t> seen;
+    std::set<std::pair<std::uint32_t, SpecId>> seen_authorities;
+    std::set<std::uint32_t> seen_ordinals;
     for (const auto& encoded : records) {
       try {
         const auto artifact = decode_return_value_artifact_record(encoded);
-        if (artifact.statement_preorder_ordinal >= body.size() ||
-            !seen.insert(artifact.statement_preorder_ordinal).second)
-          throw std::invalid_argument("duplicate or out-of-range ReturnValue ordinal");
+        if (artifact.specialization_id == InvalidSpecId ||
+            artifact.statement_preorder_ordinal >= body.size() ||
+            !seen_authorities.emplace(artifact.statement_preorder_ordinal,
+                                      artifact.specialization_id).second)
+          throw std::invalid_argument(
+              "duplicate, invalid, or out-of-range ReturnValue ordinal and SpecId");
+        seen_ordinals.insert(artifact.statement_preorder_ordinal);
         const auto& statement = body[artifact.statement_preorder_ordinal];
         if (statement.checked_statement_occurrence_id == UINT32_MAX ||
             statement.line != artifact.source_line)
@@ -17350,7 +17355,7 @@ static void bind_imported_return_value_artifact_handles(Program& provider) {
       if ((statement.kind == Stmt::Kind::Return ||
            statement.kind == Stmt::Kind::Reply) && !statement.a.empty())
         ++valued_returns;
-    if (seen.size() != valued_returns)
+    if (seen_ordinals.size() != valued_returns)
       throw CompileError(std::max(line, 0),
           "imported execution body has incomplete ReturnValue authority coverage",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
