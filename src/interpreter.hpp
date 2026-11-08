@@ -4043,7 +4043,9 @@ class FastInterpreter {
         ? target.source_file : target.execution_source_file;
     frame.semantic_identity = "fn:" + target.name + "@" +
         std::to_string(target.line);
-    if (specialization)
+    // Keep parameter binding identical for checked specialized and ordinary
+    // functions; ordinary functions use the checker-inferred declaration
+    // parameter effects below.
     bind_parameters(target.params,
                     specialization ? specialization->parameter_effects : target.parameter_effects,
                     arguments, caller, frame, line, output,
