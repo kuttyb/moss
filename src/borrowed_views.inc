@@ -84,7 +84,11 @@
   }
 
   string viewed_function_name(const string& name, const vector<string>& args, const Domain* d,
-      const std::set<string>& locals, const std::unordered_map<string,string>* types) const {
+      const std::set<string>& locals, const std::unordered_map<string,string>* types,
+      const NativeEstCursor* occurrence = nullptr) const {
+    const NativeEstCursor* call_cursor = occurrence
+        ? occurrence : active_native_est_cursor_;
+    NativeEstCursorScope call_cursor_scope(active_native_est_cursor_, call_cursor);
     string emitted = emitted_function_name(name, args, types);
     const Function* found_fn = nullptr;
     if (starts_with(name, "callable-v1:")) {
@@ -94,12 +98,20 @@
       if (found != functions_.end()) found_fn = found->second;
     }
     if (!found_fn) return emitted;
-    const auto* specialization = call_specialization(*found_fn, args, types);
-    for (size_t i = 0; i < args.size(); ++i)
+    const auto* specialization = call_specialization(
+        *found_fn, args, types, call_cursor);
+    for (size_t i = 0; i < args.size(); ++i) {
+      auto child_cursor = native_call_argument_cursor(call_cursor, i);
+      if (call_cursor && !child_cursor)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT viewed function argument lacks exact EST child");
+      NativeEstCursorScope argument_cursor_scope(
+          active_native_est_cursor_, child_cursor ? &*child_cursor : nullptr);
       if (function_effect(*found_fn, i,
               generated_expr_type(args[i], types).value_or(""), specialization) != Effect::Consume &&
           is_object_view(args[i], d, locals, types))
         return "__moss_view_" + emitted;
+    }
     return emitted;
   }
 

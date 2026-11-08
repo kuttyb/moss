@@ -5670,7 +5670,8 @@ class Generator {
     }
 
     std::ostringstream call;
-    call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    call << viewed_function_name(name, arguments, domain, locals, types,
+                                 occurrence) << "(";
     auto nested_occurrence = [&](size_t index) {
       uint32_t occurrence = 0;
       for (size_t prior = 0; prior < index; ++prior)
@@ -8290,7 +8291,8 @@ class Generator {
           }
         }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
-        r << viewed_function_name(head, call_args, d, locals, types) << "(";
+        r << viewed_function_name(head, call_args, d, locals, types,
+                                  active_native_est_cursor_) << "(";
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
@@ -12396,7 +12398,9 @@ class Generator {
           }
           string method_receiver_expression = (implicit_method ? "self." : "") +
             (s.b.empty() && known_function
-                    ? viewed_function_name(function_target->name, s.args, d, locals, &types)
+                    ? viewed_function_name(function_target->name, s.args, d,
+                                           locals, &types,
+                                           active_native_est_cursor_)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
@@ -12411,7 +12415,17 @@ class Generator {
           }
           call_output << "(";
           size_t emitted_arguments = 0;
+          const NativeEstCursor* direct_call_cursor =
+              active_native_est_cursor_;
           for (size_t k = 0; k < s.args.size(); ++k) {
+            auto child_cursor = native_call_argument_cursor(
+                direct_call_cursor, k);
+            if (direct_call_cursor && !child_cursor)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT Native direct-call argument lacks exact EST child");
+            NativeEstCursorScope argument_cursor_scope(
+                active_native_est_cursor_,
+                child_cursor ? &*child_cursor : nullptr);
             bool compile_time_callable = known_function &&
                 is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
             if (compile_time_callable) continue;
@@ -12426,7 +12440,7 @@ class Generator {
                                               s, "", k),
                                           call_specialization(*function_target,
                                                               s.args, &types,
-                                                              active_native_est_cursor_));
+                                                              direct_call_cursor));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
                 string rendered = method_call_argument(
