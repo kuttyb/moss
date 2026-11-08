@@ -251,10 +251,13 @@ string module_name_from_symbol(const string& symbol) {
 void build_type_context(Program& program) {
   auto context = std::make_shared<moss::TypeContext>();
   for (auto& function : program.functions) {
+    if (!function.semantic_callable_id.empty()) continue;
     const string& declaration = function.declaration_name.empty()
         ? function.name : function.declaration_name;
+    const string& defining_module = function.defining_module.empty()
+        ? program.module_name : function.defining_module;
     function.semantic_callable_id = "callable-v1:" +
-        program_module_identity(program, function.defining_module) +
+        program_module_identity(program, defining_module) +
         ":fn:" + declaration;
   }
   auto declare = [&](moss::DeclarationKind kind, const string& program_name,
@@ -17970,11 +17973,13 @@ static ParsedModuleUnit load_module_interface(
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
   const size_t section2_marker = text.find("\nexecution_body_version ");
   ExecutionBodySectionView execution_bodies;
-  if (load_execution_bodies)
+  // ABI-v10 checker projection needs the provider's stored arenas and SpecIds
+  // for both consumers. Native linking does not bypass identity restoration.
+  const bool restore_checked_execution = load_execution_bodies || v10_interface;
+  if (restore_checked_execution)
     execution_bodies = parse_execution_body_section(text);
-  // Section 2 is deliberately outside semantic admission and interface
-  // fingerprints. Ordinary imports parse only Section 1; the interpreter
-  // explicitly requests and validates executable bodies.
+  // Section 2 stays outside Section 1 semantic/interface fingerprints; both
+  // consumers validate and restore it through the same import implementation.
   const string semantic_text = section2_marker == string::npos
       ? text : text.substr(0, section2_marker + 1);
   if (v10_interface != staged_abi_v10())
@@ -19328,7 +19333,7 @@ static ParsedModuleUnit load_module_interface(
                             handler.name + ":" + std::to_string(arm.line));
     }
   std::unique_ptr<moss::TypeContext::Scope> provider_type_scope;
-  if (load_execution_bodies) {
+  if (restore_checked_execution) {
     if (execution_bodies.present) {
       // ReturnValue artifact types may be nominal. Decode them against the
       // declarations already admitted from Section 1 so the artifact's
