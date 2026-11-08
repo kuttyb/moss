@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 import shutil
 import subprocess
@@ -213,6 +214,105 @@ def run_field_grid(compiler: str, scratch: Path) -> tuple[list[str], int, int]:
     return failures, passed, unavailable
 
 
+def run_echo_reply_controls(compiler: str, scratch: Path) -> list[str]:
+    """Preserve §7.5's primitive-reply accept and String-reply reject pair."""
+    failures: list[str] = []
+    int_source = scratch / "echo_int_reply.moss"
+    int_source.write_text("""domain EchoInt:
+  fn Echo(n: Int) -> Int:
+    reply n
+
+fn main():
+  worker = EchoInt()
+  echo message worker.Echo(42)
+""")
+    try:
+        fast = run([compiler, "run", "--interp", str(int_source)]).stdout.strip()
+        native = native_output(compiler, int_source, scratch, "echo_int_reply")
+        if fast != "42" or native != "42" or fast != native:
+            failures.append(
+                f"Echo Int direct reply: expected '42'; Fast Debug={fast!r}; Native={native!r}")
+        else:
+            print("PASS Echo Int direct reply: Fast Debug and Native output '42'")
+    except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+        failures.append(f"Echo Int direct reply: {error}")
+
+    string_source = scratch / "echo_string_reply.moss"
+    string_source.write_text("""domain EchoString:
+  fn Echo(value: String) -> String:
+    reply value
+
+fn main():
+  pass
+""")
+    result = invoke([compiler, "check", str(string_source), "--json"])
+    combined = result.stdout + result.stderr
+    if result.returncode == 0 or "OWNERSHIP_ILLEGAL_CONSUME" not in combined:
+        failures.append(
+            "Echo String direct reply: expected OWNERSHIP_ILLEGAL_CONSUME, "
+            f"got exit={result.returncode}: {combined}")
+    else:
+        print("PASS Echo String direct reply: rejected with OWNERSHIP_ILLEGAL_CONSUME")
+    return failures
+
+
+def run_parameter_binding_controls(compiler: str, scratch: Path) -> list[str]:
+    """Check Fast Debug passes checker-issued READ/WRITE/CONSUME effects."""
+    cases = {
+        "read": ("READ", "3\n3", """fn probe(source: Vector[Int]) -> Int:
+  b = source
+  return b |> count
+
+fn main():
+  source = [1, 2, 3]
+  echo probe(source)
+  echo (source |> count)
+"""),
+        "write": ("WRITE", "9\n9", """fn probe(source: Vector[Int]) -> Int:
+  source[0] = 9
+  return source[0]
+
+fn main():
+  source = [1, 2, 3]
+  echo probe(source)
+  echo source[0]
+"""),
+        "consume": ("CONSUME", "1", """fn probe(source: Vector[Int]) -> Int:
+  b = source
+  values = [b]
+  return values |> count
+
+fn main():
+  echo probe([1, 2, 3])
+"""),
+    }
+    failures: list[str] = []
+    for name, (expected_effect, expected_output, source_text) in cases.items():
+        source = scratch / f"parameter_binding_{name}.moss"
+        source.write_text(source_text)
+        try:
+            query = run([compiler, "effects", "probe", "--source", str(source),
+                         "--json"])
+            payload = json.loads(query.stdout)
+            effects = payload["result"]["ownership"]
+            if len(effects) != 1 or effects[0]["effect"] != expected_effect:
+                raise RuntimeError(
+                    f"expected checker effect {expected_effect}, got {effects!r}")
+            fast = run([compiler, "run", "--interp", str(source)]).stdout.strip()
+            native = native_output(compiler, source, scratch,
+                                   f"parameter_binding_{name}")
+            if fast != expected_output or native != expected_output or fast != native:
+                raise RuntimeError(
+                    f"expected {expected_output!r}; Fast Debug={fast!r}; "
+                    f"Native={native!r}")
+            print(f"PASS parameter binding {name.upper()}: checker effect "
+                  f"and both engines agree on {fast!r}")
+        except (OSError, RuntimeError, KeyError, ValueError,
+                subprocess.TimeoutExpired) as error:
+            failures.append(f"parameter binding {name.upper()}: {error}")
+    return failures
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_phase28_l8_field_controls.py COMPILER", file=sys.stderr)
@@ -257,6 +357,9 @@ def main() -> int:
                     f"got exit={result.returncode}: {result.stdout}{result.stderr}")
             else:
                 print(f"PASS field_consume {engine}: unchanged reject at line 9")
+
+        failures.extend(run_echo_reply_controls(compiler, scratch))
+        failures.extend(run_parameter_binding_controls(compiler, scratch))
 
         for tag, expected in (
             ("swarm_027_indexed_collection_method", True),
