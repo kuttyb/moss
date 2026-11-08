@@ -1,0 +1,134 @@
+{
+  "src/native_generator.cpp": {
+    "specialization_context_lines": 0,
+    "functional_context_lines": [
+      {
+        "line": 1441,
+        "text": "const Stmt& statement, const string& functional_context) const {"
+      },
+      {
+        "line": 1442,
+        "text": "(void)functional_context;  // Kept only for diagnostics at legacy call sites."
+      },
+      {
+        "line": 2452,
+        "text": "const string& functional_context) const {"
+      },
+      {
+        "line": 2479,
+        "text": "(void)functional_context;  // Diagnostic label only; never an identity source."
+      },
+      {
+        "line": 2577,
+        "text": "const string& functional_context) const {"
+      },
+      {
+        "line": 2578,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 2767,
+        "text": "const string& functional_context) const {"
+      },
+      {
+        "line": 2768,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 3185,
+        "text": "const Stmt& statement, const string& functional_context) const {"
+      },
+      {
+        "line": 3186,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9335,
+        "text": "const Stmt& s, const string& functional_context) const {"
+      },
+      {
+        "line": 9336,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9411,
+        "text": "const Stmt& statement, const string& functional_context) const {"
+      },
+      {
+        "line": 9412,
+        "text": "(void)functional_context;  // Diagnostic label only."
+      },
+      {
+        "line": 9446,
+        "text": "const Stmt& statement, const string& functional_context) const {"
+      },
+      {
+        "line": 9447,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9732,
+        "text": "const Stmt& s, const string& functional_context) const {"
+      },
+      {
+        "line": 9733,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9794,
+        "text": "const Stmt& s, const string& functional_context) const {"
+      },
+      {
+        "line": 9795,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9841,
+        "text": "const string& functional_context) const {"
+      },
+      {
+        "line": 9842,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9865,
+        "text": "const Stmt& s, const string& functional_context,"
+      },
+      {
+        "line": 9868,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 9927,
+        "text": "const Stmt& s, const string& functional_context) const {"
+      },
+      {
+        "line": 9942,
+        "text": "(void)functional_context;  // Diagnostic label only."
+      },
+      {
+        "line": 10010,
+        "text": "const Stmt& s, const string& functional_context) const {"
+      },
+      {
+        "line": 10011,
+        "text": "(void)functional_context;"
+      },
+      {
+        "line": 10385,
+        "text": "const string& functional_context = \"\","
+      },
+      {
+        "line": 10387,
+        "text": "(void)functional_context;"
+      }
+    ],
+    "removed_selection_patterns": []
+  },
+  "src/interpreter.hpp": {
+    "specialization_context_lines": 0,
+    "functional_context_lines": [],
+    "removed_selection_patterns": []
+  },
+  "fact_classes": 24
+}
