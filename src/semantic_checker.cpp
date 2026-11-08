@@ -18298,6 +18298,31 @@ class Checker {
         ":field:" + field->name + "@" + std::to_string(field->line);
   }
 
+  string current_domain_field_name(const Domain* domain,
+                                   const StorageLocation& location) const {
+    if (!domain) return {};
+    const string name = location.root == "self"
+        ? (location.path.empty() ? string() : location.path.front())
+        : location.root;
+    return std::any_of(domain->state.begin(), domain->state.end(),
+        [&](const Field& field) { return field.name == name; })
+        ? name : string();
+  }
+
+  string current_domain_field_identity(const Domain* domain,
+                                      const string& name) const {
+    if (!domain || name.empty()) return {};
+    const auto field = std::find_if(domain->state.begin(), domain->state.end(),
+        [&](const Field& candidate) { return candidate.name == name; });
+    if (field == domain->state.end()) return {};
+    return moss::declaration_identity(
+               moss::DeclarationKind::Domain,
+               program_module_identity(p_, domain->defining_module),
+               domain->declaration_name.empty()
+                   ? domain->name : domain->declaration_name) +
+        ":state-field:" + field->name + "@" + std::to_string(field->line);
+  }
+
   std::optional<StorageLocation> indexed_borrow_storage_location(
       const string& expression, const TypeEnv& env) const {
     string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
@@ -30963,7 +30988,6 @@ class Checker {
                              OwnershipEnv& env, const Domain* current_domain,
                              const Handler* current_handler,
                              vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
-    (void)current_domain;
     while (index < statements.size()) {
       for (auto it = env.active_read_borrow_last_use.begin();
            it != env.active_read_borrow_last_use.end();) {
@@ -31844,9 +31868,18 @@ class Checker {
           const string receiver_field_name = plain_field_source_location
               ? current_object_field_name(*plain_field_source_location)
               : string();
+          const string receiver_domain_field_name =
+              receiver_field_name.empty() && plain_field_source_location
+                  ? current_domain_field_name(current_domain,
+                                              *plain_field_source_location)
+                  : string();
           const string receiver_field_identity = source_binding ==
                   env.binding_identities.end()
-              ? current_object_field_identity(receiver_field_name) : string();
+              ? (!receiver_field_name.empty()
+                    ? current_object_field_identity(receiver_field_name)
+                    : current_domain_field_identity(current_domain,
+                                                   receiver_domain_field_name))
+              : string();
           const string source_binding_identity = source_binding !=
                   env.binding_identities.end()
               ? source_binding->second : receiver_field_identity;
@@ -31881,8 +31914,9 @@ class Checker {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  receiver_field_name.empty() ? source_root
-                                              : receiver_field_name,
+                  !receiver_field_name.empty() ? receiver_field_name
+                      : !receiver_domain_field_name.empty()
+                          ? receiver_domain_field_name : source_root,
                   receiver_field_identity.empty()
                       ? source_binding_identity : string(), env.types,
                   env.binding_identities,
@@ -32067,9 +32101,18 @@ class Checker {
           const string receiver_field_name = plain_field_source_location
               ? current_object_field_name(*plain_field_source_location)
               : string();
+          const string receiver_domain_field_name =
+              receiver_field_name.empty() && plain_field_source_location
+                  ? current_domain_field_name(current_domain,
+                                              *plain_field_source_location)
+                  : string();
           const string receiver_field_identity = source_binding ==
                   env.binding_identities.end()
-              ? current_object_field_identity(receiver_field_name) : string();
+              ? (!receiver_field_name.empty()
+                    ? current_object_field_identity(receiver_field_name)
+                    : current_domain_field_identity(current_domain,
+                                                   receiver_domain_field_name))
+              : string();
           const string source_binding_identity = source_binding !=
                   env.binding_identities.end()
               ? source_binding->second : receiver_field_identity;
@@ -32119,8 +32162,9 @@ class Checker {
                 (!current_ownership_flow_ || is_plain_field_borrow_source)) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a, target_binding_identity,
-                  receiver_field_name.empty() ? source_root
-                                              : receiver_field_name,
+                  !receiver_field_name.empty() ? receiver_field_name
+                      : !receiver_domain_field_name.empty()
+                          ? receiver_domain_field_name : source_root,
                   receiver_field_identity.empty()
                       ? source_binding_identity : string(), env.types,
                   env.binding_identities,
