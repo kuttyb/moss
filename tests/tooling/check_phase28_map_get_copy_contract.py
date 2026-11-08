@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import subprocess
 from pathlib import Path
 
@@ -33,7 +34,15 @@ def main() -> int:
 
     code, diagnostic, rust = compile_native(args.compiler, REJECT_SOURCE, out)
     if code:
-        print(f"PASS implicit-copy source rejected by Moss: {diagnostic.strip()}")
+        reason = diagnostic.lower()
+        ownership_code = re.search(r"\[OWNERSHIP_[A-Z_]+\]", diagnostic)
+        borrowed_lookup_reason = any(token in reason for token in (
+            "borrow", "read-only", "read view", "collection elements", "map.get"))
+        if not ownership_code or not borrowed_lookup_reason or "MOSS_INTERNAL_INVARIANT" in diagnostic:
+            print("FAIL implicit-copy control hit an unrelated Moss failure")
+            print(diagnostic.strip())
+            return 1
+        print(f"PASS implicit-copy source rejected by Moss ownership: {diagnostic.strip()}")
     else:
         rejected = subprocess.run(
             ["rustc", str(rust), "-o", str(out / "must_reject")],

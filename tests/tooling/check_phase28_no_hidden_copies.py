@@ -15,7 +15,7 @@ EXPECTED_COMPILE_FAILURES = (
     ROOT / "tests/tooling/fixtures/phase28_no_hidden_copies_expected_compile_failures.txt"
 )
 MARK = re.compile(r"//\s*Moss line (\d+):\s*(.*)")
-CLONE = re.compile(r"\.clone\(\)|\.cloned\(\)|\.to_owned\(\)|\.to_vec\(\)|Clone::clone|\bArc\s*::\s*clone\s*\(")
+CLONE = re.compile(r"\.(?:clone|cloned|to_owned|to_vec)\s*\(\s*\)|\b(?:Clone|Arc)\s*::\s*clone\b")
 
 
 def audit_rust(source: Path, rust_path: Path) -> tuple[Counter[str], list[str]]:
@@ -96,7 +96,8 @@ def main() -> int:
     probe_rust = out_root / "scanner-control.rs"
     probe_source.write_text("fn main():\n  echo 0\n")
     forms = ("x.clone()", "x.cloned()", "x.to_owned()", "x.to_vec()",
-             "Clone::clone(&x)", "Arc::clone(&x)", "std::sync::Arc::clone(&x)")
+             "Clone::clone(&x)", "Arc::clone(&x)", "std::sync::Arc::clone(&x)",
+             "x.clone ()", "x.to_vec( )", "Clone :: clone", "Arc::clone")
     probe_rust.write_text("Arc::clone(&runtime);\n// Moss line 2: echo 0\n" +
                           ";\n".join(forms))
     probe_totals, probe_hidden = audit_rust(probe_source, probe_rust)
