@@ -5173,8 +5173,14 @@ class Generator {
     const auto root = est::unparenthesized(*cursor->arena, cursor->expression);
     if (!std::holds_alternative<est::Pipeline>(cursor->arena->at(root)))
       return std::nullopt;
-    return est::functional_pipeline(*cursor->arena, root, expression,
-                                    resolve_stage);
+    auto parsed = est::functional_pipeline(*cursor->arena, root, expression,
+                                           resolve_stage);
+    if (parsed) {
+      parsed->arena_index = cursor->arena_index;
+      for (auto& stage : parsed->stages)
+        stage.arena_index = cursor->arena_index;
+    }
+    return parsed;
   }
 
   std::optional<string> generated_functional_pipeline_type(
@@ -5934,11 +5940,109 @@ class Generator {
             node.est_argument_expression_ids.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT functional callback Call edge contradicts checked stage identity");
-    if (edge.target_kind != SemanticCallTargetKind::Static)
+    SpecId callback_spec_id = InvalidSpecId;
+    if (edge.target_kind == SemanticCallTargetKind::Static) {
+      callback_spec_id = edge.callee_spec_id;
+      if (callback_spec_id == InvalidSpecId ||
+          edge.argument_callable_spec_ids[node.callable_argument_index] !=
+              callback_spec_id)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT static functional callback row has contradictory target SpecId");
+    } else if (edge.target_kind == SemanticCallTargetKind::DynamicCallback) {
+      if (edge.callee_spec_id != InvalidSpecId ||
+          edge.argument_callable_spec_ids[node.callable_argument_index] !=
+              InvalidSpecId)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic functional callback row carries a static target");
+      const auto& checked_program = semantic_program_ ? *semantic_program_ : p_;
+      const Function* owner = unique_function_owner_for_spec_id(
+          checked_program, codegen_body_spec_id_);
+      const FunctionSpecialization* owner_specialization = nullptr;
+      if (owner)
+        for (const auto& candidate : owner->specializations)
+          if (candidate.spec_id == codegen_body_spec_id_) {
+            if (owner_specialization)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT duplicate dynamic callback owner specialization");
+            owner_specialization = &candidate;
+          }
+      if (!owner || !owner_specialization ||
+          owner_specialization->parameter_types.size() != owner->params.size() ||
+          node.callable_argument_index >= node.est_argument_expression_ids.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback has no exact owning function specialization");
+      const auto callback_expr = node.est_argument_expression_ids[
+          node.callable_argument_index];
+      const auto* stage_arena = stage.arena_index <
+              checked_program.expression_arenas.size()
+          ? checked_program.expression_arenas[stage.arena_index].get()
+          : nullptr;
+      const auto* callback_identifier = stage_arena &&
+              callback_expr < stage_arena->size()
+          ? std::get_if<est::Identifier>(&stage_arena->at(callback_expr))
+          : nullptr;
+      if (!callback_identifier)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback argument is not its checked Identifier occurrence");
+      std::size_t parameter_index = owner->params.size();
+      std::size_t parameter_matches = 0;
+      for (std::size_t index = 0; index < owner->params.size(); ++index)
+        if (owner->params[index].name == callback_identifier->name) {
+          parameter_index = index;
+          ++parameter_matches;
+        }
+      if (parameter_matches != 1)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback Identifier does not bind one function parameter");
+      const string expected_callable = canonical_type_name(
+          owner_specialization->parameter_types[parameter_index]);
+      if (!starts_with(expected_callable, "callable-v1:"))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback parameter lacks checked callable identity");
+      const ProgramSpecializationIdentity* owner_row =
+          codegen_body_spec_id_ < checked_program.specialization_table.size()
+              ? &checked_program.specialization_table[codegen_body_spec_id_]
+              : nullptr;
+      if (!owner_row || owner_row->id != codegen_body_spec_id_)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback owner SpecId row is invalid");
+      for (const auto& incoming : checked_program.semantic_call_edges) {
+        if (incoming.target_kind != SemanticCallTargetKind::Static ||
+            incoming.callee_spec_id != codegen_body_spec_id_)
+          continue;
+        if (incoming.caller_spec_id == InvalidSpecId ||
+            incoming.call_est_arena_index == UINT32_MAX ||
+            incoming.call_expression_occurrence_id == UINT32_MAX ||
+            incoming.target_callable_identity != owner_row->semantic_callable_identity ||
+            incoming.argument_callable_spec_ids.size() != owner->params.size() ||
+            parameter_index >= incoming.argument_callable_spec_ids.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback owner call row is incomplete or contradictory");
+        const SpecId incoming_callback =
+            incoming.argument_callable_spec_ids[parameter_index];
+        if (incoming_callback == InvalidSpecId ||
+            incoming_callback >= checked_program.specialization_table.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback owner call lacks callable argument SpecId");
+        const auto& callback_row =
+            checked_program.specialization_table[incoming_callback];
+        if (callback_row.id != incoming_callback ||
+            callback_row.semantic_callable_identity != expected_callable)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback argument SpecId contradicts its checked specialization parameter");
+        if (callback_spec_id != InvalidSpecId &&
+            callback_spec_id != incoming_callback)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback owner call rows disagree on callback SpecId");
+        callback_spec_id = incoming_callback;
+      }
+      if (callback_spec_id == InvalidSpecId)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback has no exact incoming call argument SpecId");
+    } else {
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT Native functional callback lacks a static checked target");
-    const SpecId callback_spec_id =
-        edge.argument_callable_spec_ids[node.callable_argument_index];
+          "MOSS_INTERNAL_INVARIANT functional callback Call edge target kind is unsupported");
+    }
     if (callback_spec_id == InvalidSpecId ||
         callback_spec_id >= checked_program.specialization_table.size() ||
         checked_program.specialization_table[callback_spec_id].id !=
