@@ -9537,6 +9537,34 @@ class Generator {
     return found_fact;
   }
 
+  void require_field_ownership_authority_when_nonprimitive(
+      const Stmt& statement,
+      const TypedLocalOwnershipFactV1* ownership_fact) const {
+    if (ownership_fact) return;
+
+    const NativeEstCursor cursor = checked_statement_cursor(
+        statement, est::ExprSlot::RhsValue);
+    est::ExprId expression = cursor.expression;
+    while (expression < cursor.arena->size()) {
+      const auto* parenthesized =
+          std::get_if<est::Parenthesized>(&cursor.arena->at(expression));
+      if (!parenthesized) break;
+      expression = parenthesized->inner;
+    }
+    if (expression >= cursor.arena->size() ||
+        !std::holds_alternative<est::Member>(cursor.arena->at(expression)))
+      return;
+
+    const auto* facts = cursor.arena->facts(cursor.expression,
+                                             codegen_body_spec_id_);
+    if (!facts || !facts->type)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT field binding lacks checked type authority");
+    if (!is_primitive_copy_type(facts->type))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT nonprimitive field binding lacks checker ownership authority");
+  }
+
   const TypedTryContinuationFactV1& resolve_try_continuation_fact(
       const Stmt& statement, const string& functional_context) const {
     (void)functional_context;  // Diagnostic label only.
@@ -11873,6 +11901,7 @@ class Generator {
               annotation = "f64";
             const auto* take_fact = resolve_take_fact(s, "");
             const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, "");
+            require_field_ownership_authority_when_nonprimitive(s, ownership_fact);
             if (take_fact) {
               string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
               o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
@@ -12062,6 +12091,8 @@ class Generator {
                   ? nullptr : resolve_take_fact(s, "");
               const auto* ownership_fact = (take_fact || transfer_fact)
                   ? nullptr : resolve_local_ownership_fact(s, "");
+              if (!transfer_fact)
+                require_field_ownership_authority_when_nonprimitive(s, ownership_fact);
               string assigned;
               vector<string> concat_operands;
               std::function<void(string)> collect_concat = [&](string source) {
@@ -12569,6 +12600,7 @@ class Generator {
             }
             const auto* take_fact = resolve_take_fact(s, "");
             const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, "");
+            require_field_ownership_authority_when_nonprimitive(s, ownership_fact);
             o << indent(level);
             if (!joined_assignment) {
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);
