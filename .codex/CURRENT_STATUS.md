@@ -19123,3 +19123,26 @@ untouched.
   treated `--help` as its compiler path, returning failures. Per the task stop
   rule, corpus, field gate, diagnostic counts, full suites, and fresh Agent 2
   review remain unrun. No push or merge occurred.
+
+## Phase 28 Task F1 resumed validation — NO-GO on candidate acceptance check
+
+- Step 1 corpus on exact code commit `a1758df450f05993b709f6bf0b8f322d83d1b786`
+  passed: 238 inputs; baseline and candidate each accept 212; 0 losses, 0
+  gains, no new names. The field-controls gate passed all positive and negative
+  cases, including F1-R as `OWNERSHIP_SOURCE_BORROWED` in both engines and
+  F1-J as the recorded `OWNERSHIP_ILLEGAL_CONSUME` known failure in both.
+- Both requested diagnostic strings occur zero times in the partial Default
+  logs. Baseline and candidate Default suites were run in separate plain clones.
+  Candidate preflight failed at `check_phase28_local_ownership.py`: it expected
+  `OWNERSHIP_USE_AFTER_CONSUME` for `use_after_move.moss`, but the candidate
+  returned no diagnostics. Baseline Default was interrupted at the same stage
+  after the candidate failure; neither full suite produced a job matrix count.
+  Shadow was not run.
+- Agent 2 independently reran corpus and field gate with passing results, then
+  returned NO-GO on the exact candidate SHA. The review identified a fallback
+  from a missing checked identifier occurrence to identifier spelling in
+  `checked_statement_source_binding_identity`, and source-derived alias
+  provenance via `inferred_expr_type(s.b, ...)` / `storage_location(s.b, ...)`
+  rather than the exact checked EST source and reaching edge. Per the review
+  stop rule, Agent 2 did not run the three additional probes. No code repair,
+  push, or merge occurred. Task remains stopped for review/acceptance defects.
