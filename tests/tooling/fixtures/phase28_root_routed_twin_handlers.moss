@@ -1,0 +1,25 @@
+domain Sink:
+  value: Int
+
+  fn Set(v: Int):
+    value = v
+
+  fn Get() -> Int:
+    reply value
+
+domain Relay:
+  domainroutes(sink: Sink)
+
+  fn Forward(v: Int) -> Int:
+    message sink.Set(v)
+    reply v
+
+fn main():
+  left = Sink()
+  right = Sink()
+  first = Relay(sink = left)
+  second = Relay(sink = right)
+  echo message first.Forward(1)
+  echo message second.Forward(2)
+  echo message left.Get()
+  echo message right.Get()

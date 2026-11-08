@@ -48,6 +48,8 @@ def nested_native_consumer_cases():
          "7\n"),
         ("tests/tooling/fixtures/phase28_root_depth2_message_arguments.moss",
          "7\n"),
+        ("tests/tooling/fixtures/phase28_root_routed_twin_handlers.moss",
+         "1\n2\n1\n2\n"),
         ("tests/tooling/fixtures/phase28_root_nested_copy_payload.moss",
          "9\n"),
     )
@@ -86,6 +88,7 @@ def nested_native_consumer_cases():
                 count += 1
                 if source.endswith(("phase28_root_nested_message_arguments.moss",
                                     "phase28_root_depth2_message_arguments.moss",
+                                    "phase28_root_routed_twin_handlers.moss",
                                     "phase28_root_nested_copy_payload.moss")):
                     debug = subprocess.run(
                         [COMPILER, "run", "--interp", source], cwd=ROOT,

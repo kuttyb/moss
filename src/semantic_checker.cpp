@@ -37807,6 +37807,10 @@ class Checker {
 
     SemanticCallEdge* selected = caller_rows.empty() ? nullptr
                                                      : caller_rows.front();
+    const string expected_target =
+        "handler:" + target_domain->second->name + "." + handler_name;
+    const string expected_callable =
+        p_.specialization_table[target_spec_id].semantic_callable_identity;
     if (!selected) {
       SemanticCallEdge* source_row = nullptr;
       for (auto* edge : occurrence_rows) {
@@ -37816,29 +37820,47 @@ class Checker {
               "MOSS_INTERNAL_INVARIANT");
         source_row = edge;
       }
-      if (!source_row && !occurrence_rows.empty())
-        source_row = occurrence_rows.front();
-      if (!source_row)
-        err(line, "checked nested message has no checker-produced source edge",
-            "MOSS_INTERNAL_INVARIANT");
-      if (source_row->target != "handler:" + target_domain->second->name +
-                                    "." + handler_name ||
-          source_row->receiver != receiver)
-        err(line, "checked nested message source edge contradicts its resolved target",
-            "MOSS_INTERNAL_INVARIANT");
-      if (source_row->caller_spec_id == InvalidSpecId) {
+      if (source_row) {
+        if (source_row->target != expected_target ||
+            source_row->receiver != receiver)
+          err(line,
+              "checked nested message source edge contradicts its resolved target",
+              "MOSS_INTERNAL_INVARIANT");
         selected = source_row;
       } else {
-        p_.semantic_call_edges.push_back(*source_row);
+        // A different caller SpecId may check the same immutable EST message
+        // occurrence for another concrete domain instance. Its target handler
+        // body is not authority for this caller. Build this row from the
+        // handler selected by this checker invocation instead of copying a
+        // peer caller's callee SpecId.
+        SemanticCallEdge fresh;
+        fresh.source = current_semantic_context_;
+        fresh.target = expected_target;
+        fresh.line = line;
+        fresh.argument_types.reserve(arguments.size());
+        for (const auto& argument : arguments)
+          fresh.argument_types.push_back(
+              inferred_expr_type(argument, env).value_or(""));
+        fresh.source_file = current_source_file_;
+        fresh.invocation_kind = "synchronous_message";
+        fresh.receiver = receiver;
+        fresh.caller_spec_id = current_spec_id_;
+        fresh.callee_spec_id = target_spec_id;
+        fresh.target_kind = SemanticCallTargetKind::Static;
+        fresh.target_callable_identity = expected_callable;
+        fresh.target_module_identity = program_module_identity(
+            p_, target_domain->second->defining_module);
+        fresh.message_est_arena_index = cursor.arena_index;
+        fresh.message_expression_occurrence_id = message_id;
+        fresh.receiver_expression_occurrence_id = message->target;
+        fresh.call_est_arena_index = cursor.arena_index;
+        fresh.call_expression_occurrence_id = message_id;
+        p_.semantic_call_edges.push_back(std::move(fresh));
         selected = &p_.semantic_call_edges.back();
       }
     }
 
     auto& edge = *selected;
-    const string expected_target =
-        "handler:" + target_domain->second->name + "." + handler_name;
-    const string expected_callable =
-        p_.specialization_table[target_spec_id].semantic_callable_identity;
     if (edge.target != expected_target || edge.receiver != receiver ||
         edge.invocation_kind != "synchronous_message" ||
         edge.message_est_arena_index != cursor.arena_index ||
