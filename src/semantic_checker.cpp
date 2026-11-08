@@ -26749,8 +26749,15 @@ class Checker {
                 if (!input_identifier) continue;
                 const auto identity =
                     binding_identities.find(input_identifier->name);
-                if (identity != binding_identities.end() &&
-                    identity->second == alias_binding_identity)
+                // The early callable-effect pass runs before stable binding
+                // identities are installed. In that pass the alias name is
+                // the only available local key; ownership publication later
+                // takes this same branch only after the exact identity match.
+                if ((!alias_binding_identity.empty() &&
+                     identity != binding_identities.end() &&
+                     identity->second == alias_binding_identity) ||
+                    (alias_binding_identity.empty() &&
+                     input_identifier->name == alias))
                   return true;
               }
               return false;
@@ -31707,6 +31714,19 @@ class Checker {
               : env.binding_identities.end();
           const bool is_indexed_source = !source_root.empty() && !local_source &&
               !is_plain_field_borrow_source;
+          if (transfers && is_plain_field_borrow_source &&
+              source_binding == env.binding_identities.end() &&
+              !targets_object_field && !env.state_fields.count(s.a)) {
+            // A field rooted in the implicit method/domain receiver has no
+            // lexical binding identity to transfer. Its alias still widens
+            // from the uses of this exact definition. This is the same
+            // per-definition decision used for a local record receiver; only
+            // the source-owner fact is absent because `self` is not a local.
+            if (auto inferred = infer_straight_line_definition_effect(
+                    statements, index, s.a, target_binding_identity,
+                    source_root, {}, env.types, env.binding_identities))
+              source_access = *inferred;
+          }
           retain_local_transfer_authority(s, index, env);
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);

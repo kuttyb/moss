@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from itertools import product
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -61,6 +62,157 @@ def expect_step2_map_view(compiler: str, source: Path, scratch: Path,
     print(f"EXPECTED Step 2 CollectionView failure: {tag} {engine}: {expected}")
 
 
+def grid_source(site: str, source_kind: str, binding: str, use: str) -> tuple[str, str | None]:
+    """Build one field-effect control. Return source and expected diagnostic code."""
+    if site == "main" and source_kind == "parameter":
+        raise ValueError("main has no source parameters")
+
+    declarations = """type Inner:
+  frontier: Vector[Int]
+
+type Harness:
+  inner: Inner
+"""
+    if site == "method":
+        declarations += "  fn probe(source: Vector[Int]) -> Int:\n    pass\n"
+    elif site == "handler":
+        declarations = """type Inner:
+  frontier: Vector[Int]
+
+domain Harness:
+  inner: Inner
+"""
+        declarations += "  fn Probe(source: Vector[Int]) -> Int:\n    pass\n"
+
+    param = "source: Vector[Int]" if source_kind == "parameter" else ""
+    setup: list[str] = []
+    source_expr = "source"
+    if source_kind == "local":
+        setup.append("source = [1, 2, 3]")
+    elif source_kind == "vector-element":
+        setup.append("items = [[1, 2, 3]]")
+        source_expr = "items[0]"
+    elif source_kind == "nested-field":
+        if site in ("main", "function"):
+            setup.append("h = Harness(inner = Inner(frontier = [1, 2, 3]))")
+            source_expr = "h.inner.frontier"
+        else:
+            source_expr = "inner.frontier"
+
+    body: list[str] = list(setup)
+    if binding == "reassigned":
+        body.append("b = [9]")
+    body.append("b = " + source_expr)
+    if use == "read":
+        body.append("return b |> count")
+    else:
+        body.extend(("values = [b]", "return values |> count"))
+
+    if site == "main":
+        lines = "fn main():\n"
+        main_body = list(setup)
+        if binding == "reassigned": main_body.append("b = [9]")
+        main_body.append("b = " + source_expr)
+        if use == "read":
+            main_body.extend(("echo (b |> count)",
+                              f"echo ({source_expr} |> count)"))
+        else:
+            main_body.extend(("values = [b]", "echo (values |> count)"))
+        lines += "\n".join("  " + line for line in main_body) + "\n"
+        lines = declarations + "\n" + lines
+    elif site == "function":
+        lines = f"fn probe({param}) -> Int:\n" if param else "fn probe() -> Int:\n"
+        lines += "\n".join("  " + line for line in body)
+        if param:
+            lines += "\n\nfn main():\n  source = [1, 2, 3]\n  echo probe(source)\n"
+            if use == "read": lines += "  echo (source |> count)\n"
+        else:
+            lines += "\n\nfn main():\n  echo probe()\n"
+        lines = declarations + "\n" + lines
+    elif site == "method":
+        lines = declarations.replace("  fn probe(source: Vector[Int]) -> Int:\n    pass\n", "")
+        lines += "  fn probe(" + param + ") -> Int:\n"
+        lines += "\n".join("    " + line for line in body)
+        lines += "\n\nfn main():\n  h = Harness(inner = Inner(frontier = [1, 2, 3]))\n"
+        if param:
+            lines += "  source = [1, 2, 3]\n  echo h.probe(source)\n"
+            if use == "read": lines += "  echo (source |> count)\n"
+        else:
+            lines += "  echo h.probe()\n"
+    else:
+        lines = declarations.replace("  fn Probe(source: Vector[Int]) -> Int:\n    pass\n", "")
+        lines += "  fn Probe(" + param + ") -> Int:\n"
+        lines += "\n".join("    " + line.replace("return ", "reply ") for line in body)
+        lines += "\n\nfn main():\n  h = Harness(inner = Inner(frontier = [1, 2, 3]))\n"
+        if param:
+            lines += "  source = [1, 2, 3]\n  echo message h.Probe(source)\n"
+            if use == "read": lines += "  echo (source |> count)\n"
+        else:
+            lines += "  echo message h.Probe()\n"
+
+    expected_rejection = None
+    if use == "consume" and source_kind == "vector-element":
+        expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
+    elif use == "consume" and source_kind == "nested-field":
+        expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
+    return lines, expected_rejection
+
+
+def run_field_grid(compiler: str, scratch: Path) -> tuple[list[str], int, int]:
+    failures: list[str] = []
+    passed = 0
+    unavailable = 0
+    grid = product(("local", "parameter", "vector-element", "nested-field"),
+                   ("new", "reassigned"), ("read", "consume"),
+                   ("main", "function", "method", "handler"))
+    for source_kind, binding, use, site in grid:
+        tag = f"grid-{source_kind}-{binding}-{use}-{site}"
+        if source_kind == "parameter" and site == "main":
+            unavailable += 1
+            print(f"UNAVAILABLE {tag}: Moss main has no parameter bindings")
+            continue
+        text, expected_diagnostic = grid_source(site, source_kind, binding, use)
+        source = scratch / f"{tag}.moss"
+        source.write_text(text)
+        case_failed = False
+        fast_output: str | None = None
+        for engine in ("Fast Debug", "Native"):
+            if engine == "Fast Debug":
+                result = invoke([compiler, "run", "--interp", str(source)])
+                if result.returncode == 0:
+                    fast_output = result.stdout.strip()
+            else:
+                result = invoke([compiler, str(source), "-o",
+                                 str(scratch / f"{tag}.rs")])
+            combined = result.stdout + result.stderr
+            if expected_diagnostic:
+                if result.returncode == 0 or expected_diagnostic not in combined:
+                    failures.append(f"{tag} {engine}: expected {expected_diagnostic}, got exit={result.returncode}: {combined}")
+                    case_failed = True
+            elif result.returncode:
+                failures.append(f"{tag} {engine}: expected accept, got {combined}")
+                case_failed = True
+            elif engine == "Native":
+                try:
+                    rust = scratch / f"{tag}.rs"
+                    run(["rustc", "--edition=2021", "-D", "warnings", str(rust), "-o", str(scratch / tag)])
+                    native = run([str(scratch / tag)]).stdout.strip()
+                    expected_output = (
+                        "3\n3" if use == "read" and
+                        (site == "main" or source_kind == "parameter")
+                        else ("3" if use == "read" else "1"))
+                    if native != fast_output or native != expected_output:
+                        failures.append(f"{tag}: expected={expected_output!r}, Fast Debug={fast_output!r}, Native={native!r}")
+                        case_failed = True
+                except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                    failures.append(f"{tag} Native execution: {error}")
+                    case_failed = True
+        if not case_failed:
+            passed += 1
+            print(f"PASS {tag}" + (f": expected {expected_diagnostic}" if expected_diagnostic else ""))
+    return failures, passed, unavailable
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         print("usage: check_phase28_l8_field_controls.py COMPILER", file=sys.stderr)
@@ -70,6 +222,11 @@ def main() -> int:
     scratch.mkdir(parents=True, exist_ok=True)
     failures: list[str] = []
     try:
+        grid_failures, grid_passed, grid_unavailable = run_field_grid(
+            compiler, scratch)
+        failures.extend(grid_failures)
+        print(f"FIELD GRID: {grid_passed}/60 runnable cells passed; "
+              f"{grid_unavailable}/4 parameter-at-main cells structurally unavailable")
         for name, expected in READ_CASES.items():
             source = FIXTURES / f"{name}.moss"
             try:
