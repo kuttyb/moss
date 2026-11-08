@@ -18273,6 +18273,31 @@ class Checker {
                     [&](const Field& field) { return field.name == name; });
   }
 
+  string current_object_field_name(const StorageLocation& location) const {
+    if (!current_object_) return {};
+    const string name = location.root == "self"
+        ? (location.path.empty() ? string() : location.path.front())
+        : location.root;
+    return is_current_object_field(name) ? name : string();
+  }
+
+  string current_object_field_identity(const string& name) const {
+    if (!current_object_) return {};
+    const auto field = std::find_if(current_object_->fields.begin(),
+        current_object_->fields.end(), [&](const Field& candidate) {
+          return candidate.name == name;
+        });
+    if (field == current_object_->fields.end()) return {};
+    const string declaration_name =
+        current_object_->declaration_name.empty()
+            ? current_object_->name : current_object_->declaration_name;
+    return moss::declaration_identity(
+               moss::DeclarationKind::Record,
+               program_module_identity(p_, current_object_->defining_module),
+               declaration_name) +
+        ":field:" + field->name + "@" + std::to_string(field->line);
+  }
+
   std::optional<StorageLocation> indexed_borrow_storage_location(
       const string& expression, const TypeEnv& env) const {
     string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
@@ -31777,6 +31802,7 @@ class Checker {
           string source_root;
           bool is_projected_borrow_source = false;
           bool is_plain_field_borrow_source = false;
+          std::optional<StorageLocation> plain_field_source_location;
           if (local_source) {
             source_root = *local_source;
           } else if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
@@ -31801,16 +31827,26 @@ class Checker {
             // provisional transfer effect must not decide extraction.
             source_root = loc->root;
             is_plain_field_borrow_source = true;
+            plain_field_source_location = *loc;
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const string receiver_field_name = plain_field_source_location
+              ? current_object_field_name(*plain_field_source_location)
+              : string();
+          const string receiver_field_identity = source_binding ==
+                  env.binding_identities.end()
+              ? current_object_field_identity(receiver_field_name) : string();
+          const string source_binding_identity = source_binding !=
+                  env.binding_identities.end()
+              ? source_binding->second : receiver_field_identity;
           const bool is_indexed_source = !source_root.empty() && !local_source &&
               !is_plain_field_borrow_source;
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);
-          if (transfers && source_binding != env.binding_identities.end() &&
-              !source_binding->second.empty() && transfer_type(*source_type) &&
+          if (transfers && !source_binding_identity.empty() &&
+              transfer_type(*source_type) &&
               (!local_source ||
                !env.borrowed_enum_payloads.count(*local_source))) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
@@ -31836,7 +31872,10 @@ class Checker {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  source_root, source_binding->second, env.types,
+                  receiver_field_name.empty() ? source_root
+                                              : receiver_field_name,
+                  receiver_field_identity.empty()
+                      ? source_binding_identity : string(), env.types,
                   env.binding_identities,
                   &unsupported);
             }
@@ -31853,11 +31892,11 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_definition_identity,
+                  source_binding_identity, source_definition_identity,
                   source_access,
                   source_access == Effect::Consume
                       ? TypedLocalOwnershipFactV1::Disposition::Transferred
@@ -31871,10 +31910,10 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               retain_unsupported_local_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  source_binding->second, source_definition_identity, unsupported);
+                  source_binding_identity, source_definition_identity, unsupported);
             }
           }
           if (source_access == Effect::Consume) {
@@ -31988,6 +32027,7 @@ class Checker {
           const bool targets_object_field = is_current_object_field(s.a);
           string source_root;
           bool is_plain_field_borrow_source = false;
+          std::optional<StorageLocation> plain_field_source_location;
           if (local_source) {
             source_root = *local_source;
           } else if (!targets_object_field && !env.state_fields.count(s.a)) {
@@ -32009,14 +32049,25 @@ class Checker {
               // that alias is READ or CONSUME from its downstream uses.
               source_root = loc->root;
               is_plain_field_borrow_source = true;
+              plain_field_source_location = *loc;
             }
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const string receiver_field_name = plain_field_source_location
+              ? current_object_field_name(*plain_field_source_location)
+              : string();
+          const string receiver_field_identity = source_binding ==
+                  env.binding_identities.end()
+              ? current_object_field_identity(receiver_field_name) : string();
+          const string source_binding_identity = source_binding !=
+                  env.binding_identities.end()
+              ? source_binding->second : receiver_field_identity;
           const bool is_indexed_source = !source_root.empty() && !local_source &&
               !is_plain_field_borrow_source;
           if (transfers && is_plain_field_borrow_source &&
+              source_binding_identity.empty() &&
               source_binding == env.binding_identities.end() &&
               !targets_object_field && !env.state_fields.count(s.a)) {
             // A field rooted in the implicit method/domain receiver has no
@@ -32032,8 +32083,8 @@ class Checker {
           retain_local_transfer_authority(s, index, env);
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);
-          if (transfers && source_binding != env.binding_identities.end() &&
-              !source_binding->second.empty() && transfer_type(*source_type) &&
+          if (transfers && !source_binding_identity.empty() &&
+              transfer_type(*source_type) &&
               (!local_source ||
                !env.borrowed_enum_payloads.count(*local_source)) &&
               !env.state_fields.count(s.a) && !targets_object_field) {
@@ -32059,7 +32110,10 @@ class Checker {
                 (!current_ownership_flow_ || is_plain_field_borrow_source)) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a, target_binding_identity,
-                  source_root, source_binding->second, env.types,
+                  receiver_field_name.empty() ? source_root
+                                              : receiver_field_name,
+                  receiver_field_identity.empty()
+                      ? source_binding_identity : string(), env.types,
                   env.binding_identities,
                   &unsupported);
             }
@@ -32076,11 +32130,11 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_definition_identity,
+                  source_binding_identity, source_definition_identity,
                   source_access,
                   source_access == Effect::Consume
                       ? TypedLocalOwnershipFactV1::Disposition::Transferred
@@ -32093,11 +32147,11 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               retain_unsupported_local_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_definition_identity, unsupported);
+                  source_binding_identity, source_definition_identity, unsupported);
             }
           }
           const auto prior_borrow = env.borrowed_local_sources.find(s.a);
