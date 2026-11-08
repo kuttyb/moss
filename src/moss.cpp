@@ -23828,8 +23828,32 @@ static string encode_execution_body_payload(
     // authority and admits only edges with an exact Call occurrence.
     if (edge.invocation_kind == "synchronous_message") continue;
     if (edge.caller_spec_id == InvalidSpecId ||
-        edge.caller_spec_id >= program.specialization_table.size())
+        edge.caller_spec_id >= program.specialization_table.size()) {
+#ifdef MOSS_TEST_BUILD
+      if (std::getenv("MOSS_TEST_TRACE_MOSSI_CALL_EDGE_OWNER")) {
+        std::cerr << "MOSSI_CALL_EDGE_OWNER caller=" << edge.caller_spec_id
+                  << " table_size=" << program.specialization_table.size()
+                  << " line=" << edge.line << " invocation="
+                  << edge.invocation_kind << " source=" << edge.source
+                  << " target=" << edge.target << "\n";
+        for (const auto& identity : program.specialization_table)
+          std::cerr << "MOSSI_SPEC_ROW id=" << identity.id << " module="
+                    << identity.module_identity << " callable="
+                    << identity.semantic_callable_identity << " key="
+                    << identity.diagnostic_key << "\n";
+        if (program.typed_semantics)
+          for (const auto& fact :
+               program.typed_semantics->return_value_facts)
+            std::cerr << "MOSSI_RETURN_FACT spec=" << fact.specialization_id
+                      << " callable="
+                      << fact.provenance.enclosing_callable_id
+                      << " statement=" << fact.statement_occurrence_id
+                      << " arena=" << fact.est_arena_index << " expr="
+                      << fact.expression_occurrence_id << "\n";
+      }
+#endif
       throw std::invalid_argument("call edge contains an unknown caller specialization ID while writing .mossi");
+    }
     const auto& caller = program.specialization_table[edge.caller_spec_id];
     const string caller_module = caller.module_identity;
     if (caller_module == local_module_identity->second)
