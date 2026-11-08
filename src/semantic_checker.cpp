@@ -24658,10 +24658,102 @@ class Checker {
         for (const auto& field : domain.state) domain_fields.insert(field.name);
         for (const auto& parameter : handler.params)
           env[parameter.name] = parameter.type;
-        collect_functional_ir_from_body(
-            handler.body, std::nullopt, 0, {}, nullptr, nullptr, std::move(env),
-            functional_handler_context(domain, handler), nullptr,
-            next_pipeline_id, next_node_id, domain_fields);
+        auto collect_handler_body = [&](const vector<Stmt>& body,
+                                       TypeEnv body_env,
+                                       const string& context) {
+          collect_functional_ir_from_body(
+              body, std::nullopt, 0, {}, nullptr, nullptr,
+              std::move(body_env), context, nullptr, next_pipeline_id,
+              next_node_id, domain_fields);
+        };
+        auto collect_failure_arms = [&](SpecId owner, const TypeEnv& body_env,
+                                        const string& context) {
+          SpecIdScope spec_id_scope(current_spec_id_, owner);
+          for (const auto& arm : handler.failure_arms) {
+            TypeEnv arm_env = body_env;
+            if (!arm.binding.empty() && !arm.exceptional_alternatives.empty()) {
+              std::set<string> error_types;
+              for (const auto& identity : arm.exceptional_alternatives)
+                error_types.insert(identity.type);
+              if (error_types.size() == 1)
+                arm_env[arm.binding] = *error_types.begin();
+            }
+            if (arm.est_patterns.size() == 1)
+              for (const auto& binding :
+                   phase21_pattern_bindings(arm.line, arm.est_patterns.front()))
+                arm_env[binding.first] = binding.second;
+            for (const auto& capture : arm.captures)
+              arm_env[capture.name] = capture.type;
+            SourceFileScope arm_source(current_source_file_, arm.source_file);
+            collect_handler_body(
+                arm.body, std::move(arm_env),
+                context + ":on_fail@" + std::to_string(arm.line));
+          }
+        };
+
+        if (handler.spec_id == InvalidSpecId ||
+            handler.spec_id >= p_.specialization_table.size())
+          throw std::logic_error(
+              "functional handler body has missing or invalid SpecId");
+        {
+          SpecIdScope spec_id_scope(current_spec_id_, handler.spec_id);
+          SourceFileScope source_scope(current_source_file_,
+              handler.source_file.empty() ? domain.source_file
+                                           : handler.source_file);
+          const string context = functional_handler_context(domain, handler);
+          collect_handler_body(handler.body, env, context);
+          collect_failure_arms(handler.spec_id, env, context);
+        }
+
+        for (const auto& specialization : p_.domain_specializations) {
+          if (specialization.source_domain != domain.name) continue;
+          if (specialization.handler_spec_ids.size() != domain.handlers.size())
+            throw std::logic_error(
+                "functional domain specialization has incomplete handler SpecIds");
+          const auto handler_index = static_cast<std::size_t>(
+              &handler - domain.handlers.data());
+          const SpecId instance_spec_id =
+              specialization.handler_spec_ids[handler_index];
+          if (instance_spec_id == InvalidSpecId ||
+              instance_spec_id >= p_.specialization_table.size())
+            throw std::logic_error(
+                "functional domain handler has missing or invalid instance SpecId");
+          SpecIdScope spec_id_scope(current_spec_id_, instance_spec_id);
+          SourceFileScope instance_context(current_semantic_context_,
+              "handler:" + domain.name + "." + handler.name + "@" +
+                  specialization.instance);
+          SourceFileScope instance_source(current_source_file_,
+              handler.source_file.empty() ? domain.source_file
+                                           : handler.source_file);
+          TypeEnv instance_env;
+          instance_env["self"] = domain.name;
+          const auto parameter_types = specialization.handler_parameter_types.find(
+              handler.name);
+          for (std::size_t parameter_index = 0;
+               parameter_index < handler.params.size(); ++parameter_index) {
+            const auto& parameter = handler.params[parameter_index];
+            string type = parameter.type;
+            if (parameter_types != specialization.handler_parameter_types.end() &&
+                parameter_index < parameter_types->second.size() &&
+                !parameter_types->second[parameter_index].empty())
+              type = parameter_types->second[parameter_index];
+            if (type.empty())
+              throw std::logic_error(
+                  "functional domain specialization has unresolved handler parameter type");
+            instance_env[parameter.name] = type;
+          }
+          for (const auto& field : domain.state) {
+            const auto selected = specialization.state_types.find(field.name);
+            instance_env[field.name] = selected == specialization.state_types.end()
+                ? field.type : selected->second;
+          }
+          for (const auto& route : domain.routes)
+            instance_env[route.name] = route.type;
+          const string context = functional_handler_context(domain, handler) +
+              "@" + specialization.instance;
+          collect_handler_body(handler.body, instance_env, context);
+          collect_failure_arms(instance_spec_id, instance_env, context);
+        }
       }
     }
     if (p_.main) {
