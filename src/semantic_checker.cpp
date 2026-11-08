@@ -760,7 +760,10 @@ class Checker {
       if (!p_.file_check_scope) check_object_layout_cycles();
       check_enums();
       if (!p_.file_check_scope) check_traits();
-      check_objects();
+      // Seed method result signatures before the shared function/method
+      // inference worklist, but do not fully check method bodies yet. Open
+      // generic callees may not have a closed result until later rounds.
+      check_objects(true);
       // Function results and handler replies can constrain each other through an
       // synchronous message or local call. Run non-final inference rounds before the
       // final unresolved-type diagnostics.
@@ -789,6 +792,10 @@ class Checker {
         infer_domain_state_fields(false);
         infer_function_signatures(false);
         infer_handler_reply_types(false);
+        // Method results participate in the same signature fixed point as
+        // function results. Revisit them after each function update, while
+        // leaving body diagnostics and call authority to the final pass.
+        check_objects(true);
         if (legacy_inference_rounds) continue;
         const bool unchanged = inferred_checker_signature() == signature_before;
         if (inference_rounds_converged && !unchanged)
@@ -10836,7 +10843,7 @@ class Checker {
     }
   }
 
-  void check_objects() {
+  void check_objects(bool inference_only = false) {
     for (const auto& object : p_.objects) {
       if (p_.file_check_scope && !p_.file_scope_objects.count(object.name)) continue;
       current_source_file_ = object.source_file;
@@ -10926,6 +10933,7 @@ class Checker {
               return statement.kind == Stmt::Kind::Return && !statement.a.empty();
             });
         if (!method.return_type && !has_value_return) method.set_return_type("unit");
+        if (inference_only) continue;
         Function method_function; method_function.name = object.name + "." + method.name; method_function.params = method.params; method_function.set_return_type(method.return_type);
         method_function.source_file = method_source;
         SourceFileScope method_context(current_semantic_context_,
