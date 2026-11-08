@@ -146,7 +146,10 @@ domain Harness:
         lines += "\n".join("    " + line.replace("return ", "reply ") for line in body)
         lines += "\n\nfn main():\n  h = Harness(inner = Inner(frontier = [1, 2, 3]))\n"
         if param:
-            lines += "  source = [1, 2, 3]\n  echo message h.Probe(source)\n"
+            # Proposal §§1.2/7.5: preserve the caller via an explicit owned
+            # duplicate; the handler still receives an immutable payload.
+            argument = "copy(source)" if use == "read" else "source"
+            lines += f"  source = [1, 2, 3]\n  echo message h.Probe({argument})\n"
             if use == "read": lines += "  echo (source |> count)\n"
         else:
             lines += "  echo message h.Probe()\n"
@@ -156,6 +159,10 @@ domain Harness:
         expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
     elif use == "consume" and source_kind == "nested-field":
         expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
+    elif use == "consume" and source_kind == "parameter" and site == "handler":
+        # Proposal §7.5 forbids laundering incoming payloads into owned state.
+        expected_rejection = ("cannot CONSUME incoming message payload 'source'; "
+                              "message payloads may only be read or forwarded")
     return lines, expected_rejection
 
 

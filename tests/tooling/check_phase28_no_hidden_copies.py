@@ -15,7 +15,7 @@ EXPECTED_COMPILE_FAILURES = (
     ROOT / "tests/tooling/fixtures/phase28_no_hidden_copies_expected_compile_failures.txt"
 )
 MARK = re.compile(r"//\s*Moss line (\d+):\s*(.*)")
-CLONE = re.compile(r"\.clone\(\)|\.cloned\(\)|\.to_owned\(\)|\.to_vec\(\)|Clone::clone")
+CLONE = re.compile(r"\.clone\(\)|\.cloned\(\)|\.to_owned\(\)|\.to_vec\(\)|Clone::clone|\bArc\s*::\s*clone\s*\(")
 
 
 def audit_rust(source: Path, rust_path: Path) -> tuple[Counter[str], list[str]]:
@@ -88,6 +88,22 @@ def main() -> int:
 
     out_root = (ROOT / args.out).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
+    # Exercise the production scanner, including qualified handle-share syntax.
+    probe_source = out_root / "scanner-control.moss"
+    probe_rust = out_root / "scanner-control.rs"
+    probe_source.write_text("fn main():\n  echo 0\n")
+    forms = ("x.clone()", "x.cloned()", "x.to_owned()", "x.to_vec()",
+             "Clone::clone(&x)", "Arc::clone(&x)", "std::sync::Arc::clone(&x)")
+    probe_rust.write_text("Arc::clone(&runtime);\n// Moss line 2: echo 0\n" +
+                          ";\n".join(forms))
+    probe_totals, probe_hidden = audit_rust(probe_source, probe_rust)
+    if probe_totals["hidden"] != len(forms) or len(probe_hidden) != len(forms):
+        raise RuntimeError("hidden-copy production scanner missed an injected occurrence")
+    probe_source.write_text("fn main():\n  echo copy(x)\n")
+    copy_totals, copy_hidden = audit_rust(probe_source, probe_rust)
+    if copy_hidden or copy_totals["explicit-copy"] != len(forms):
+        raise RuntimeError("hidden-copy scanner misclassified explicit copy control")
+    print("PASS production hidden-copy scanner occurrence controls")
     sources = sorted(
         source
         for folder in (ROOT / "tests", ROOT / "examples")
