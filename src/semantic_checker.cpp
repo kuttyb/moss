@@ -19757,43 +19757,45 @@ class Checker {
         return;
       }
     }
-    if (auto pipeline = functional_pipeline_from_est(expression)) {
-      auto source_type = inferred_expr_type(pipeline->source, env);
-      auto element = source_type ? functional_element_type(*source_type, pipeline->source) : std::nullopt;
-      synchronization_require(element.has_value(), "unresolved functional effect source");
-      analyze_effect_expression(pipeline->source, env, params, parameter_effects,
-                                receiver_effect, receiver_fields, Effect::Read);
-      string current_element = *element;
-      for (const auto& stage : pipeline->stages) {
-        if (stage.arguments.empty()) continue;
-        auto callable_env = env;
-        callable_env["_"] = current_element;
-        string callable = stage.arguments.back();
-        vector<string> inputs{current_element};
-        vector<string> arguments{"_"};
-        if (stage.kind == FunctionalNodeKind::Reduce && stage.arguments.size() == 2) {
-          analyze_effect_expression(stage.arguments.front(), env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, Effect::Consume);
-          auto accumulator = inferred_expr_type(stage.arguments.front(), env);
-          synchronization_require(accumulator.has_value(), "unresolved reduce accumulator");
-          callable_env["__sync_accumulator"] = *accumulator;
-          inputs.insert(inputs.begin(), *accumulator);
-          arguments.insert(arguments.begin(), "__sync_accumulator");
+    if (leaf_effect_capture_) {
+      if (auto pipeline = functional_pipeline_from_est(expression)) {
+        auto source_type = inferred_expr_type(pipeline->source, env);
+        auto element = source_type ? functional_element_type(*source_type, pipeline->source) : std::nullopt;
+        synchronization_require(element.has_value(), "unresolved functional effect source");
+        analyze_effect_expression(pipeline->source, env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Read);
+        string current_element = *element;
+        for (const auto& stage : pipeline->stages) {
+          if (stage.arguments.empty()) continue;
+          auto callable_env = env;
+          callable_env["_"] = current_element;
+          string callable = stage.arguments.back();
+          vector<string> inputs{current_element};
+          vector<string> arguments{"_"};
+          if (stage.kind == FunctionalNodeKind::Reduce && stage.arguments.size() == 2) {
+            analyze_effect_expression(stage.arguments.front(), env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Consume);
+            auto accumulator = inferred_expr_type(stage.arguments.front(), env);
+            synchronization_require(accumulator.has_value(), "unresolved reduce accumulator");
+            callable_env["__sync_accumulator"] = *accumulator;
+            inputs.insert(inputs.begin(), *accumulator);
+            arguments.insert(arguments.begin(), "__sync_accumulator");
+          }
+          if (expression_uses(callable, "_"))
+            analyze_effect_expression(callable, callable_env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          else
+            analyze_effect_expression(callable + "(" + join_arguments(arguments) + ")",
+                                      callable_env, params, parameter_effects,
+                                      receiver_effect, receiver_fields, Effect::Read);
+          if (stage.kind == FunctionalNodeKind::Map) {
+            auto result = functional_callable_result(callable, inputs, env);
+            synchronization_require(result.has_value(), "unresolved functional callable");
+            current_element = *result;
+          }
         }
-        if (expression_uses(callable, "_"))
-          analyze_effect_expression(callable, callable_env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, Effect::Read);
-        else
-          analyze_effect_expression(callable + "(" + join_arguments(arguments) + ")",
-                                    callable_env, params, parameter_effects,
-                                    receiver_effect, receiver_fields, Effect::Read);
-        if (stage.kind == FunctionalNodeKind::Map) {
-          auto result = functional_callable_result(callable, inputs, env);
-          synchronization_require(result.has_value(), "unresolved functional callable");
-          current_element = *result;
-        }
+        return;
       }
-      return;
     }
     // The observation path uses checked storage locations before the legacy
     // parameter summary collapses projections to their root.
@@ -20395,7 +20397,8 @@ class Checker {
                        transfer_type(*source_type)) {
               const string source_name = source.value_or(trim(statement.b));
               const auto inferred = infer_straight_line_definition_effect(
-                  statements, index, statement.a, {}, source_name, {}, env, {});
+                  statements, index, statement.a, {}, source_name, {}, env, {},
+                  nullptr, false);
               if (inferred)
                 source_access = *inferred;
             }
@@ -20444,7 +20447,8 @@ class Checker {
                 !receiver_fields.count(statement.a)) {
               const string source_name = source.value_or(trim(statement.b));
               if (auto inferred = infer_straight_line_definition_effect(
-                      statements, index, statement.a, {}, source_name, {}, env, {}))
+                      statements, index, statement.a, {}, source_name, {}, env, {},
+                      nullptr, true))
                 source_access = *inferred;
             }
             analyze_effect_expression(statement.b, env, params, parameter_effects,
@@ -26082,7 +26086,8 @@ class Checker {
       const string& source, const string& source_binding_identity,
       const TypeEnv& env,
       std::unordered_map<string, string> binding_identities,
-      TypedLocalOwnershipFactV1::UnsupportedReason* unsupported = nullptr) const {
+      TypedLocalOwnershipFactV1::UnsupportedReason* unsupported = nullptr,
+      bool source_is_local_transfer = false) const {
     auto decline = [&](TypedLocalOwnershipFactV1::UnsupportedReason reason)
         -> std::optional<Effect> {
       if (unsupported) *unsupported = reason;
@@ -26279,6 +26284,16 @@ class Checker {
     };
     if (!alias_binding_identity.empty())
       binding_identities[alias] = alias_binding_identity;
+    // The downstream-use scan runs at the alias definition, before the normal
+    // ownership walk has installed the new local in its type environment.
+    // Give this scan the exact checked RHS type so an EST pipeline rooted at
+    // the alias can be classified without an expression-text fallback.
+    TypeEnv alias_env = env;
+    if (definition_index < statements.size()) {
+      const auto& definition = statements[definition_index];
+      const auto source_type = inferred_expr_type(definition.b, env);
+      if (source_type) alias_env[alias] = *source_type;
+    }
     Effect demand = Effect::Read;
     size_t last_alias_use = definition_index;
     bool saw_alias_use = false;
@@ -26363,12 +26378,61 @@ class Checker {
                 returned_identity->second == alias_binding_identity)
               use = Effect::Consume;
             else if (return_is_copy_projection_of_alias(
-                         statement, alias, source, env))
+                         statement, alias, source, env) &&
+                     !source_is_local_transfer)
               use = Effect::Read;
             else if ([&] {
-              const auto pipeline = functional_pipeline_from_est(
-                  statement.a, &statement.expression_handles);
+              const est::Handle* return_handle = nullptr;
+              for (const auto& handle : statement.expression_handles) {
+                if (handle.slot != est::ExprSlot::ReturnValue ||
+                    handle.argument_index != 0) continue;
+                if (return_handle) return false;
+                return_handle = &handle;
+              }
+              if (!return_handle ||
+                  return_handle->source_fingerprint !=
+                      est::fingerprint(statement.a))
+                return false;
+              const auto* arena = expression_arena(
+                  return_handle->arena_index);
+              if (!arena) return false;
+              est::ExprId expression = return_handle->expr;
+              std::string_view occurrence_source = statement.a;
+              auto root_span = arena->span(expression);
+              while (const auto* grouped =
+                         std::get_if<est::Parenthesized>(
+                             &arena->at(expression))) {
+                const auto inner_span = arena->span(grouped->inner);
+                if (inner_span.source_begin < root_span.source_begin ||
+                    inner_span.source_end < inner_span.source_begin ||
+                    inner_span.source_end > root_span.source_end)
+                  return false;
+                const auto begin =
+                    inner_span.source_begin - root_span.source_begin;
+                const auto length =
+                    inner_span.source_end - inner_span.source_begin;
+                if (begin > occurrence_source.size() ||
+                    length > occurrence_source.size() - begin)
+                  return false;
+                occurrence_source = occurrence_source.substr(begin, length);
+                expression = grouped->inner;
+                root_span = inner_span;
+              }
+              const auto pipeline = est::functional_pipeline(
+                  *arena, expression, occurrence_source,
+                  [](std::string_view name)
+                      -> std::optional<FunctionalNodeKind> {
+                for (const auto& operation : functional_operations())
+                  if (name == operation.name) return operation.kind;
+                return std::nullopt;
+              });
               if (!pipeline || !tree_simple_identifier(pipeline->source))
+                return false;
+              const auto input_type = inferred_expr_type(pipeline->source, alias_env);
+              if (!input_type) return false;
+              const auto input_element =
+                  functional_element_type(*input_type, pipeline->source);
+              if (!input_element || unresolved_semantic_type(*input_element))
                 return false;
               const string input_name = trim(pipeline->source);
               const auto identity = binding_identities.find(input_name);

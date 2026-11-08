@@ -261,6 +261,8 @@ When working with Moss:
   scoped local commits and normal pushes to the configured remote. Independent
   review remains an acceptance gate; push authorization does not authorize a
   merge into `phase28-work` or `main`.
+  For Phase 28 Task F1 on `phase28-f1-field`, the user authorized scoped local
+  commits and a normal push after Agent 2 independently signs off. Do not merge.
   Keep each task on its scoped branch; do not merge directly to `main` unless
   the user explicitly directs that merge. Do not force-push or rewrite
   published history.

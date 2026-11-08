@@ -19,6 +19,17 @@ READ_CASES = {
     "field_parameter": "3",
     "field_parameter_caller_reuse": "3\n3",
     "field_rebind_after_vector_literal": "3",
+    "f1_field_alias_read": "3",
+    "f1_field_alias_read_then_archive": "3",
+    "f1_nested_field_alias_read": "3\n3",
+    "f1_indexed_record_field_alias_read": "3",
+    "f1_reassigned_field_alias_read": "3",
+    "f1_branch_join_field_alias_read": "3",
+    "f1_function_field_alias_read": "3\n3",
+}
+REJECT_CASES = {
+    "f1_field_alias_return_rejected": 9,
+    "f1_alias_chain_return_rejected": 9,
 }
 
 
@@ -83,6 +94,22 @@ def main() -> int:
             except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                 failures.append(f"{name}: {error}")
                 print(f"FAIL {name}: {error}", file=sys.stderr)
+
+        for name, expected_line in REJECT_CASES.items():
+            source = FIXTURES / f"{name}.moss"
+            expected = f"OWNERSHIP_ILLEGAL_CONSUME at line {expected_line}"
+            results = (
+                invoke([compiler, "run", "--interp", str(source)]),
+                invoke([compiler, str(source), "-o", str(scratch / f"{name}.rs")]),
+            )
+            for engine, result in zip(("Fast Debug", "Native"), results):
+                combined = result.stdout + result.stderr
+                if result.returncode == 0 or "OWNERSHIP_ILLEGAL_CONSUME" not in combined or f"moss:{expected_line}:" not in combined:
+                    failures.append(
+                        f"{name} {engine}: expected {expected}, got exit={result.returncode}: {combined}")
+                    print(f"FAIL {name} {engine}: {combined}", file=sys.stderr)
+                else:
+                    print(f"PASS {name} {engine}: {expected}")
 
         consume = FIXTURES / "field_consume.moss"
         diagnostic = (

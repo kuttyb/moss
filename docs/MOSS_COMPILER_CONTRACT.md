@@ -57,6 +57,14 @@ Terms:
 
    - Phase 28 R7-011 Step 0 checkpoint (source SHA `977f5fe1a40e13cc72245b38f625ef00879194a6`): dynamic callback shadowing has scoped GO and registered drop/perturb coverage. The prior field controls do **not** establish caller preservation when `size(s)` reads a field through an alias, nor same-binding reassignment from `[9]` to `s.frontier`; those two shapes remain open and are being repaired. `swarm_027` and `swarm_030` both execute and are known Step 2 Map.keys CollectionView failures; neither is a Step 0 blocker. `dom_spec` Native and `meth_spec` Fast Debug still fail on specialization identity and remain Step 1 debt. Full Default and EST-shadow suites each report 116/170 pass, 54 fail, 0 skipped. Against 45b586c2, `check_phase26_1_c1_scope`, `shard_phase46_opt`, and `shard_phase4_diff` recover. The baseline's sole skipped job, `shard_phase5_tooling`, runs after its dependency recovers and fails on a pre-existing `OWNERSHIP_USE_AFTER_CONSUME` in Build Planner (`g` transferred at line 47, read at line 58); the new field-control job was red on `swarm_030` before this disposition and will now treat that exercised Step 2 case as expected. Direct 150ab36 corpus comparison: 236 baseline-accepted, 203 candidate-accepted, 33 losses, 0 gains. An exact path comparison against the 45b586c2 loss set confirms all 33 current losses are among its 42 losses; nine prior losses recover (the nine callback programs), with zero new corpus losses. The 62-row oracle on source SHA `977f5fe1` reports 19 all-gate PASS, 0 semantic mismatches, 43 provenance-only failures, and 264 unverified clone occurrences. The full-corpus hidden-copy gate still finds four unauthorized map-key `.clone()` sites (three Moss source locations); no clone authorization is granted. These counts are pinned to their stated SHAs.
 
+   - Phase 28 Task F1 on the accepted `00b54a51` baseline: field aliases
+     retain their downstream READ/CONSUME classification even when the alias
+     is not yet present in the type environment used by the definition scan.
+     The scan uses the alias definition's checked RHS TypeRef together with
+     its exact EST use and binding identity. This closes the directed field
+     parameter and alias-chain controls; it does not change the wider
+     parameter-effect or ownership known-debt counts.
+
 5. **Answers live on every node.** The checker should record its answer on every node it types, per specialization context.
    - Gate: coverage counter (report-only).
    - Status: **not met** (≈9% of consumer questions answered on the 27.5.4 corpus). Known debt, tied to invariant 1's checker debt; this is why invariant 4's type classes are debt.

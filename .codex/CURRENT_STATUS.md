@@ -19007,3 +19007,21 @@ untouched.
   matrix passed. Full Default/Shadow suites were not run; no overall Step 0 or
   Step 1 GO is claimed. Pending feedback validation, exact-SHA freeze, review,
   and scoped checkpoint push.
+
+## Phase 28 Task F1 resume
+
+- Branch `phase28-f1-field` is based on accepted `00b54a51`, with the
+  standalone field repair replayed as `486233f2` (same patch as `6aace7bc`).
+  The interrupted session's field/alias work now includes a checker fix that
+  gives the definition-use scan the alias's exact checked RHS type. Before
+  that fix, the field gate rejected `field_parameter` at line 5 because the
+  alias was not yet in the scan environment.
+- After the fix, the field-control gate passes, including all requested
+  read/reject controls. `swarm_027` and `swarm_030` are reported as known
+  Step 2 Map.keys CollectionView failures; `swarm_028` passes in both engines.
+- The pinned 238-source comparison against rebuilt `150ab36` reports 24
+  losses, all in the baseline loss list, and no gains. The differential
+  comparison against rebuilt `00b54a51` reports zero new losses. The two
+  requested diagnostic strings currently have zero source/test occurrences.
+- Exact-SHA Agent 2 review, its three independent field probes, Default and
+  Shadow suites, final commit/push remain pending. No merge is authorized.

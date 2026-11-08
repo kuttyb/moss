@@ -1,0 +1,12 @@
+type State:
+  frontier: Vector[Int]
+
+fn keep(items: Vector[Int]) -> Vector[Int]:
+  return items
+
+fn main():
+  s = State(frontier = [1, 2, 3])
+  b = s.frontier
+  c = b
+  kept = keep(c)
+  echo (kept |> count)
