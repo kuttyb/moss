@@ -23288,6 +23288,33 @@ static vector<string> execution_return_value_artifact_records(
         continue;
       matching_facts.push_back(&candidate);
     }
+#ifdef MOSS_TEST_BUILD
+    if (matching_facts.empty() && std::getenv(
+            "MOSS_TEST_TRACE_RETURN_VALUE_ARTIFACT_LOOKUP")) {
+      std::cerr << "RETURN_VALUE_ARTIFACT_LOOKUP expected callable="
+                << callable_identity << " statement="
+                << statement.checked_statement_occurrence_id << " arena="
+                << handle->arena_index << " expr=" << handle->expr << "\n";
+      for (const auto& candidate : program.typed_semantics->return_value_facts) {
+        std::cerr << "RETURN_VALUE_ARTIFACT_CANDIDATE callable="
+                  << candidate.provenance.enclosing_callable_id
+                  << " statement=" << candidate.statement_occurrence_id
+                  << " arena=" << candidate.est_arena_index << " expr="
+                  << candidate.expression_occurrence_id << " spec="
+                  << candidate.specialization_id << " availability="
+                  << static_cast<unsigned>(candidate.availability) << "\n";
+      }
+      for (const auto& candidate :
+           program.typed_semantics->required_return_value_occurrences) {
+        std::cerr << "RETURN_VALUE_ARTIFACT_REQUIREMENT callable="
+                  << candidate.provenance.enclosing_callable_id
+                  << " statement=" << candidate.statement_occurrence_id
+                  << " arena=" << candidate.est_arena_index << " expr="
+                  << candidate.expression_occurrence_id << " spec="
+                  << candidate.specialization_id << "\n";
+      }
+    }
+#endif
     if (matching_facts.empty())
       throw CompileError(statement.line,
           "source-free body has missing or ambiguous checked ReturnValue fact",
