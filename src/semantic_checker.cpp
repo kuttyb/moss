@@ -11846,16 +11846,18 @@ class Checker {
         (f.generic || f.static_dispatch) &&
         (std::any_of(f.params.begin(), f.params.end(), [&](const Param& param) {
            return param.type.empty() || open_generic(param.type) ||
+               traits_.count(param.type) != 0 ||
                contains_internal_placeholder(param.type);
          }) ||
          (f.return_type && contains_internal_placeholder(*f.return_type)));
     // The declaration pass checks syntax, types, and open constraints, but it
     // cannot assign concrete call targets or ownership effects for unresolved
-    // generic parameters. Defer only this template body's ownership flow to
-    // register_static_specialization(), which rechecks the retained body with
-    // concrete types, a concrete SpecId, and exact call facts before execution
-    // or lowering. Closed and non-generic functions keep the normal ownership
-    // pass below.
+    // generic parameters. A named trait formal is also unresolved here: its
+    // name is a structural predicate, not a concrete receiver type. Defer only
+    // this template body's ownership flow to register_static_specialization(),
+    // which rechecks the retained body with concrete types, a concrete SpecId,
+    // and exact call facts before execution or lowering. Closed and
+    // non-generic functions keep the normal ownership pass below.
     const bool defer_template_ownership = unresolved_specialization_owner &&
         !checking_specialization_;
     bool deferred_match = std::any_of(f.body.begin(), f.body.end(), [&](const Stmt& statement) {
