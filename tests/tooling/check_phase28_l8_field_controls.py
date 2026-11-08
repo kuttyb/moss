@@ -161,8 +161,7 @@ domain Harness:
         expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
     elif use == "consume" and source_kind == "parameter" and site == "handler":
         # Proposal §7.5 forbids laundering incoming payloads into owned state.
-        expected_rejection = ("cannot CONSUME incoming message payload 'source'; "
-                              "message payloads may only be read or forwarded")
+        expected_rejection = "OWNERSHIP_ILLEGAL_CONSUME"
     return lines, expected_rejection
 
 
