@@ -114,6 +114,49 @@ def edit_call_row_count(text: str, *, duplicate: bool) -> str:
     return "\n".join(lines) + "\n"
 
 
+def edit_iterator_authority(text: str, mode: str) -> str:
+    lines = text.splitlines()
+    for line_index, line in enumerate(lines):
+        if not line.startswith("stmt "):
+            continue
+        fields = shlex.split(line)
+        if len(fields) < 11 or fields[1] != "9":  # Stmt::Kind::For
+            continue
+        argument_count = int(fields[9])
+        raise_count_index = 10 + argument_count
+        iterator_count_index = raise_count_index + 1 + int(
+            fields[raise_count_index])
+        if iterator_count_index >= len(fields):
+            continue
+        owner_count = int(fields[iterator_count_index])
+        if owner_count == 0:
+            continue
+        owner_index = iterator_count_index + 1
+        target_count = int(fields[owner_index + 1])
+        target_index = owner_index + 2
+        if mode == "missing":
+            fields[iterator_count_index] = "0"
+            fields = fields[:iterator_count_index + 1]
+        elif mode == "duplicate_owner":
+            fields[iterator_count_index] = str(owner_count + 1)
+            fields.extend(fields[owner_index:target_index + target_count])
+        elif mode == "stale_caller":
+            fields[owner_index] = str(2**32 - 2)
+        elif mode == "unknown_target":
+            fields[target_index] = str(2**32 - 2)
+        else:
+            raise AssertionError(f"unknown iterator authority mutation {mode}")
+        quote_indices = set(range(4, 9))
+        quote_indices.update(range(10, 10 + argument_count))
+        quote_indices.update(range(raise_count_index + 1,
+                                    iterator_count_index))
+        lines[line_index] = " ".join(
+            json.dumps(value) if index in quote_indices else value
+            for index, value in enumerate(fields))
+        return "\n".join(lines) + "\n"
+    raise AssertionError("provider fixture emitted no custom-iterator For authority")
+
+
 def edit_function_owner(text: str, *, mode: str) -> str:
     lines = text.splitlines()
     rows = [index for index, line in enumerate(lines)
@@ -164,10 +207,25 @@ def main() -> int:
         "module Base\nexport fn normalize(x):\n  return x\n", encoding="utf-8")
     (provider / "src" / "provider.moss").write_text(
         "module Provider\nimport Base\n"
-        "export fn forward(x):\n  return Base.normalize(x)\n",
+        "type Counter:\n"
+        "  current: Int\n"
+        "  fn next() -> option[Int]:\n"
+        "    if current <= 0:\n"
+        "      return None\n"
+        "    item = current\n"
+        "    current = current - 1\n"
+        "    Some(item)\n"
+        "export fn forward(x):\n  return Base.normalize(x)\n"
+        "export fn total() -> Int:\n"
+        "  source = Counter(current = 2)\n"
+        "  total = 0\n"
+        "  for item in source:\n"
+        "    total = total + item\n"
+        "  return total\n",
         encoding="utf-8")
     (consumer / "src" / "main.moss").write_text(
-        "module App\nimport Provider\nfn main():\n  echo Provider.forward(10)\n",
+        "module App\nimport Provider\nfn main():\n  echo Provider.forward(10)\n"
+        "  echo Provider.total()\n",
         encoding="utf-8")
     base_env = {**os.environ, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"}
     try:
@@ -213,6 +271,15 @@ def main() -> int:
             ("unknown callee SpecId", lambda text: edit_one_call(
                 text, lambda fields, tail: fields.__setitem__(4, "999999")),
              "invalid, duplicate, or unknown-ID call edge"),
+            ("duplicate iterator owner row", lambda text: edit_iterator_authority(
+                text, "duplicate_owner"),
+             "duplicate iterator method authority owner SpecId"),
+            ("stale iterator caller SpecId", lambda text: edit_iterator_authority(
+                text, "stale_caller"),
+             "iterator method authority has an unknown caller body"),
+            ("unknown iterator method SpecId", lambda text: edit_iterator_authority(
+                text, "unknown_target"),
+             "iterator method authority has a missing, duplicate, or non-method target"),
         )
         for name, mutation, diagnostic in mutation_cases:
             interface.write_text(originals, encoding="utf-8")
@@ -235,6 +302,17 @@ def main() -> int:
                 "missing imported call edge did not fail closed:\n" +
                 result.stdout + result.stderr)
         print("PASS importer mutation: missing call row fails closed")
+
+        interface.write_text(originals, encoding="utf-8")
+        reseal_mutation(interface, lambda text: edit_iterator_authority(
+            text, "missing"))
+        result = run([margo, "build", "--json"], cwd=consumer,
+                     env=imported_env, expected=1)
+        if "MOSS_INTERNAL_INVARIANT" not in result.stdout + result.stderr:
+            raise AssertionError(
+                "missing iterator authority did not fail closed:\n" +
+                result.stdout + result.stderr)
+        print("PASS importer mutation: missing iterator authority fails closed")
 
         # A qualified foreign reference must resolve by the original provider
         # pair. Keep the table slot/module fixed, perturb only provider ID.
