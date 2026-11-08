@@ -9,7 +9,7 @@ type Counter:
   # CPython _count_elements: read, add, and write the per-key count.
   fn increment_by(key: String, amount: Int) -> Int:
     next = counts.get(key, 0) + amount
-    counts [copy(key)] = next
+    counts [key] = next
     return next
 
   fn increment(key: String) -> Int:

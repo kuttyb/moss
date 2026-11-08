@@ -9518,27 +9518,6 @@ class Generator {
     }
   }
 
-  const TypedCopyFactV1& resolve_copy_fact(
-      std::uint32_t arena_index, est::ExprId occurrence) const {
-    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
-    if (!checked_program.typed_semantics)
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT explicit copy lacks checked semantics");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
-    try {
-      const auto& requirement = checked_program.typed_semantics->find_copy_requirement(
-          arena_index, occurrence, context);
-      const auto* fact = checked_program.typed_semantics->find_copy_fact(requirement);
-      if (!fact)
-        throw std::runtime_error("required checked copy fact missing");
-      return *fact;
-    } catch (const std::exception& error) {
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
-    }
-  }
-
   std::pair<NativeCheckedCopyFactV1, string> native_copy_provenance_identity(
       const TypedCopyFactV1& fact) const {
     std::error_code error;
@@ -11480,10 +11459,6 @@ class Generator {
           string lhs_base, lhs_index;
           string index_temporary;
           if (tree_parse_index(s.a, lhs_base, lhs_index)) {
-            auto indexed_base_type = generated_expr_type(lhs_base, &types);
-            const bool indexed_map = indexed_base_type &&
-                (canonical_type_name(*indexed_base_type) == "map" ||
-                 starts_with(canonical_type_name(*indexed_base_type), "map["));
             string root_id = lhs_base;
             auto dot_pos = root_id.find('.');
             if (dot_pos != string::npos) root_id = root_id.substr(0, dot_pos);
@@ -11498,7 +11473,7 @@ class Generator {
                 }
               }
             }
-            if (!indexed_map && (conflicts_with_base || reads_sibling)) {
+            if (conflicts_with_base || reads_sibling) {
               index_temporary = "__moss_index_" +
                   std::to_string(call_argument_temp_++);
               o << indent(level) << "let " << index_temporary << " = "
@@ -11508,13 +11483,12 @@ class Generator {
           if (tree_parse_index(s.a, lhs_base, lhs_index)) {
             bool string_index = tree_literal_class(lhs_index) ==
                 est::LiteralClass::String;
+            string ir = !index_temporary.empty() ? index_temporary :
+                (string_index ? lhs_index : expr(lhs_index, d, locals, &types));
             auto base_type = generated_expr_type(lhs_base, &types);
             bool map_index = base_type &&
                 (canonical_type_name(*base_type) == "map" ||
                  starts_with(canonical_type_name(*base_type), "map["));
-            string ir = !index_temporary.empty() ? index_temporary :
-                (string_index || map_index ? lhs_index :
-                 expr(lhs_index, d, locals, &types));
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
             lhs = "(" + write_call_place(lhs_base, d, locals, &types) + ")[" + ir + "]";
           }
@@ -11644,72 +11618,14 @@ class Generator {
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
               const bool string_key = tree_literal_class(mi) ==
                   est::LiteralClass::String;
-              const TypedCopyFactV1* explicit_key_copy = nullptr;
-              string explicit_key_copy_argument;
-              if (phase21_codegen_statement_ &&
-                  active_functional_expression_handles_) {
-                const Program& checked_program = semantic_program_
-                    ? *semantic_program_ : p_;
-                for (const auto& handle : *active_functional_expression_handles_) {
-                  if (handle.slot != est::ExprSlot::LhsPlace ||
-                      handle.arena_index >= checked_program.expression_arenas.size() ||
-                      !checked_program.expression_arenas[handle.arena_index])
-                    continue;
-                  est::assert_fresh(handle, phase21_codegen_statement_->a);
-                  const auto& arena = *checked_program.expression_arenas[handle.arena_index];
-                  if (handle.expr >= arena.size()) continue;
-                  auto place_id = est::unparenthesized(arena, handle.expr);
-                  if (place_id >= arena.size()) continue;
-                  const auto* place = std::get_if<est::Index>(&arena.at(place_id));
-                  if (!place) continue;
-                  auto key_id = est::unparenthesized(arena, place->index);
-                  if (key_id >= arena.size()) continue;
-                  const auto* call = std::get_if<est::Call>(&arena.at(key_id));
-                  if (!call || call->arguments.size() != 1) continue;
-                  const auto* callee = std::get_if<est::Identifier>(
-                      &arena.at(call->callee));
-                  if (!callee || callee->name != "copy") continue;
-                  if (explicit_key_copy)
-                    throw std::runtime_error(
-                        "MOSS_INTERNAL_INVARIANT multiple checked copies in Map key place");
-                  explicit_key_copy = &resolve_copy_fact(
-                      handle.arena_index, key_id);
-                  const auto argument_id = call->arguments.front();
-                  if (argument_id >= arena.size())
-                    throw std::runtime_error(
-                        "MOSS_INTERNAL_INVARIANT checked Map key copy argument is invalid");
-                  const auto argument_span = arena.span(argument_id);
-                  if (argument_span.source_begin > argument_span.source_end ||
-                      argument_span.source_end > phase21_codegen_statement_->a.size())
-                    throw std::runtime_error(
-                        "MOSS_INTERNAL_INVARIANT checked Map key copy span is invalid");
-                  explicit_key_copy_argument = trim(
-                      phase21_codegen_statement_->a.substr(
-                          argument_span.source_begin,
-                          argument_span.source_end - argument_span.source_begin));
-                }
-              }
-              string key;
-              if (explicit_key_copy) {
-                const auto source_type = generated_expr_type(
-                    explicit_key_copy_argument, &types);
-                if (!source_type)
-                  throw std::runtime_error(
-                      "MOSS_INTERNAL_INVARIANT checked Map key copy source type is unavailable");
-                key = lower_fact_authorized_copy(
-                    *explicit_key_copy, explicit_key_copy_argument,
-                    *source_type, d, locals, &types);
-              } else {
-                key = string_key
-                    ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
-              }
+              string key = string_key
+                  ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
               auto key_type = generated_expr_type(mi, &types);
-              if (!explicit_key_copy && key_type &&
-                  shared_nominal_map_key(*key_type) &&
+              if (key_type && shared_nominal_map_key(*key_type) &&
                   is_object_view(mi, d, locals, &types))
                 key = "(" + key + ")." + access_value_method(*key_type) + "()";
               else if (key_type && !copy_type(*key_type) &&
-                  !string_key && !explicit_key_copy)
+                  !string_key)
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
                   statement_functional_pipeline_id(s, functional_context, 0),

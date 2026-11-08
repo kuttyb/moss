@@ -24038,15 +24038,6 @@ static string native_clone_provenance_v3_json(
             continue;
           generated_symbols.insert(object.name + "::" + method.name);
           generated_symbols.insert(object.name + "::__moss_view_" + method.name);
-          const bool concrete_access_trait = !object.fields.empty() &&
-              std::none_of(object.fields.begin(), object.fields.end(),
-                  [](const Field& field) {
-                    return field.inferred || field.type.empty();
-                  });
-          if (concrete_access_trait &&
-              method.receiver_effect != Effect::Consume)
-            generated_symbols.insert("MossAccess_" + object.name + "::" +
-                                     method.name);
         }
       }
       native_fact.generated_callable_symbols.assign(generated_symbols.begin(),

@@ -77,11 +77,6 @@ def main() -> int:
     TMP.mkdir(parents=True)
     standalone = ROOT / "tests" / "phase28" / "r7_010" / "team_a" / "estless_indexed_copy.moss"
     package_source = package_backed_copy_fixture()
-    map_key_sources = (
-        ROOT / "examples" / "swarm" / "Python" / "Counter" / "src" / "main.moss",
-        ROOT / "examples" / "swarm" / "Surface" / "repros" / "swarm_061b_map_get_before_write.moss",
-        ROOT / "examples" / "swarm" / "modules" / "text_toolkit" / "toolkit" / "src" / "stats.moss",
-    )
 
     for mode in ("default", "shadow"):
         require_ok(run(compiler, standalone, mode, {
@@ -102,20 +97,7 @@ def main() -> int:
             **common, "MOSS_TEST_PERTURB_COPY_FACT": "1",
         }), f"{mode} perturbed indexed copy fact")
 
-        for map_key_source in map_key_sources:
-            source_label = map_key_source.relative_to(ROOT)
-            require_ok(run(compiler, map_key_source, mode, common),
-                       f"{mode} explicit Map-key copy authority: {source_label}")
-            for mutation, label in (
-                ("MOSS_TEST_DROP_COPY_FACT", "dropped"),
-                ("MOSS_TEST_DUPLICATE_COPY_FACT", "duplicated"),
-                ("MOSS_TEST_PERTURB_COPY_FACT", "perturbed"),
-            ):
-                require_failure(run(compiler, map_key_source, mode, {
-                    **common, mutation: "1",
-                }), f"{mode} {label} Map-key copy fact: {source_label}")
-
-    print("Phase 28 indexed-copy authority: 32 scenarios PASS (default/shadow)")
+    print("Phase 28 indexed-copy authority: 8 scenarios PASS (default/shadow)")
     return 0
 
 

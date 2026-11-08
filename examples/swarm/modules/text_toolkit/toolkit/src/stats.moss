@@ -101,7 +101,7 @@ export fn tally(words: Vector[String]) -> Map[String, Int]:
   counts = Map()
   counts[""] = 0
   for w in words:
-    counts[copy(w)] = counts.get(w, 0) + 1
+    counts[w] = counts.get(w, 0) + 1
   return counts
 
 export fn count_of(counts: Map[String, Int], key: String) -> Int:
