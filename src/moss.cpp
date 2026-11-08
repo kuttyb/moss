@@ -4345,11 +4345,17 @@ static std::optional<est::ExprId> imported_checked_body_expression_node(
   est::SemanticFacts facts;
   facts.type = expression.type;
   facts.resolved_target = std::move(target);
-  const auto context = functional_function_context(function);
-  arena_owner->record_facts(id, context, facts);
-  for (const auto& specialization : function.specializations)
-    arena_owner->record_facts(id,
-        functional_function_context(function, &specialization), facts);
+  if (function.spec_id == InvalidSpecId && function.specializations.empty())
+    throw std::invalid_argument(
+        "imported checked-body EST expression has no checker SpecId owner");
+  if (function.spec_id != InvalidSpecId)
+    arena_owner->record_facts(id, function.spec_id, facts);
+  for (const auto& specialization : function.specializations) {
+    if (specialization.spec_id == InvalidSpecId)
+      throw std::invalid_argument(
+          "imported checked-body specialization has no checker SpecId owner");
+    arena_owner->record_facts(id, specialization.spec_id, facts);
+  }
   return id;
 }
 
@@ -6284,7 +6290,20 @@ void project_imported_h3_checked_bodies(Program& program) {
                           static_cast<std::uint32_t>(parameter_name.size())});
       est::SemanticFacts parameter_facts;
       parameter_facts.type = expression.type;
-      arena_owner->record_facts(expression_id, {}, std::move(parameter_facts));
+      if (function.spec_id == InvalidSpecId &&
+          function.specializations.empty())
+        throw std::invalid_argument(
+            "imported parameter-return EST expression has no checker SpecId owner");
+      if (function.spec_id != InvalidSpecId)
+        arena_owner->record_facts(expression_id, function.spec_id,
+                                  parameter_facts);
+      for (const auto& specialization : function.specializations) {
+        if (specialization.spec_id == InvalidSpecId)
+          throw std::invalid_argument(
+              "imported parameter-return specialization has no checker SpecId owner");
+        arena_owner->record_facts(expression_id, specialization.spec_id,
+                                  parameter_facts);
+      }
       Stmt returned;
       returned.kind = Stmt::Kind::Return;
       returned.line = std::max(function.line, 1);
@@ -6704,10 +6723,18 @@ void project_imported_h3_checked_bodies(Program& program) {
                           origin, 0, static_cast<std::uint32_t>(local.size())});
       est::SemanticFacts facts;
       facts.type = result;
-      arena_owner->record_facts(id, functional_function_context(function), facts);
-      for (const auto& specialization : function.specializations)
-        arena_owner->record_facts(id,
-            functional_function_context(function, &specialization), facts);
+      if (function.spec_id == InvalidSpecId &&
+          function.specializations.empty())
+        throw std::invalid_argument(
+            "checked-body result expression has no checker SpecId owner");
+      if (function.spec_id != InvalidSpecId)
+        arena_owner->record_facts(id, function.spec_id, facts);
+      for (const auto& specialization : function.specializations) {
+        if (specialization.spec_id == InvalidSpecId)
+          throw std::invalid_argument(
+              "checked-body result specialization has no checker SpecId owner");
+        arena_owner->record_facts(id, specialization.spec_id, facts);
+      }
       returned.expression_handles.push_back({
           origin, est::ExprSlot::ReturnValue, 0, id,
           est::fingerprint(local), origin, arena_index});
@@ -12438,7 +12465,55 @@ static void annotate_program_source(Program& program, const string& source_file)
 static void merge_project_program(Program& destination, Program source,
                                   const string& source_file,
                                   const std::filesystem::path* file_check_root = nullptr) {
+  vector<std::uint32_t> arena_remap;
+  arena_remap.reserve(source.expression_arenas.size());
+  for (const auto& arena : source.expression_arenas) {
+    const auto found = std::find(destination.expression_arenas.begin(),
+                                 destination.expression_arenas.end(), arena);
+    arena_remap.push_back(found == destination.expression_arenas.end()
+        ? static_cast<std::uint32_t>(destination.expression_arenas.size() +
+              std::count_if(source.expression_arenas.begin(),
+                            source.expression_arenas.begin() +
+                                static_cast<std::ptrdiff_t>(arena_remap.size()),
+                            [&](const auto& previous) {
+          return std::find(destination.expression_arenas.begin(),
+                           destination.expression_arenas.end(), previous) ==
+              destination.expression_arenas.end();
+        }))
+        : static_cast<std::uint32_t>(std::distance(
+              destination.expression_arenas.begin(), found)));
+  }
+  if (!source.specialization_table.empty()) {
+    const auto module = source.module_identities.find(source.module_name);
+    if (module == source.module_identities.end() || module->second.empty())
+      throw CompileError(0,
+          "compiled provider has no stable module identity for SpecId import",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    try {
+      (void)remap_imported_program_spec_ids(destination, source, module->second);
+    } catch (const std::exception& error) {
+      throw CompileError(0,
+          "cannot remap imported SpecId table: " + string(error.what()),
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+  }
   est::adopt_program_arenas(destination, source);
+  for (auto& edge : source.semantic_call_edges) {
+    if (edge.call_est_arena_index != UINT32_MAX) {
+      if (edge.call_est_arena_index >= arena_remap.size())
+        throw CompileError(std::max(edge.line, 0),
+            "imported call edge has an unknown provider EST arena",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      edge.call_est_arena_index = arena_remap[edge.call_est_arena_index];
+    }
+    if (edge.message_est_arena_index != UINT32_MAX) {
+      if (edge.message_est_arena_index >= arena_remap.size())
+        throw CompileError(std::max(edge.line, 0),
+            "imported message edge has an unknown provider EST arena",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      edge.message_est_arena_index = arena_remap[edge.message_est_arena_index];
+    }
+  }
   // Each physical file was parsed independently, but all declarations are
   // checked together below.  This is temporary global linkage until Moss has
   // explicit modules/imports; no synthetic source file or implicit namespace
@@ -12471,6 +12546,17 @@ static void merge_project_program(Program& destination, Program source,
   destination.benchmarks.insert(destination.benchmarks.end(),
                                 std::make_move_iterator(source.benchmarks.begin()),
                                 std::make_move_iterator(source.benchmarks.end()));
+  destination.semantic_call_edges.insert(
+      destination.semantic_call_edges.end(),
+      std::make_move_iterator(source.semantic_call_edges.begin()),
+      std::make_move_iterator(source.semantic_call_edges.end()));
+  destination.domain_specializations.insert(
+      destination.domain_specializations.end(),
+      std::make_move_iterator(source.domain_specializations.begin()),
+      std::make_move_iterator(source.domain_specializations.end()));
+  for (const auto& module_identity : source.module_identities)
+    destination.module_identities.emplace(module_identity.first,
+                                           module_identity.second);
   if (source.main) {
     if (file_check_root) {
       if (std::filesystem::absolute(source_file).lexically_normal() ==
@@ -15184,7 +15270,357 @@ struct ExecutionBodySectionView {
   string payload;
   string package_fingerprint;
   string interface_digest;
+  struct CallEdgeRow {
+    SemanticCallEdge edge;
+    std::uint32_t statement_index = UINT32_MAX;
+    est::ExprSlot slot = est::ExprSlot::Expression;
+    std::uint32_t argument_index = 0;
+    vector<std::uint32_t> child_path;
+    std::size_t provider_node_kind = 0;
+    string provider_callee_name;
+  };
+  vector<CallEdgeRow> call_edges;
 };
+
+static vector<est::ExprId> execution_est_children(const est::Arena& arena,
+                                                  est::ExprId id) {
+  return std::visit([](const auto& node) -> vector<est::ExprId> {
+    using T = std::decay_t<decltype(node)>;
+    if constexpr (std::is_same_v<T, est::Unary>) return {node.operand};
+    else if constexpr (std::is_same_v<T, est::Binary>) return {node.left, node.right};
+    else if constexpr (std::is_same_v<T, est::Call>) {
+      vector<est::ExprId> out{node.callee};
+      out.insert(out.end(), node.arguments.begin(), node.arguments.end());
+      return out;
+    } else if constexpr (std::is_same_v<T, est::Take>) return node.arguments;
+    else if constexpr (std::is_same_v<T, est::Member>) return {node.base};
+    else if constexpr (std::is_same_v<T, est::Index>) return {node.base, node.index};
+    else if constexpr (std::is_same_v<T, est::Parenthesized>) return {node.inner};
+    else if constexpr (std::is_same_v<T, est::Message>) {
+      vector<est::ExprId> out{node.target};
+      out.insert(out.end(), node.arguments.begin(), node.arguments.end());
+      return out;
+    } else if constexpr (std::is_same_v<T, est::NamedArgument>) return {node.value};
+    else if constexpr (std::is_same_v<T, est::Collection> ||
+                       std::is_same_v<T, est::Tuple>) return node.elements;
+    else if constexpr (std::is_same_v<T, est::Constructor>) {
+      vector<est::ExprId> out{node.type};
+      out.insert(out.end(), node.type_arguments.begin(), node.type_arguments.end());
+      out.insert(out.end(), node.arguments.begin(), node.arguments.end());
+      return out;
+    } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+      vector<est::ExprId> out{node.input};
+      out.insert(out.end(), node.stages.begin(), node.stages.end());
+      return out;
+    } else return {};
+  }, arena.at(id));
+}
+
+static bool execution_est_path(const est::Arena& arena, est::ExprId root,
+                               est::ExprId target,
+                               vector<std::uint32_t>& path) {
+  if (root == target) return true;
+  const auto children = execution_est_children(arena, root);
+  for (std::uint32_t index = 0; index < children.size(); ++index) {
+    path.push_back(index);
+    if (execution_est_path(arena, children[index], target, path)) return true;
+    path.pop_back();
+  }
+  return false;
+}
+
+static est::ExprId execution_est_follow_path(
+    const est::Arena& arena, est::ExprId root,
+    const vector<std::uint32_t>& path) {
+  auto current = root;
+  for (const auto index : path) {
+    const auto children = execution_est_children(arena, current);
+    if (index >= children.size())
+      throw std::invalid_argument("EST occurrence path is stale");
+    current = children[index];
+  }
+  return current;
+}
+
+static string execution_est_callee_name(const est::Arena& arena,
+                                        est::ExprId id) {
+  const auto* call = std::get_if<est::Call>(&arena.at(id));
+  if (!call) return {};
+  const auto& callee = arena.at(call->callee);
+  if (const auto* identifier = std::get_if<est::Identifier>(&callee))
+    return identifier->name;
+  if (const auto* member = std::get_if<est::Member>(&callee))
+    return member->name;
+  return {};
+}
+
+static const vector<Stmt>* execution_body_for_spec_id(const Program& program,
+                                                      SpecId spec_id) {
+  const vector<Stmt>* match = nullptr;
+  auto accept = [&](const vector<Stmt>* candidate) {
+    if (!candidate) return;
+    if (match && match != candidate)
+      throw std::invalid_argument("SpecId maps to more than one execution body");
+    match = candidate;
+  };
+  for (const auto& function : program.functions) {
+    const bool owns = function.spec_id == spec_id ||
+        std::any_of(function.specializations.begin(),
+                    function.specializations.end(), [&](const auto& item) {
+          return item.spec_id == spec_id;
+        });
+    if (owns)
+      accept(function.execution_body ? &*function.execution_body
+                                     : &function.body);
+  }
+  for (const auto& object : program.objects)
+    for (const auto& method : object.methods)
+      if (method.spec_id == spec_id)
+        accept(method.execution_body ? &*method.execution_body : &method.body);
+  for (const auto& domain : program.domains)
+    for (size_t handler_index = 0; handler_index < domain.handlers.size();
+         ++handler_index) {
+      const auto& handler = domain.handlers[handler_index];
+      bool owns = handler.spec_id == spec_id;
+      for (const auto& specialization : program.domain_specializations)
+        if (specialization.source_domain == domain.name &&
+            handler_index < specialization.handler_spec_ids.size() &&
+            specialization.handler_spec_ids[handler_index] == spec_id)
+          owns = true;
+      if (owns)
+        accept(handler.execution_body ? &*handler.execution_body
+                                      : &handler.body);
+    }
+  if (program.main && program.main->spec_id == spec_id)
+    accept(&program.main->body);
+  for (const auto& test : program.tests)
+    if (test.spec_id == spec_id) accept(&test.body);
+  for (const auto& bench : program.benchmarks)
+    if (bench.spec_id == spec_id) accept(&bench.body);
+  return match;
+}
+
+struct ExecutionEstLocator {
+  std::uint32_t statement_index = UINT32_MAX;
+  est::ExprSlot slot = est::ExprSlot::Expression;
+  std::uint32_t argument_index = 0;
+  vector<std::uint32_t> child_path;
+};
+
+static ExecutionEstLocator execution_est_locator(
+    const Program& program, const vector<Stmt>& body,
+    std::uint32_t arena_index, est::ExprId expression) {
+  if (arena_index >= program.expression_arenas.size() ||
+      !program.expression_arenas[arena_index])
+    throw std::invalid_argument("call edge names an unknown EST arena");
+  const auto& arena = *program.expression_arenas[arena_index];
+  std::optional<ExecutionEstLocator> found;
+  for (std::uint32_t statement_index = 0; statement_index < body.size();
+       ++statement_index) {
+    for (const auto& handle : body[statement_index].expression_handles) {
+      if (handle.arena_index != arena_index) continue;
+      vector<std::uint32_t> path;
+      if (!execution_est_path(arena, handle.expr, expression, path)) continue;
+      if (found)
+        throw std::invalid_argument("call edge EST locator is ambiguous in its checked body");
+      found = ExecutionEstLocator{statement_index, handle.slot,
+                                  handle.argument_index, std::move(path)};
+    }
+  }
+  if (!found)
+    throw std::invalid_argument("call edge EST occurrence is detached from its checked body");
+  return *found;
+}
+
+static void restore_execution_call_edges(Program& provider,
+                                         const ExecutionBodySectionView& section) {
+  for (const auto& row : section.call_edges) {
+    const auto* body = execution_body_for_spec_id(provider,
+                                                   row.edge.caller_spec_id);
+    if (!body || row.statement_index >= body->size())
+      throw CompileError(0, "stale caller or statement locator in ABI-v9 call-edge section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    const auto& statement = (*body)[row.statement_index];
+    const est::Handle* selected = nullptr;
+    for (const auto& handle : statement.expression_handles)
+      if (handle.slot == row.slot &&
+          handle.argument_index == row.argument_index) {
+        if (selected)
+          throw CompileError(std::max(statement.line, 0),
+              "duplicate EST root for ABI-v9 call-edge locator",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        selected = &handle;
+      }
+    if (!selected || selected->arena_index >= provider.expression_arenas.size() ||
+        !provider.expression_arenas[selected->arena_index])
+      throw CompileError(std::max(statement.line, 0),
+          "missing EST root for ABI-v9 call-edge locator",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    const auto& arena = *provider.expression_arenas[selected->arena_index];
+    est::ExprId expression = 0;
+    try {
+      expression = execution_est_follow_path(arena, selected->expr,
+                                             row.child_path);
+    } catch (const std::exception& error) {
+      throw CompileError(std::max(statement.line, 0),
+          "stale EST path in ABI-v9 call-edge section: " + string(error.what()),
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
+    if (arena.at(expression).index() != row.provider_node_kind ||
+        !std::holds_alternative<est::Call>(arena.at(expression)) ||
+        execution_est_callee_name(arena, expression) !=
+            row.provider_callee_name)
+      throw CompileError(std::max(statement.line, 0),
+          "imported EST call kind or callee disagrees with provider call-edge record",
+          "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    auto restored_edge = row.edge;
+    restored_edge.call_est_arena_index = selected->arena_index;
+    restored_edge.call_expression_occurrence_id = expression;
+    provider.semantic_call_edges.push_back(std::move(restored_edge));
+  }
+}
+
+static void parse_execution_specialization_rows(
+    std::istream& input, Program& provider,
+    ExecutionBodySectionView& section) {
+  string line;
+  if (!std::getline(input, line) || !starts_with(line, "spec_table_count "))
+    throw CompileError(0, "missing specialization table in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  size_t count = 0;
+  {
+    std::istringstream fields(line.substr(string("spec_table_count ").size()));
+    string trailing;
+    if (!(fields >> count) || (fields >> trailing) || count > 1000000)
+      throw CompileError(0, "invalid specialization table count in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  if (!provider.specialization_table.empty())
+    throw CompileError(0, "duplicate specialization table in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  provider.specialization_table.reserve(count);
+  std::set<std::pair<string, SpecId>> provider_ids;
+  for (size_t index = 0; index < count; ++index) {
+    if (!std::getline(input, line) || !starts_with(line, "spec_identity "))
+      throw CompileError(0, "truncated specialization table in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    std::istringstream fields(line.substr(string("spec_identity ").size()));
+    ProgramSpecializationIdentity row;
+    string trailing;
+    if (!(fields >> row.id >> std::quoted(row.module_identity) >>
+          std::quoted(row.provider_module_identity) >> row.provider_spec_id >>
+          std::quoted(row.semantic_callable_identity) >>
+          std::quoted(row.diagnostic_key)) || (fields >> trailing) ||
+        row.id != index || row.semantic_callable_identity.empty() ||
+        row.id == InvalidSpecId || row.module_identity.empty() ||
+        (row.provider_module_identity.empty() !=
+         (row.provider_spec_id == InvalidSpecId)) ||
+        (!row.provider_module_identity.empty() &&
+         !provider_ids.emplace(row.provider_module_identity,
+                               row.provider_spec_id).second))
+      throw CompileError(0, "invalid or duplicate specialization identity in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    provider.specialization_table.push_back(std::move(row));
+  }
+  if (!std::getline(input, line) || !starts_with(line, "call_edge_count "))
+    throw CompileError(0, "missing call-edge table in ABI-v9 execution-body section",
+                       "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  count = 0;
+  {
+    std::istringstream fields(line.substr(string("call_edge_count ").size()));
+    string trailing;
+    if (!(fields >> count) || (fields >> trailing) || count > 10000000)
+      throw CompileError(0, "invalid call-edge count in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+  }
+  std::set<std::tuple<SpecId, uint32_t, est::ExprId>> call_sites;
+  provider.semantic_call_edges.reserve(count);
+  for (size_t index = 0; index < count; ++index) {
+    if (!std::getline(input, line) || !starts_with(line, "call_edge "))
+      throw CompileError(0, "truncated call-edge table in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    std::istringstream fields(line.substr(string("call_edge ").size()));
+    SemanticCallEdge edge;
+    unsigned target_kind = 0;
+    size_t argument_count = 0;
+    string invocation_kind;
+    string trailing;
+    if (!(fields >> edge.caller_spec_id >> edge.call_est_arena_index >>
+          edge.call_expression_occurrence_id >> edge.callee_spec_id >>
+          target_kind >> std::quoted(invocation_kind) >>
+          std::quoted(edge.target_module_identity) >>
+          edge.callback_argument_index >>
+          argument_count) || target_kind > static_cast<unsigned>(SemanticCallTargetKind::DynamicCallback) ||
+        argument_count > 100000 || edge.caller_spec_id >= provider.specialization_table.size() ||
+        (edge.callee_spec_id != InvalidSpecId &&
+         edge.callee_spec_id >= provider.specialization_table.size()) ||
+        edge.call_est_arena_index == UINT32_MAX ||
+        edge.call_expression_occurrence_id == UINT32_MAX ||
+        !call_sites.emplace(edge.caller_spec_id, edge.call_est_arena_index,
+                            edge.call_expression_occurrence_id).second)
+      throw CompileError(0, "invalid, duplicate, or unknown-ID call edge in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    edge.target_kind = static_cast<SemanticCallTargetKind>(target_kind);
+    edge.invocation_kind = std::move(invocation_kind);
+    const bool callback_edge = edge.invocation_kind == "dynamic_callback" ||
+        edge.invocation_kind == "functional_callback";
+    if (edge.invocation_kind.empty() ||
+        (callback_edge != (edge.callback_argument_index != UINT32_MAX)) ||
+        (edge.target_kind == SemanticCallTargetKind::DynamicCallback &&
+         edge.callee_spec_id != InvalidSpecId) ||
+        edge.target_kind == SemanticCallTargetKind::Unresolved)
+      throw CompileError(0, "invalid callback slot in ABI-v9 call-edge row",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    const auto module_identity = provider.module_identities.find(
+        provider.module_name);
+    if (module_identity == provider.module_identities.end() ||
+        module_identity->second.empty() ||
+        provider.specialization_table[edge.caller_spec_id].module_identity !=
+            module_identity->second)
+      throw CompileError(0, "call-edge caller SpecId is not owned by the provider module",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    if (edge.callee_spec_id != InvalidSpecId &&
+        (edge.target_module_identity.empty() ||
+         provider.specialization_table[edge.callee_spec_id].module_identity !=
+             edge.target_module_identity))
+      throw CompileError(0, "call-edge target module contradicts its qualified SpecId row",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    for (size_t argument = 0; argument < argument_count; ++argument) {
+      SpecId argument_id = InvalidSpecId;
+      if (!(fields >> argument_id) ||
+          (argument_id != InvalidSpecId &&
+           argument_id >= provider.specialization_table.size()))
+        throw CompileError(0, "invalid or unknown-ID callable argument in ABI-v9 execution-body section",
+                           "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      edge.argument_callable_spec_ids.push_back(argument_id);
+    }
+    if (callback_edge && edge.callback_argument_index >= argument_count)
+      throw CompileError(0, "callback argument index is outside the checked call edge",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    ExecutionBodySectionView::CallEdgeRow row;
+    row.edge = std::move(edge);
+    unsigned slot = 0;
+    size_t path_count = 0;
+    if (!(fields >> row.statement_index >> slot >> row.argument_index >>
+          path_count) || row.statement_index == UINT32_MAX ||
+        slot >= est::Arena::slot_count || path_count > 100000)
+      throw CompileError(0, "invalid EST locator in call-edge row in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    row.slot = static_cast<est::ExprSlot>(slot);
+    for (size_t step = 0; step < path_count; ++step) {
+      std::uint32_t child = UINT32_MAX;
+      if (!(fields >> child))
+        throw CompileError(0, "truncated EST locator in call-edge row in ABI-v9 execution-body section",
+                           "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      row.child_path.push_back(child);
+    }
+    if (!(fields >> row.provider_node_kind >>
+          std::quoted(row.provider_callee_name)) || fields >> trailing)
+      throw CompileError(0, "malformed provider EST shape in call-edge row in ABI-v9 execution-body section",
+                         "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    section.call_edges.push_back(std::move(row));
+  }
+}
 
 static void parse_generic_ir_line(const string& line, Function& function) {
   std::istringstream input(line);
@@ -15398,7 +15834,7 @@ static string execution_body_resolve_source_path(
   return (*root / path).lexically_normal().string();
 }
 
-static void parse_execution_body_payload(const ExecutionBodySectionView& section,
+static void parse_execution_body_payload(ExecutionBodySectionView& section,
                                          Program& provider,
                                          const std::filesystem::path& file) {
   if (!section.present) return;
@@ -15409,6 +15845,8 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
       throw CompileError(0, "truncated ABI-v9 execution-body metadata",
                          "SOURCE_FREE_EXECUTION_BODY_INVALID");
   }
+  if (section.version >= 3)
+    parse_execution_specialization_rows(input, provider, section);
   std::set<string> function_bodies, method_bodies, handler_bodies;
   while (std::getline(input, line)) {
     if (line.empty())
@@ -15537,7 +15975,8 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
       std::istringstream header(line.substr(9));
       string name, source_file, return_type, effects_text;
       int exported = 0, declaration_line = 0, result_line = 0, has_result = 0;
-      size_t parameter_count = 0;
+      size_t parameter_count = 0, specialization_count = 0;
+      SpecId function_spec_id = InvalidSpecId;
       if (!(header >> std::quoted(name) >> exported >> declaration_line >>
             result_line >> parameter_count >> std::quoted(return_type) >>
             std::quoted(effects_text) >> std::quoted(source_file) >>
@@ -15553,6 +15992,22 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         throw CompileError(std::max(declaration_line, 0),
             "missing function result in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<SpecId> specialization_spec_ids;
+      if (section.version >= 3) {
+        if (!(header >> function_spec_id >> specialization_count) ||
+            function_spec_id == InvalidSpecId || specialization_count > 100000)
+          throw CompileError(std::max(declaration_line, 0),
+              "missing function SpecId ownership in ABI-v9 execution-body section",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        for (size_t index = 0; index < specialization_count; ++index) {
+          SpecId id = InvalidSpecId;
+          if (!(header >> id) || id == InvalidSpecId)
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid function specialization SpecId in ABI-v9 execution-body section",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          specialization_spec_ids.push_back(id);
+        }
+      }
       string trailing;
       if (header >> trailing)
         throw CompileError(std::max(declaration_line, 0),
@@ -15582,6 +16037,38 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         throw CompileError(std::max(declaration_line, 0),
             "execution body visibility disagrees with Section 1 declaration",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      }
+      if (section.version >= 3) {
+        const auto owner_module = provider.module_identities.find(
+            provider.module_name);
+        if (owner_module == provider.module_identities.end() ||
+            function_spec_id >= provider.specialization_table.size() ||
+            provider.specialization_table[function_spec_id].module_identity !=
+                owner_module->second ||
+            std::any_of(specialization_spec_ids.begin(),
+                        specialization_spec_ids.end(), [&](SpecId id) {
+              return id >= provider.specialization_table.size() ||
+                  provider.specialization_table[id].module_identity !=
+                      owner_module->second;
+            }))
+          throw CompileError(std::max(declaration_line, 0),
+              "function body SpecId is not owned by the provider module",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (function->spec_id != InvalidSpecId &&
+            function->spec_id != function_spec_id)
+          throw CompileError(std::max(declaration_line, 0),
+              "function SpecId contradicts Section 1 declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        function->spec_id = function_spec_id;
+        if (!function->specializations.empty() &&
+            function->specializations.size() != specialization_spec_ids.size())
+          throw CompileError(std::max(declaration_line, 0),
+              "function specialization SpecId count contradicts Section 1 declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (function->specializations.empty())
+          function->specializations.resize(specialization_spec_ids.size());
+        for (size_t index = 0; index < specialization_spec_ids.size(); ++index)
+          function->specializations[index].spec_id = specialization_spec_ids[index];
       }
       if (function->generic || function->static_dispatch ||
           (function->name.find("::") != string::npos &&
@@ -15752,6 +16239,12 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         throw CompileError(std::max(declaration_line, 0),
             "missing method result in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      SpecId method_spec_id = InvalidSpecId;
+      if (section.version >= 3 &&
+          (!(header >> method_spec_id) || method_spec_id == InvalidSpecId))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing method SpecId ownership in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
       string trailing;
       if (header >> trailing)
         throw CompileError(std::max(declaration_line, 0),
@@ -15789,6 +16282,22 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
             interface_effects("effects=" + effects_text);
         object->methods.push_back(std::move(private_method));
         method = std::prev(object->methods.end());
+      }
+      if (section.version >= 3) {
+        const auto owner_module = provider.module_identities.find(
+            provider.module_name);
+        if (owner_module == provider.module_identities.end() ||
+            method_spec_id >= provider.specialization_table.size() ||
+            provider.specialization_table[method_spec_id].module_identity !=
+                owner_module->second)
+          throw CompileError(std::max(declaration_line, 0),
+              "method body SpecId is not owned by the provider module",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (method->spec_id != InvalidSpecId && method->spec_id != method_spec_id)
+          throw CompileError(std::max(declaration_line, 0),
+              "method SpecId contradicts Section 1 declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        method->spec_id = method_spec_id;
       }
       if (!method_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
         throw CompileError(std::max(declaration_line, 0),
@@ -15955,12 +16464,45 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
       string owner, name, source_file;
       int declaration_line = 0;
       size_t statement_count = 0, failure_arm_count = 0;
+      SpecId handler_spec_id = InvalidSpecId;
+      size_t handler_owner_count = 0;
+      vector<std::tuple<string, size_t, SpecId>> handler_owners;
       if (!(header >> std::quoted(owner) >> std::quoted(name) >>
             declaration_line >> std::quoted(source_file) >> statement_count >>
             failure_arm_count) || statement_count > 100000 ||
           failure_arm_count > 100000)
         throw CompileError(std::max(declaration_line, 0),
             "invalid handler in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (section.version >= 3 &&
+          (!(header >> handler_spec_id) || handler_spec_id == InvalidSpecId))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing handler SpecId ownership in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (section.version >= 3) {
+        if (!(header >> handler_owner_count) || handler_owner_count > 100000)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid handler specialization-owner count",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        std::set<std::pair<string, size_t>> seen_handler_owners;
+        for (size_t index = 0; index < handler_owner_count; ++index) {
+          string instance;
+          size_t handler_index = 0;
+          SpecId id = InvalidSpecId;
+          if (!(header >> std::quoted(instance) >> handler_index >> id) ||
+              instance.empty() || handler_index > 100000 ||
+              id == InvalidSpecId ||
+              !seen_handler_owners.emplace(instance, handler_index).second)
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid or duplicate handler specialization owner",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          handler_owners.emplace_back(std::move(instance), handler_index, id);
+        }
+      }
+      string handler_trailing;
+      if (header >> handler_trailing)
+        throw CompileError(std::max(declaration_line, 0),
+            "trailing handler metadata in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       auto domain = std::find_if(provider.domains.begin(), provider.domains.end(),
           [&](const Domain& candidate) {
@@ -15979,6 +16521,63 @@ static void parse_execution_body_payload(const ExecutionBodySectionView& section
         throw CompileError(std::max(declaration_line, 0),
             "execution-body handler is undeclared or duplicated",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (section.version >= 3) {
+        const auto owner_module = provider.module_identities.find(
+            provider.module_name);
+        if (owner_module == provider.module_identities.end() ||
+            handler_spec_id >= provider.specialization_table.size() ||
+            provider.specialization_table[handler_spec_id].module_identity !=
+                owner_module->second)
+          throw CompileError(std::max(declaration_line, 0),
+              "handler body SpecId is not owned by the provider module",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (handler->spec_id != InvalidSpecId &&
+            handler->spec_id != handler_spec_id)
+          throw CompileError(std::max(declaration_line, 0),
+              "handler SpecId contradicts Section 1 declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        handler->spec_id = handler_spec_id;
+        for (const auto& [instance, handler_index, id] : handler_owners) {
+          if (handler_index >= domain->handlers.size() ||
+              &domain->handlers[handler_index] != &*handler)
+            throw CompileError(std::max(declaration_line, 0),
+                "handler specialization owner has a contradictory handler index",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          if (id >= provider.specialization_table.size())
+            throw CompileError(std::max(declaration_line, 0),
+                "handler specialization owner references an unknown SpecId",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          if (provider.specialization_table[id].module_identity !=
+              owner_module->second)
+            throw CompileError(std::max(declaration_line, 0),
+                "handler instance SpecId is not owned by the provider module",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          auto specialization = std::find_if(
+              provider.domain_specializations.begin(),
+              provider.domain_specializations.end(), [&](const auto& candidate) {
+            return candidate.source_domain == domain->name &&
+                candidate.instance == instance;
+          });
+          if (specialization == provider.domain_specializations.end()) {
+            DomainSpecialization created;
+            created.source_domain = domain->name;
+            created.instance = instance;
+            created.handler_spec_ids.resize(domain->handlers.size(),
+                                             InvalidSpecId);
+            provider.domain_specializations.push_back(std::move(created));
+            specialization = std::prev(provider.domain_specializations.end());
+          }
+          if (specialization->handler_spec_ids.size() < domain->handlers.size())
+            specialization->handler_spec_ids.resize(domain->handlers.size(),
+                                                      InvalidSpecId);
+          auto& owner_id = specialization->handler_spec_ids[handler_index];
+          if (owner_id != InvalidSpecId && owner_id != id)
+            throw CompileError(std::max(declaration_line, 0),
+                "duplicate or contradictory handler specialization owner SpecId",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          owner_id = id;
+        }
+      }
       handler->line = declaration_line;
       handler->execution_source_file =
           execution_body_resolve_source_path(file, source_file);
@@ -16689,7 +17288,7 @@ static ExecutionBodySectionView parse_execution_body_section(
         string("execution_body_version ").size());
     size_t consumed = 0;
     const auto version = std::stoul(version_text, &consumed);
-    if (consumed != version_text.size() || (version != 1 && version != 2))
+    if (consumed != version_text.size() || version < 1 || version > 3)
       throw std::out_of_range("execution body version");
     result.version = static_cast<unsigned>(version);
   } catch (const std::exception&) {
@@ -17140,6 +17739,8 @@ static ParsedModuleUnit load_module_interface(
   Program provider;
   provider.explicit_module = true;
   provider.module_name = unit.name;
+  if (!unit.module_identity.empty())
+    provider.module_identities[unit.name] = unit.module_identity;
   string line;
   Function* current = nullptr;
   ObjectType* current_object = nullptr;
@@ -18419,6 +19020,7 @@ static ParsedModuleUnit load_module_interface(
             build_loaded_body(arm.body, "failure:" + domain.name + "::" +
                               handler.name + ":" + std::to_string(arm.line));
       }
+    restore_execution_call_edges(provider, execution_bodies);
     bind_imported_return_value_artifact_handles(provider);
   }
   for (auto& function : provider.functions) {
@@ -18981,6 +19583,8 @@ static ParsedModuleUnit load_module_interface(
       }
     }
   }
+  if (!unit.module_identity.empty())
+    provider.module_identities[unit.name] = unit.module_identity;
   unit.files.push_back({std::move(provider), file.string()});
   return unit;
 }
@@ -22908,6 +23512,120 @@ static string encode_execution_body_payload(
   std::ostringstream payload;
   payload << "package_fingerprint " << package_fingerprint << "\n"
           << "interface_digest " << interface_digest << "\n";
+  const auto local_module_identity = program.module_identities.find(module);
+  if (local_module_identity == program.module_identities.end() ||
+      local_module_identity->second.empty())
+    throw std::invalid_argument("module identity is missing while writing .mossi specialization table");
+  std::unordered_map<SpecId, SpecId> artifact_spec_ids;
+  for (const auto& row : program.specialization_table) {
+    if (row.id == InvalidSpecId || row.id >= program.specialization_table.size() ||
+        !artifact_spec_ids.emplace(row.id, row.id).second)
+      throw std::invalid_argument("duplicate or invalid SpecId while projecting .mossi table");
+  }
+  payload << "spec_table_count " << program.specialization_table.size() << "\n";
+  std::set<std::pair<string, SpecId>> provider_ids;
+  for (const auto& row : program.specialization_table) {
+    if (row.id == InvalidSpecId || row.id >= program.specialization_table.size() ||
+        row.semantic_callable_identity.empty())
+      throw std::invalid_argument("invalid program specialization table row while writing .mossi");
+    if (row.module_identity.empty() ||
+        (row.provider_module_identity.empty() !=
+         (row.provider_spec_id == InvalidSpecId)) ||
+        (!row.provider_module_identity.empty() &&
+         !provider_ids.emplace(row.provider_module_identity,
+                               row.provider_spec_id).second))
+      throw std::invalid_argument("invalid specialization identity provenance while writing .mossi");
+    payload << "spec_identity " << row.id << " "
+            << std::quoted(row.module_identity) << " "
+            << std::quoted(row.provider_module_identity) << " "
+            << row.provider_spec_id << " "
+            << std::quoted(row.semantic_callable_identity) << " "
+            << std::quoted(row.diagnostic_key) << "\n";
+  }
+  vector<const SemanticCallEdge*> module_call_edges;
+  for (const auto& edge : program.semantic_call_edges) {
+    // Message edges are represented by the checked domain-instance routing
+    // rows. Section 2's call table is specifically the ordinary EST Call
+    // authority and admits only edges with an exact Call occurrence.
+    if (edge.invocation_kind == "synchronous_message") continue;
+    if (edge.caller_spec_id == InvalidSpecId ||
+        edge.caller_spec_id >= program.specialization_table.size())
+      throw std::invalid_argument("call edge contains an unknown caller specialization ID while writing .mossi");
+    const auto& caller = program.specialization_table[edge.caller_spec_id];
+    const string caller_module = caller.module_identity;
+    if (caller_module == local_module_identity->second)
+      module_call_edges.push_back(&edge);
+  }
+  payload << "call_edge_count " << module_call_edges.size() << "\n";
+  for (const auto* edge_ptr : module_call_edges) {
+    const auto& edge = *edge_ptr;
+    if (edge.caller_spec_id == InvalidSpecId ||
+        edge.caller_spec_id >= program.specialization_table.size() ||
+        !artifact_spec_ids.count(edge.caller_spec_id) ||
+        (edge.callee_spec_id != InvalidSpecId &&
+         edge.callee_spec_id >= program.specialization_table.size()) ||
+        edge.call_est_arena_index == UINT32_MAX ||
+        edge.call_expression_occurrence_id == UINT32_MAX ||
+        ((edge.invocation_kind == "dynamic_callback" ||
+          edge.invocation_kind == "functional_callback") !=
+         (edge.callback_argument_index != UINT32_MAX)) ||
+        (edge.target_kind == SemanticCallTargetKind::DynamicCallback &&
+         edge.callee_spec_id != InvalidSpecId) ||
+        edge.target_kind == SemanticCallTargetKind::Unresolved ||
+        static_cast<unsigned>(edge.target_kind) >
+            static_cast<unsigned>(SemanticCallTargetKind::DynamicCallback))
+      throw std::invalid_argument("call edge contains an unknown specialization ID while writing .mossi");
+    SpecId encoded_callee = edge.callee_spec_id;
+    string target_module = edge.target_module_identity;
+    if (edge.callee_spec_id != InvalidSpecId) {
+      const auto& callee = program.specialization_table[edge.callee_spec_id];
+      if (!target_module.empty() && target_module != callee.module_identity)
+        throw std::invalid_argument("call target module contradicts its qualified SpecId table row");
+      target_module = callee.module_identity;
+    }
+    payload << "call_edge " << edge.caller_spec_id << " "
+            << edge.call_est_arena_index << " "
+            << edge.call_expression_occurrence_id << " "
+            << encoded_callee << " "
+            << static_cast<unsigned>(edge.target_kind) << " "
+            << std::quoted(edge.invocation_kind) << " "
+            << std::quoted(target_module) << " "
+            << edge.callback_argument_index << " "
+            << edge.argument_callable_spec_ids.size();
+    for (const SpecId argument_id : edge.argument_callable_spec_ids) {
+      if (argument_id == InvalidSpecId) {
+        payload << " " << InvalidSpecId;
+        continue;
+      }
+      if (argument_id >= program.specialization_table.size())
+        throw std::invalid_argument("callable argument references unknown SpecId");
+      payload << " " << argument_id;
+    }
+    if (edge.callback_argument_index != UINT32_MAX &&
+        edge.callback_argument_index >= edge.argument_callable_spec_ids.size())
+      throw std::invalid_argument("callback argument index is outside the checked call edge");
+    const auto* body = execution_body_for_spec_id(program,
+                                                   edge.caller_spec_id);
+    if (!body)
+      throw std::invalid_argument("call edge caller SpecId has no checked execution body while writing .mossi");
+    const auto locator = execution_est_locator(program, *body,
+        edge.call_est_arena_index, edge.call_expression_occurrence_id);
+    const auto& arena = *program.expression_arenas[edge.call_est_arena_index];
+    if (!std::holds_alternative<est::Call>(
+            arena.at(edge.call_expression_occurrence_id)))
+      throw std::invalid_argument("checked ordinary call edge does not identify an EST Call node");
+    const auto callee_name = execution_est_callee_name(
+        arena, edge.call_expression_occurrence_id);
+    if (callee_name.empty())
+      throw std::invalid_argument("checked ordinary call edge has no stable EST callee name");
+    payload << " " << locator.statement_index << " "
+            << static_cast<unsigned>(locator.slot) << " "
+            << locator.argument_index << " " << locator.child_path.size();
+    for (const auto child : locator.child_path) payload << " " << child;
+    payload << " " << arena.at(edge.call_expression_occurrence_id).index()
+            << " " << std::quoted(callee_name);
+    payload << "\n";
+  }
   const auto execution_callables =
       execution_body_callable_closure(program, module);
 
@@ -23012,6 +23730,10 @@ static string encode_execution_body_payload(
               return left->name < right->name;
             });
   for (const auto* function : functions) {
+    const auto mapped_function_id = artifact_spec_ids.find(function->spec_id);
+    if (function->spec_id == InvalidSpecId ||
+        mapped_function_id == artifact_spec_ids.end())
+      throw std::invalid_argument("function body owner SpecId is absent from projected .mossi table");
     payload << "function " << std::quoted(function->name) << " "
             << (function->exported ? 1 : 0) << " " << function->line << " "
             << function->result_line << " " << function->params.size() << " "
@@ -23020,7 +23742,16 @@ static string encode_execution_body_payload(
             << std::quoted(project_relative_path(manifest,
                                                   function->source_file)) << " "
             << (function->result_expression ? 1 : 0) << " "
-            << std::quoted(function->result_expression.value_or(string())) << "\n";
+            << std::quoted(function->result_expression.value_or(string())) << " "
+            << mapped_function_id->second << " " << function->specializations.size();
+    for (const auto& specialization : function->specializations) {
+      const auto mapped = artifact_spec_ids.find(specialization.spec_id);
+      if (specialization.spec_id == InvalidSpecId ||
+          mapped == artifact_spec_ids.end())
+        throw std::invalid_argument("function specialization owner SpecId is absent from projected .mossi table");
+      payload << " " << mapped->second;
+    }
+    payload << "\n";
     for (size_t index = 0; index < function->params.size(); ++index) {
       const Effect effect = index < function->parameter_effects.size()
           ? function->parameter_effects[index] : Effect::Read;
@@ -23059,6 +23790,10 @@ static string encode_execution_body_payload(
                 return left->name < right->name;
               });
     for (const auto* method : methods) {
+      const auto mapped_method_id = artifact_spec_ids.find(method->spec_id);
+      if (method->spec_id == InvalidSpecId ||
+          mapped_method_id == artifact_spec_ids.end())
+        throw std::invalid_argument("method body owner SpecId is absent from projected .mossi table");
       payload << "method " << std::quoted(object->name) << " "
               << std::quoted(method->name) << " " << method->line << " "
               << method->result_line << " "
@@ -23069,7 +23804,8 @@ static string encode_execution_body_payload(
               << std::quoted(interface_effects_text(method->observable_effects))
               << " " << method->params.size() << " "
               << (method->result_expression ? 1 : 0) << " "
-              << std::quoted(method->result_expression.value_or(string())) << "\n";
+              << std::quoted(method->result_expression.value_or(string())) << " "
+              << mapped_method_id->second << "\n";
       for (size_t index = 0; index < method->params.size(); ++index) {
         const Effect effect = index < method->parameter_effects.size()
             ? method->parameter_effects[index] : Effect::Read;
@@ -23113,12 +23849,37 @@ static string encode_execution_body_payload(
                 return left->name < right->name;
               });
     for (const auto* handler : handlers) {
+      const auto mapped_handler_id = artifact_spec_ids.find(handler->spec_id);
+      if (handler->spec_id == InvalidSpecId ||
+          mapped_handler_id == artifact_spec_ids.end())
+        throw std::invalid_argument("handler body owner SpecId is absent from projected .mossi table");
+      const auto handler_index = static_cast<size_t>(
+          std::distance(domain->handlers.data(), handler));
+      vector<std::tuple<string, size_t, SpecId>> handler_owners;
+      for (const auto& specialization : program.domain_specializations)
+        if (specialization.source_domain == domain->name &&
+            handler_index < specialization.handler_spec_ids.size() &&
+            specialization.handler_spec_ids[handler_index] != InvalidSpecId)
+          handler_owners.emplace_back(specialization.instance, handler_index,
+              specialization.handler_spec_ids[handler_index]);
+      std::sort(handler_owners.begin(), handler_owners.end());
       payload << "handler " << std::quoted(domain->name) << " "
               << std::quoted(handler->name) << " " << handler->line << " "
               << std::quoted(project_relative_path(manifest,
                                                     handler->source_file)) << " "
               << handler->body.size() << " "
-              << handler->failure_arms.size() << "\n";
+              << handler->failure_arms.size() << " "
+              << mapped_handler_id->second << " " << handler_owners.size();
+      for (const auto& [instance, owner_index, spec_id] : handler_owners) {
+        if (instance.empty() || spec_id >= program.specialization_table.size())
+          throw std::invalid_argument("invalid domain-instance handler SpecId owner while writing .mossi");
+        const auto mapped_owner_id = artifact_spec_ids.find(spec_id);
+        if (mapped_owner_id == artifact_spec_ids.end())
+          throw std::invalid_argument("domain handler owner SpecId is absent from projected .mossi table");
+        payload << " " << std::quoted(instance) << " " << owner_index
+                << " " << mapped_owner_id->second;
+      }
+      payload << "\n";
       for (const auto& statement : handler->body)
         write_execution_body_statement(payload, statement);
       const string handler_callable =
@@ -23157,7 +23918,7 @@ static string append_execution_body_section(
   const string payload = encode_execution_body_payload(
       manifest, program, module, package_fingerprint, interface_digest);
   std::ostringstream section;
-  section << "execution_body_version 2\n"
+  section << "execution_body_version 3\n"
           << "execution_body_length " << payload.size() << "\n"
           << "execution_body_hash sha256:"
           << source_free_contract_sha256(payload) << "\n"
