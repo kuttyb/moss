@@ -5693,6 +5693,8 @@ class Generator {
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT Native call argument lacks exact EST child");
       }
+      NativeEstCursorScope child_cursor_scope(
+          active_native_est_cursor_, child_cursor ? &*child_cursor : nullptr);
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
       bool compile_time_callable = is_compile_time_callable(
