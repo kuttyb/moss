@@ -463,15 +463,29 @@
       const RaisedIdentity& identity,
       const vector<std::pair<string,string>>& bindings,
       std::set<string>& locals,
-      std::unordered_map<string,string>& types) const {
+      std::unordered_map<string,string>& types,
+      bool borrowed = false) const {
     if (bindings.empty()) return;
     const string padding(static_cast<size_t>(spaces), ' ');
+    o << padding << "let (";
+    for (size_t index = 0; index < bindings.size(); ++index) {
+      if (index) o << ", ";
+      o << bindings[index].first;
+    }
+    if (bindings.size() == 1) o << ",";
+    o << ") = match " << inner << " { "
+      << phase21_rust_error_type(identity) << "::"
+      << rust_identifier(identity.variant) << " { ";
+    for (const auto& binding : bindings) o << binding.first << ", ";
+    o << ".. } => (";
+    for (size_t index = 0; index < bindings.size(); ++index) {
+      if (index) o << ", ";
+      o << (borrowed && copy_type(bindings[index].second)
+          ? "*" : "") << bindings[index].first;
+    }
+    if (bindings.size() == 1) o << ",";
+    o << "), _ => std::process::abort() };\n";
     for (const auto& binding : bindings) {
-      o << padding << "let " << binding.first << " = match &" << inner
-        << " { " << phase21_rust_error_type(identity) << "::"
-        << rust_identifier(identity.variant) << " { " << binding.first
-        << ", .. } => std::clone::Clone::clone(" << binding.first
-        << "), _ => std::process::abort() };\n";
       locals.insert(binding.first);
       types[binding.first] = binding.second;
     }
@@ -492,12 +506,20 @@
               (captures ? "ProviderFailState" : "FailState");
     if (!compiled_provider && !captures)
       emit_path_state_definition(o, d, failure, state_type);
-    o << "impl " << d.name << "Ref {\n"
-      << "    fn " << h.name << "_root(&self";
+    const string root_trait = d.name + h.name + "RootMethods";
+    o << (d.exported ? "pub " : "") << "trait " << root_trait
+      << " { fn " << h.name << "_root(&self";
+    for (const auto& parameter : h.params)
+      o << ", " << parameter.name << ": " << rust_type(parameter.type);
+    o << ") -> " << rust_type(h.reply_type.value_or("unit")) << "; }\n"
+      << "impl " << root_trait << " for moss_rt::DomainHandle<"
+      << d.name << "RefData> {\n    fn " << h.name << "_root(&self";
     for (const auto& parameter : h.params)
       o << ", " << parameter.name << ": " << rust_type(parameter.type);
     o << ") -> " << rust_type(h.reply_type.value_or("unit")) << " {\n"
-      << "        let __moss_attempt = self." << h.name << "_shared(";
+      << "        let __moss_attempt = " << d.name << h.name
+      << "SharedMethods::" << h.name << "_shared(self";
+    if (!h.params.empty()) o << ", ";
     for (const auto& parameter : h.params)
       o << shared_message_forward_argument(parameter, true) << ", ";
     o << ");\n"
@@ -863,9 +885,15 @@
       const HandlerSynchronizationPlan* hp = nullptr;
       if (plan) for (const auto& candidate : plan->handlers) if (candidate.name == h.name) hp = &candidate;
       string state_type = d.name + h.name + "State";
-      o << "impl " << d.name << "Ref {\n    #[inline]\n    fn " << h.name << "_shared(&self";
+      const string shared_trait = d.name + h.name + "SharedMethods";
+      o << (d.exported ? "pub " : "") << "trait " << shared_trait
+        << " { fn " << h.name << "_shared(&self";
       for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
       string ret = handler_internal_return_type(h);
+      o << ") -> " << ret << "; }\n"
+        << "impl " << shared_trait << " for moss_rt::DomainHandle<"
+        << d.name << "RefData> {\n    fn " << h.name << "_shared(&self";
+      for (const auto& p : h.params) o << ", " << shared_message_parameter(p);
       o << ") -> " << ret << " {\n";
       if (!hp) { o << "        std::process::abort() // Uninstantiated source template.\n    }\n}\n"; continue; }
       if (hp->path_placement.enabled) {
@@ -978,7 +1006,7 @@
       if (h.reply_type) o << "    __moss_require_send::<" << rust_type(*h.reply_type) << ">();\n";
     }
     for (const auto& f : d.state) decompose_physical_value(o, f.name, f.type, f.name);
-    o << "    " << d.name << "Ref { state: std::sync::Arc::new(" << d.name << "Runtime {\n";
+    o << "    moss_rt::DomainHandle::new(" << d.name << "RefData { state: std::sync::Arc::new(" << d.name << "Runtime {\n";
     for (const auto& cls : plan->classes) {
       o << "        class" << cls.class_rank << ": std::sync::RwLock::new(" << d.name << "Class" << cls.class_rank << " { ";
       for (const auto& leaf : cls.member_leaves) o << physical_leaf_binding(leaf) << ", ";
@@ -991,7 +1019,7 @@
       o << "        #[cfg(any(test, moss_perf))] handler_" << h.name << ": __handler_" << h.name << ",\n";
     o << "    }), ";
     for (const auto& r : d.routes) o << r.name << ", ";
-    o << "}\n}\n";
+    o << "})\n}\n";
   }
 
   void gen_domain_body_abi(std::ostringstream& o, const Domain& d) {
@@ -1162,7 +1190,12 @@
                            : handler_message_return_type(h))
           << " { ";
         if (!compatible) { o << "std::process::abort() }\n"; continue; }
-        o << "self." << h.name << "_shared(";
+        if (handle == d.name + "Handle") {
+          o << handle << "GeneratedMethods::" << h.name << "_shared(self, ";
+        } else {
+          o << d.name << h.name << "SharedMethods::" << h.name
+            << "_shared(self, ";
+        }
         for (const auto& p : h.params) {
           if (external_module && !standard_error_variants(
                   canonical_type_name(p.type)).empty()) {

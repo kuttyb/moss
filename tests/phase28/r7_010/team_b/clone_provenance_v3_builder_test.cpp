@@ -298,18 +298,17 @@ int main(int argc, char** argv) {
   if (!root_fact.is_authoritative()) return 18;
   const auto root_id = native_root_ingress_capture_identity(root_fact);
   const std::string root_rust =
-      "fn main(){ let __d = w/* Moss root ingress capture fact: " +
-      root_id + " */.clone(); }\n";
+      "fn main(){ let __d = moss_rt::share_domain(&(w/* Moss root ingress capture fact: " +
+      root_id + " */)); }\n";
   NativeRootIngressCaptureInputV1 root_input{root_fact, source};
   auto root_manifest = build_native_clone_provenance_v3(
       "debug", root_rust, source, {}, {}, {root_input});
   if (root_manifest.root_ingress_domain_captures.size() != 1 ||
-      root_manifest.occurrences.size() != 1 ||
-      root_manifest.occurrences.front().origin_kind !=
-          "root_ingress_domain_capture" ||
-      root_manifest.occurrences.front().semantic_identity != root_id ||
-      root_manifest.occurrences.front().ownership_fact.find(
-          "permits_moss_value_copy=false") == std::string::npos)
+      !root_manifest.occurrences.empty() ||
+      root_rust.substr(root_manifest.root_ingress_domain_captures.front().rust_span.source_begin,
+          root_manifest.root_ingress_domain_captures.front().rust_span.source_end -
+              root_manifest.root_ingress_domain_captures.front().rust_span.source_begin)
+          .find("moss_rt::share_domain(&(w") != 0)
     return 19;
   std::ostringstream root_json;
   write_native_clone_provenance_v3(root_json, root_rust, source, root_manifest);

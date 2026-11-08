@@ -744,6 +744,21 @@ class Generator {
       }
     o << "#![allow(non_snake_case)]\n#![allow(non_camel_case_types)]\n#![allow(dead_code)]\n";
     o << "#![allow(unused_imports)]\n#![allow(unused_mut)]\n#![allow(unused_variables)]\n#![allow(unused_assignments)]\n\n";
+    if (!p_.domains.empty() || !specialized_domains_.empty()) {
+      if (staged_abi_v10()) {
+        o << "use moss_runtime::moss_rt;\n";
+      } else {
+        o << "mod moss_rt {\n"
+             "    use std::ops::Deref;\n"
+             "    use std::sync::Arc;\n"
+             "    pub struct DomainHandle<T> { inner: Arc<T> }\n"
+             "    impl<T> DomainHandle<T> { pub fn new(inner: T) -> Self { Self { inner: Arc::new(inner) } } }\n"
+             "    impl<T> Clone for DomainHandle<T> { fn clone(&self) -> Self { Self { inner: Arc::clone(&self.inner) } } }\n"
+             "    impl<T> Deref for DomainHandle<T> { type Target = T; fn deref(&self) -> &T { &self.inner } }\n"
+             "    pub fn share_domain<T>(handle: &DomainHandle<T>) -> DomainHandle<T> { handle.clone() }\n"
+             "}\n";
+      }
+    }
     for (const auto& dependency : rust_dependencies_) {
       string crate = dependency == "__moss_specializations__"
           ? "moss_specializations" : tooling_name("moss_" + dependency);
@@ -5920,7 +5935,7 @@ class Generator {
             (effect == Effect::Write || borrowable_type(argument.type));
         if (domains_.count(canonical_type_name(argument.type))) {
           if (argument.reference)
-            rendered << "(*" << argument.expression << ").clone()";
+            rendered << "moss_rt::share_domain(&(*" << argument.expression << "))";
           else
             rendered << argument.expression;
         } else if (borrow && !argument.reference)
@@ -5979,7 +5994,7 @@ class Generator {
       bool borrow = abi.passing != ParameterPassingMode::Value;
       if (domains_.count(canonical_type_name(argument.type))) {
         if (argument.reference)
-          rendered << "(*" << argument.expression << ").clone()";
+          rendered << "moss_rt::share_domain(&(*" << argument.expression << "))";
         else
           rendered << argument.expression;
       } else if (borrow && !argument.reference)
@@ -6753,7 +6768,11 @@ class Generator {
             "internal error: checked raising message lacks a Phase 21 outcome context");
       if (target_domain.exported && !exported_domain_bridge_body_) {
         std::ostringstream call;
-        call << expr(receiver, d, locals, types) << ".__moss_message_" << handler << "(";
+        const string receiver_value = expr(receiver, d, locals, types);
+        call << target_domain.name << "RefExportedBridge::__moss_message_"
+             << handler << "(" << (view_domain_ ? receiver_value
+                  : "&(" + receiver_value + ")");
+        if (!arguments.empty()) call << ", ";
         for (size_t index = 0; index < arguments.size(); ++index) {
           if (index) call << ", ";
           call << shared_message_arg(arguments[index], target_handler->params.at(index).type,
@@ -6764,7 +6783,11 @@ class Generator {
         return raises ? phase21_propagate(call.str()) : call.str();
       }
       std::ostringstream rendered;
-      rendered << expr(receiver, d, locals, types) << "." << handler << "_shared(";
+      const string receiver_value = expr(receiver, d, locals, types);
+      rendered << target_domain.name << "Messages::" << handler
+               << "_shared(" << (view_domain_ ? receiver_value
+                    : "&( " + receiver_value + " )");
+      if (!arguments.empty()) rendered << ", ";
       for (size_t index = 0; index < arguments.size(); ++index) {
         if (index) rendered << ", ";
         rendered << shared_message_arg(arguments[index], target_handler->params.at(index).type,
@@ -6931,10 +6954,6 @@ class Generator {
           left_type && right_type &&
           canonical_type_name(*left_type) == "string" &&
           canonical_type_name(*right_type) == "string";
-      if (string_concatenation && tree_empty_string_literal(binary->right))
-        return "(" + left + ").clone()";
-      if (string_concatenation && tree_empty_string_literal(binary->left))
-        return "(" + right + ").clone()";
       if (string_concatenation) {
         vector<string> operands;
         std::function<void(string)> collect = [&](string source) {
@@ -7048,7 +7067,7 @@ class Generator {
         string value = expr(parts->at(i), d, locals, types);
         auto value_type = generated_expr_type(parts->at(i), types);
         if (value_type && domains_.count(canonical_type_name(*value_type)))
-          value = "(" + value + ").clone()";
+          value = "moss_rt::share_domain(&(" + value + "))";
         r << value;
       }
       r << "]"; return r.str();
@@ -7619,13 +7638,20 @@ class Generator {
               const string borrowed = !view_key && key_binding &&
                   borrowed_function_parameters_.count(*key_binding)
                   ? "__moss_key" : "&__moss_key";
+              if (!copy_type(map_types->second))
+                return "{ let __moss_key = " + key +
+                    "; (" +
+                    receiver_expression + ").get_with(" +
+                    shared_map_hash(map_types->first, "__moss_key") +
+                    ", " + borrowed + ", |a, b| " +
+                    shared_map_equal(map_types->first, "a", "b") +
+                    ").unwrap_or(&(" + fallback + ")) }";
               return "{ let __moss_key = " + key +
                   "; (" + receiver_expression +
                   ").get_with(" + shared_map_hash(map_types->first, "__moss_key") +
                   ", " + borrowed + ", |a, b| " +
                   shared_map_equal(map_types->first, "a", "b") +
-                  ").cloned().unwrap_or(" +
-                  fallback + ") }";
+                  ").copied().unwrap_or(" + fallback + ") }";
             }
             if (map_types->first == "string")
               key = "(" + key + ").as_str()";
@@ -7633,8 +7659,9 @@ class Generator {
               key = "&( " + key + " )";
             string fallback = expr(member_arguments[1], d, locals, types);
             if (!copy_type(map_types->second))
-              fallback = "(" + fallback + ").clone()";
-            return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
+              return "(" + receiver_expression + ").get(" + key +
+                  ").unwrap_or(&(" + fallback + "))";
+            return "(" + receiver_expression + ").get(" + key + ").copied().unwrap_or(" + fallback + ")";
           }
           if (member_name == "get" && member_arguments.size() == 1) {
             string key = expr(member_arguments.front(), d, locals, types);
@@ -7696,7 +7723,7 @@ class Generator {
               return "(" + receiver_expression + ").keys()";
             if (map_types->first == "float")
               return "(" + receiver_expression + ").keys().map(|k| k.0).collect::<std::vec::Vec<_>>()";
-            return "(" + receiver_expression + ").keys().cloned().collect::<std::vec::Vec<_>>()";
+            return "(" + receiver_expression + ").keys().copied().collect::<std::vec::Vec<_>>()";
           }
           if (member_name == "values" && member_arguments.empty()) {
             if (resolve_collection_view_fact(
@@ -7708,7 +7735,7 @@ class Generator {
                   "MOSS_INTERNAL_INVARIANT nonprimitive Map.values requires checked nonescaping CollectionView authority");
             return shared_key
                 ? "(" + receiver_expression + ").values()"
-                : "(" + receiver_expression + ").values().cloned().collect::<std::vec::Vec<_>>()";
+                : "(" + receiver_expression + ").values().copied().collect::<std::vec::Vec<_>>()";
           }
         }
         if (collection_named(parsed_type(concrete), {"queue"}))
@@ -8761,11 +8788,13 @@ class Generator {
   }
 
   void gen_ref_decl(std::ostringstream& o, const Domain& d) {
-    o << "#[derive(Clone)]\n" << (d.exported ? "pub " : "") << "struct " << d.name << "Ref {\n"
+    o << (d.exported ? "pub " : "") << "struct " << d.name << "RefData {\n"
       << "    state: std::sync::Arc<" << d.name << "Runtime>,\n";
     for (const auto& route : d.routes)
       o << "    " << route.name << ": " << rust_type(route.type) << ",\n";
-    o << "}\n\n";
+    o << "}\n"
+      << (d.exported ? "pub " : "") << "type " << d.name
+      << "Ref = moss_rt::DomainHandle<" << d.name << "RefData>;\n\n";
   }
 
   static string reply_binding(const Domain& d, const Handler& h) {
@@ -8838,24 +8867,41 @@ class Generator {
     const string route = handle + "Route";
     o << "// Moss backend: nominal " << source.name
       << " handle routes statically to each materialized instance\n";
-    o << "#[derive(Clone)]\n" << "enum " << route << " {\n";
+    o << "enum " << route << " {\n";
     o << "    Base(" << source.name << "Ref),\n";
     for (size_t index = 1; index < routes.size(); ++index)
       o << "    " << nominal_handle_variant(routes[index]->name) << "("
         << routes[index]->name << "Ref),\n";
     o << "}\n";
-    o << "#[derive(Clone)]\n" << (source.exported ? "pub " : "")
-      << "struct " << handle << " { route: " << route << " }\n\n";
+    o << (source.exported ? "pub " : "") << "struct " << handle
+      << "Data { route: " << route << " }\n"
+      << (source.exported ? "pub " : "") << "type " << handle
+      << " = moss_rt::DomainHandle<" << handle << "Data>;\n\n";
+    const string handle_methods = handle + "GeneratedMethods";
+    o << (source.exported ? "pub " : "") << "trait " << handle_methods << " {\n";
+    for (const auto& handler : source.handlers) {
+      for (const string& prefix : {string(""), string("__moss_message_")}) {
+        o << "    fn " << prefix << handler.name
+          << (prefix.empty() ? "_shared" : "") << "(&self";
+        for (const auto& parameter : handler.params)
+          o << ", " << shared_message_parameter(parameter);
+        o << ") -> " << (prefix.empty()
+            ? handler_internal_return_type(handler)
+            : handler_message_return_type(handler)) << ";\n";
+      }
+    }
+    o << "}\n";
     o << "impl From<" << source.name << "Ref> for " << handle << " {\n"
-      << "    fn from(value: " << source.name << "Ref) -> Self { Self { route: "
-      << route << "::Base(value) } }\n}\n";
+      << "    fn from(value: " << source.name << "Ref) -> Self { Self::new(" << handle
+      << "Data { route: " << route << "::Base(value) }) }\n}\n";
     for (size_t index = 1; index < routes.size(); ++index) {
       o << "impl From<" << routes[index]->name << "Ref> for " << handle << " {\n"
-        << "    fn from(value: " << routes[index]->name << "Ref) -> Self { Self { route: "
+        << "    fn from(value: " << routes[index]->name << "Ref) -> Self { Self::new(" << handle << "Data { route: "
         << route << "::" << nominal_handle_variant(routes[index]->name)
-        << "(value) } }\n}\n";
+        << "(value) }) }\n}\n";
     }
-    o << "\nimpl " << handle << " {\n";
+    o << "\nimpl " << handle_methods << " for moss_rt::DomainHandle<"
+      << handle << "Data> {\n";
     for (const auto& handler : source.handlers) {
       const Handler* route_handler = find_handler(*routes.front(), handler.name);
       if (!route_handler) continue;
@@ -8879,7 +8925,7 @@ class Generator {
       }
       if (!compatible) continue;
       if (source.exported) {
-        o << "    pub fn __moss_message_" << handler.name << "(&self";
+        o << "    fn __moss_message_" << handler.name << "(&self";
         string arguments;
         for (const auto& parameter : handler.params) {
           o << ", " << shared_message_parameter(parameter);
@@ -8891,8 +8937,9 @@ class Generator {
         for (size_t index = 0; index < routes.size(); ++index)
           o << "            " << route << "::"
             << (index == 0 ? "Base" : nominal_handle_variant(routes[index]->name))
-            << "(inner) => inner.__moss_message_" << handler.name
-            << "(" << arguments << "),\n";
+            << "(inner) => " << routes[index]->name << "RefExportedBridge::__moss_message_"
+            << handler.name << "(inner" << (arguments.empty() ? "" : ", ")
+            << arguments << "),\n";
         o << "        }\n    }\n";
       }
 
@@ -8903,7 +8950,9 @@ class Generator {
           << " {\n        match &self.route {\n";
         for (size_t index = 0; index < routes.size(); ++index) {
           o << "            " << route << "::" << (index == 0 ? "Base" : nominal_handle_variant(routes[index]->name))
-            << "(inner) => inner." << handler.name << "_shared(";
+            << "(inner) => " << routes[index]->name << handler.name
+            << "SharedMethods::" << handler.name << "_shared(inner";
+          if (!handler.params.empty()) o << ", ";
           for (const auto& parameter : handler.params) o << parameter.name << ", ";
           o << "),\n";
         }
@@ -8915,7 +8964,16 @@ class Generator {
   // Expose a synchronous provider entry over its private state representation.
   // The target is fixed by the checked concrete route graph.
   void gen_exported_domain_bridge(std::ostringstream& out, const Domain& domain) {
-    out << "impl " << domain.name << "Ref {\n";
+    const string bridge_trait = domain.name + "RefExportedBridge";
+    out << "pub trait " << bridge_trait << " {\n";
+    for (const auto& handler : domain.handlers) {
+      out << "    fn __moss_message_" << handler.name << "(&self";
+      for (const auto& parameter : handler.params)
+        out << ", " << shared_message_parameter(parameter);
+      out << ") -> " << handler_message_return_type(handler) << ";\n";
+    }
+    out << "}\nimpl " << bridge_trait << " for moss_rt::DomainHandle<"
+        << domain.name << "RefData> {\n";
     exported_domain_bridge_body_ = true;
     for (const auto& handler : domain.handlers) {
       const auto saved_borrowed_message_parameters = borrowed_message_parameters_;
@@ -8923,7 +8981,7 @@ class Generator {
       std::set<string> locals{"self"};
       std::unordered_map<string,string> types{{"self", domain.name}};
       string call = "message self." + handler.name + "(";
-      out << "    pub fn __moss_message_" << handler.name << "(&self";
+      out << "    fn __moss_message_" << handler.name << "(&self";
       for (size_t index = 0; index < handler.params.size(); ++index) {
         const auto& parameter = handler.params[index];
         out << ", " << shared_message_parameter(parameter);
@@ -8942,7 +9000,9 @@ class Generator {
       out << ") -> " << handler_message_return_type(handler) << " {\n"
           << "        ";
       if (handler_has_failure_captures(handler)) {
-        out << "self." << handler.name << "_shared(";
+        out << domain.name << handler.name << "SharedMethods::"
+            << handler.name << "_shared(self";
+        if (!handler.params.empty()) out << ", ";
         for (const auto& parameter : handler.params)
           out << parameter.name << ", ";
         out << ")";
@@ -9483,6 +9543,27 @@ class Generator {
     try {
       const auto& requirement = checked_program.typed_semantics->find_copy_requirement(
           matched->arena_index, matched->expr, codegen_body_spec_id_);
+      const auto* fact = checked_program.typed_semantics->find_copy_fact(requirement);
+      if (!fact)
+        throw std::runtime_error("required checked copy fact missing");
+      return *fact;
+    } catch (const std::exception& error) {
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT " + string(error.what()));
+    }
+  }
+
+  const TypedCopyFactV1& resolve_copy_fact(
+      std::uint32_t arena_index, est::ExprId occurrence) const {
+    const Program& checked_program = semantic_program_ ? *semantic_program_ : p_;
+    if (!checked_program.typed_semantics)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT explicit copy lacks checked semantics");
+    const string context = codegen_body_context_.empty()
+        ? "main" : codegen_body_context_;
+    try {
+      const auto& requirement = checked_program.typed_semantics->find_copy_requirement(
+          arena_index, occurrence, context);
       const auto* fact = checked_program.typed_semantics->find_copy_fact(requirement);
       if (!fact)
         throw std::runtime_error("required checked copy fact missing");
@@ -10668,7 +10749,7 @@ class Generator {
                 o << indent(level + 2) << "let " << inner
                   << " = match &__moss_selected_carrier.0.error { "
                   << "__MossRaised::" << variant
-                  << "(__moss_value) => __moss_value.clone(), "
+                  << "(__moss_value) => __moss_value, "
                   << "_ => std::process::abort() };\n";
               } else {
                 o << ") => {\n";
@@ -10715,7 +10796,7 @@ class Generator {
                   emit_generated_error_payload_bindings(
                       o, (base + level + 2) * 4, inner, identity,
                       generated_error_pattern_bindings(pattern, identity),
-                      arm_locals, arm_types);
+                      arm_locals, arm_types, true);
                   break;
                 }
               }
@@ -11513,6 +11594,10 @@ class Generator {
           string lhs_base, lhs_index;
           string index_temporary;
           if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+            auto indexed_base_type = generated_expr_type(lhs_base, &types);
+            const bool indexed_map = indexed_base_type &&
+                (canonical_type_name(*indexed_base_type) == "map" ||
+                 starts_with(canonical_type_name(*indexed_base_type), "map["));
             string root_id = lhs_base;
             auto dot_pos = root_id.find('.');
             if (dot_pos != string::npos) root_id = root_id.substr(0, dot_pos);
@@ -11527,7 +11612,7 @@ class Generator {
                 }
               }
             }
-            if (conflicts_with_base || reads_sibling) {
+            if (!indexed_map && (conflicts_with_base || reads_sibling)) {
               index_temporary = "__moss_index_" +
                   std::to_string(call_argument_temp_++);
               o << indent(level) << "let " << index_temporary << " = "
@@ -11537,12 +11622,13 @@ class Generator {
           if (tree_parse_index(s.a, lhs_base, lhs_index)) {
             bool string_index = tree_literal_class(lhs_index) ==
                 est::LiteralClass::String;
-            string ir = !index_temporary.empty() ? index_temporary :
-                (string_index ? lhs_index : expr(lhs_index, d, locals, &types));
             auto base_type = generated_expr_type(lhs_base, &types);
             bool map_index = base_type &&
                 (canonical_type_name(*base_type) == "map" ||
                  starts_with(canonical_type_name(*base_type), "map["));
+            string ir = !index_temporary.empty() ? index_temporary :
+                (string_index || map_index ? lhs_index :
+                 expr(lhs_index, d, locals, &types));
             if (!string_index && !map_index) ir = "(" + ir + ") as usize";
             lhs = "(" + write_call_place(lhs_base, d, locals, &types) + ")[" + ir + "]";
           }
@@ -11678,14 +11764,72 @@ class Generator {
                  starts_with(canonical_type_name(*map_assignment_type), "map["))) {
               const bool string_key = tree_literal_class(mi) ==
                   est::LiteralClass::String;
-              string key = string_key
-                  ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
+              const TypedCopyFactV1* explicit_key_copy = nullptr;
+              string explicit_key_copy_argument;
+              if (phase21_codegen_statement_ &&
+                  active_functional_expression_handles_) {
+                const Program& checked_program = semantic_program_
+                    ? *semantic_program_ : p_;
+                for (const auto& handle : *active_functional_expression_handles_) {
+                  if (handle.slot != est::ExprSlot::LhsPlace ||
+                      handle.arena_index >= checked_program.expression_arenas.size() ||
+                      !checked_program.expression_arenas[handle.arena_index])
+                    continue;
+                  est::assert_fresh(handle, phase21_codegen_statement_->a);
+                  const auto& arena = *checked_program.expression_arenas[handle.arena_index];
+                  if (handle.expr >= arena.size()) continue;
+                  auto place_id = est::unparenthesized(arena, handle.expr);
+                  if (place_id >= arena.size()) continue;
+                  const auto* place = std::get_if<est::Index>(&arena.at(place_id));
+                  if (!place) continue;
+                  auto key_id = est::unparenthesized(arena, place->index);
+                  if (key_id >= arena.size()) continue;
+                  const auto* call = std::get_if<est::Call>(&arena.at(key_id));
+                  if (!call || call->arguments.size() != 1) continue;
+                  const auto* callee = std::get_if<est::Identifier>(
+                      &arena.at(call->callee));
+                  if (!callee || callee->name != "copy") continue;
+                  if (explicit_key_copy)
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT multiple checked copies in Map key place");
+                  explicit_key_copy = &resolve_copy_fact(
+                      handle.arena_index, key_id);
+                  const auto argument_id = call->arguments.front();
+                  if (argument_id >= arena.size())
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT checked Map key copy argument is invalid");
+                  const auto argument_span = arena.span(argument_id);
+                  if (argument_span.source_begin > argument_span.source_end ||
+                      argument_span.source_end > phase21_codegen_statement_->a.size())
+                    throw std::runtime_error(
+                        "MOSS_INTERNAL_INVARIANT checked Map key copy span is invalid");
+                  explicit_key_copy_argument = trim(
+                      phase21_codegen_statement_->a.substr(
+                          argument_span.source_begin,
+                          argument_span.source_end - argument_span.source_begin));
+                }
+              }
+              string key;
+              if (explicit_key_copy) {
+                const auto source_type = generated_expr_type(
+                    explicit_key_copy_argument, &types);
+                if (!source_type)
+                  throw std::runtime_error(
+                      "MOSS_INTERNAL_INVARIANT checked Map key copy source type is unavailable");
+                key = lower_fact_authorized_copy(
+                    *explicit_key_copy, explicit_key_copy_argument,
+                    *source_type, d, locals, &types);
+              } else {
+                key = string_key
+                    ? "MossStr::from(" + mi + ")" : expr(mi, d, locals, &types);
+              }
               auto key_type = generated_expr_type(mi, &types);
-              if (key_type && shared_nominal_map_key(*key_type) &&
+              if (!explicit_key_copy && key_type &&
+                  shared_nominal_map_key(*key_type) &&
                   is_object_view(mi, d, locals, &types))
                 key = "(" + key + ")." + access_value_method(*key_type) + "()";
               else if (key_type && !copy_type(*key_type) &&
-                  !string_key)
+                  !string_key && !explicit_key_copy)
                 key = "(" + key + ").clone()";
               string inserted = expr(s.b, d, locals, &types,
                   statement_functional_pipeline_id(s, "", 0),
@@ -12285,8 +12429,9 @@ class Generator {
                   write_through_parameters_.insert(s.a);
                 }
               }
+              if (domain_capability)
+                rhs_val = "moss_rt::share_domain(&(" + rhs_val + "))";
               o << " = " << rhs_val;
-              if (domain_capability) o << ".clone()";
               o << ";\n";
             }
             types[s.a] = take_fact ? canonical_type_name(take_fact->terminal_type)
@@ -12483,7 +12628,7 @@ class Generator {
         // never use a generated type spelling to establish compatibility.
         if (constructor_argument) o << ", ";
         constructor_argument = true;
-        o << "(" << expr(value->second, context, locals, types) << ").clone().into()";
+        o << "moss_rt::share_domain(&(" << expr(value->second, context, locals, types) << ")).into()";
       }
       for (const auto& field : definition.state) {
         auto value = named.find(field.name);
