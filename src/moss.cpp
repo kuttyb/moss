@@ -14631,6 +14631,64 @@ static void rewrite_module_program(
   auto params = [&](vector<Param>& values) {
     for (auto& param : values) param.set_type(type(param.type));
   };
+  // Qualification may give a function an uppercase module prefix. The
+  // expression parser's constructor spelling rule must not turn that known
+  // function invocation into a nominal construction. Resolve only declaration
+  // kind here; the checker still selects and stamps the specialization.
+  std::set<string> qualified_functions;
+  for (const auto& entry : modules)
+    for (const auto& name : module_function_names(entry.second))
+      qualified_functions.insert(module_symbol(entry.first, name));
+  auto retain_function_call_kinds = [&](est::ExprId root) {
+    auto& arena = *program.expression_arena;
+    std::function<est::ExprId(est::ExprId)> visit = [&](est::ExprId id) {
+      // Appending invalidates arena references. Work on a value copy and keep
+      // all existing spans and distinct child occurrences.
+      est::Node node = arena.at(id);
+      bool changed = false;
+      auto child = [&](est::ExprId& value) {
+        const auto rewritten = visit(value);
+        changed |= rewritten != value;
+        value = rewritten;
+      };
+      auto children = [&](vector<est::ExprId>& values) {
+        for (auto& value : values) child(value);
+      };
+      std::visit([&](auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, est::Unary>) child(value.operand);
+        else if constexpr (std::is_same_v<T, est::Binary>) {
+          child(value.left); child(value.right);
+        } else if constexpr (std::is_same_v<T, est::Call>) {
+          child(value.callee); children(value.arguments);
+        } else if constexpr (std::is_same_v<T, est::Take>) children(value.arguments);
+        else if constexpr (std::is_same_v<T, est::Member>) child(value.base);
+        else if constexpr (std::is_same_v<T, est::Index>) {
+          child(value.base); child(value.index);
+        } else if constexpr (std::is_same_v<T, est::Parenthesized>) child(value.inner);
+        else if constexpr (std::is_same_v<T, est::Message>) {
+          child(value.target); children(value.arguments);
+        } else if constexpr (std::is_same_v<T, est::NamedArgument>) child(value.value);
+        else if constexpr (std::is_same_v<T, est::Collection> ||
+                           std::is_same_v<T, est::Tuple>) children(value.elements);
+        else if constexpr (std::is_same_v<T, est::Constructor>) {
+          child(value.type); children(value.type_arguments); children(value.arguments);
+        } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+          child(value.input); children(value.stages);
+        }
+      }, node);
+      if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+        const auto* name = std::get_if<est::Identifier>(&arena.at(constructor->type));
+        if (name && constructor->type_arguments.empty() &&
+            qualified_functions.count(name->name)) {
+          node = est::Call{constructor->type, constructor->arguments};
+          changed = true;
+        }
+      }
+      return changed ? arena.append(std::move(node), arena.span(id)) : id;
+    };
+    return visit(root);
+  };
   auto expression_text = [&](const Stmt& statement,
                              const est::Handle& handle) -> string {
     switch (handle.slot) {
@@ -14688,6 +14746,7 @@ static void rewrite_module_program(
             candidate.argument_index == argument;
       });
       assert(refreshed != handles.end() && refreshed->expr != old_expr);
+      refreshed->expr = retain_function_call_kinds(refreshed->expr);
       (void)program.expression_arena->at(old_expr);
       return;
     }
@@ -14711,6 +14770,7 @@ static void rewrite_module_program(
       });
       assert(refreshed != after.expression_handles.end() &&
              refreshed->expr != old_expr);
+      refreshed->expr = retain_function_call_kinds(refreshed->expr);
       (void)program.expression_arena->at(old_expr);
     }
   };
