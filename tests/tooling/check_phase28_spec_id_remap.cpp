@@ -48,6 +48,27 @@ static Program provider(SpecId id, const string& module) {
   return result;
 }
 
+static Program method_provider(const string& module) {
+  Program result;
+  result.specialization_table = {
+      {0, "method-v1:Holder.select.declaration", std::nullopt,
+       "method declaration", module},
+      {1, "method-v1:Holder.select", std::nullopt,
+       "method body specialization", module}};
+  ObjectType object;
+  object.name = "Holder";
+  Method method;
+  method.owner = "Holder";
+  method.name = "select";
+  method.semantic_callable_id = "method-v1:Holder.select";
+  method.spec_id = 0;
+  method.specializations.push_back(
+      {"method-body-v1:Holder.select(int)", {"int"}, 1});
+  object.methods.push_back(std::move(method));
+  result.objects.push_back(std::move(object));
+  return result;
+}
+
 int main() {
   Program destination;
   ProgramSpecializationIdentity occupied;
@@ -180,4 +201,21 @@ int main() {
   }
   assert(unknown_rejected);
   assert(destination.specialization_table.size() == size_before_unknown);
+
+  auto first_methods = method_provider("module-v1:methods-first");
+  auto second_methods = method_provider("module-v1:methods-second");
+  const auto first_method_map = remap_imported_program_spec_ids(
+      destination, first_methods, "module-v1:methods-first");
+  const auto second_method_map = remap_imported_program_spec_ids(
+      destination, second_methods, "module-v1:methods-second");
+  assert(first_method_map.at(0) != second_method_map.at(0));
+  assert(first_method_map.at(1) != second_method_map.at(1));
+  assert(first_methods.objects.front().methods.front().spec_id ==
+         first_method_map.at(0));
+  assert(first_methods.objects.front().methods.front().specializations.front()
+             .spec_id == first_method_map.at(1));
+  assert(second_methods.objects.front().methods.front().spec_id ==
+         second_method_map.at(0));
+  assert(second_methods.objects.front().methods.front().specializations.front()
+             .spec_id == second_method_map.at(1));
 }
