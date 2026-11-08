@@ -9559,11 +9559,9 @@ class Generator {
     if (!checked_program.typed_semantics)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT explicit copy lacks checked semantics");
-    const string context = codegen_body_context_.empty()
-        ? "main" : codegen_body_context_;
     try {
       const auto& requirement = checked_program.typed_semantics->find_copy_requirement(
-          arena_index, occurrence, context);
+          arena_index, occurrence, codegen_body_spec_id_);
       const auto* fact = checked_program.typed_semantics->find_copy_fact(requirement);
       if (!fact)
         throw std::runtime_error("required checked copy fact missing");
