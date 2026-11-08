@@ -89,7 +89,10 @@ def main() -> int:
     out_root = (ROOT / args.out).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
     # Exercise the production scanner, including qualified handle-share syntax.
-    probe_source = out_root / "scanner-control.moss"
+    # Parallel workers may keep --out outside their checkout; source attribution
+    # must still use a source file inside the worker repository.
+    probe_source = ROOT / "tmp" / "phase28-hidden-copy-scanner-control.moss"
+    probe_source.parent.mkdir(parents=True, exist_ok=True)
     probe_rust = out_root / "scanner-control.rs"
     probe_source.write_text("fn main():\n  echo 0\n")
     forms = ("x.clone()", "x.cloned()", "x.to_owned()", "x.to_vec()",
