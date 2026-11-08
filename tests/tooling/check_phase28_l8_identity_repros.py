@@ -235,26 +235,72 @@ def main() -> int:
             "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_SPEC_ID",
             "MOSS_TEST_CONSUMER_PERTURB_SEMANTIC_CALL_EDGE_ARGUMENT_SPEC_ID",
         )
+        # Mutation results count only when the exact unmutated input first
+        # succeeds in both engines. Otherwise a pre-existing compiler failure
+        # makes every mutation result vacuous.
+        mutation_inputs = (
+            ("callback", callback, EXPECTED["cb_spec"]),
+            ("nested method", nested_method_member,
+             EXPECTED["nested_method_member"]),
+        )
+        mutation_controls: dict[str, bool] = {}
+        for label, source, expected in mutation_inputs:
+            try:
+                fast_control = run(
+                    [compiler, "run", "--interp", str(source)]).stdout.strip()
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                fast_control = None
+                failures.append(f"BLOCKED {label} mutations: Fast Debug positive control failed: {error}")
+            try:
+                native_control = native_output(compiler, source, out)
+            except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+                native_control = None
+                failures.append(f"BLOCKED {label} mutations: Native positive control failed: {error}")
+            mutation_controls[label] = (
+                fast_control == expected and native_control == expected and
+                fast_control == native_control)
+            if mutation_controls[label]:
+                print(f"PASS mutation positive control {label}: {expected!r}")
+            else:
+                failures.append(
+                    f"BLOCKED {label} mutations: positive controls disagree or miss expected output; "
+                    f"Fast={fast_control!r}, Native={native_control!r}, wanted={expected!r}")
+
+        # These are the precise consumer invariant diagnostics for each path.
+        # The current lookup hook normalizes Missing/Duplicate/Contradictory
+        # into the consumer's fail-closed invariant at that call site.
+        expected_mutation_diagnostic = {
+            "Fast Debug": "MOSS_INTERNAL_INVARIANT exact checked call fact is missing, duplicated, or contradictory",
+            "Native": "MOSS_INTERNAL_INVARIANT exact Native call edge is missing or duplicated",
+            "Fast Debug nested method": "MOSS_INTERNAL_INVARIANT exact checked call fact is missing, duplicated, or contradictory",
+            "Native nested method": "MOSS_INTERNAL_INVARIANT exact Native method edge is missing or contradictory",
+        }
         for hook in call_edge_mutations:
             env = os.environ.copy()
             env[hook] = "1"
-            for mode, command in (
-                ("Fast Debug", [compiler, "run", "--interp", str(callback)]),
-                ("Native", [compiler, str(callback), "-o",
-                            str(out / f"{hook}.rs")]),
-                ("Fast Debug nested method", [compiler, "run", "--interp",
-                                                str(nested_method_member)]),
-                ("Native nested method", [compiler, str(nested_method_member),
-                                           "-o", str(out / f"{hook}-method.rs")]),
+            for mode, input_label, command in (
+                ("Fast Debug", "callback", [compiler, "run", "--interp", str(callback)]),
+                ("Native", "callback", [compiler, str(callback), "-o",
+                                         str(out / f"{hook}.rs")]),
+                ("Fast Debug nested method", "nested method",
+                 [compiler, "run", "--interp", str(nested_method_member)]),
+                ("Native nested method", "nested method",
+                 [compiler, str(nested_method_member), "-o",
+                  str(out / f"{hook}-method.rs")]),
             ):
+                if not mutation_controls[input_label]:
+                    print(f"BLOCKED {hook} {mode}: positive control is red")
+                    continue
                 try:
                     result = run(command, env=env, expected=1)
                     output = result.stderr + result.stdout
-                    if "MOSS_INTERNAL_INVARIANT" not in output:
+                    expected_message = expected_mutation_diagnostic[mode]
+                    if expected_message not in output:
                         failures.append(
-                            f"{hook} {mode} did not fail closed with an invariant")
+                            f"{hook} {mode} diagnostic mismatch; expected exact "
+                            f"{expected_message!r}, got:\n{output}")
                     else:
-                        print(f"PASS {hook} {mode}: fail closed")
+                        print(f"PASS {hook} {mode}: {expected_message}")
                 except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
                     failures.append(f"{hook} {mode}: {error}")
 
