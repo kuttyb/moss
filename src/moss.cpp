@@ -4389,6 +4389,81 @@ static void attach_imported_checked_body_expression(
           program.expression_arenas.begin(), arena_position))});
 }
 
+static void retain_canonical_imported_body(Program& program,
+                                           Function& function) {
+  if (!function.execution_body || !function.imported_checked_body_projected)
+    return;
+  const auto& retained = *function.execution_body;
+  const auto& projected = function.body;
+  auto fail = [&](const string& reason) -> void {
+    throw CompileError(std::max(function.line, 1),
+        "checked and retained imported body disagree: " + reason,
+        "SOURCE_FREE_CHECKED_BODY_INVALID");
+  };
+  if (projected.size() != retained.size()) fail("statement count");
+  auto base_indent = [](const vector<Stmt>& body) {
+    int base = body.empty() ? 0 : body.front().indent;
+    for (const auto& statement : body) base = std::min(base, statement.indent);
+    return base;
+  };
+  const int projected_base = base_indent(projected);
+  const int retained_base = base_indent(retained);
+  for (size_t index = 0; index < projected.size(); ++index) {
+    const auto& checked = projected[index];
+    const auto& stored = retained[index];
+    if (checked.kind != stored.kind ||
+        checked.indent - projected_base != stored.indent - retained_base ||
+        checked.args.size() != stored.args.size() ||
+        checked.message_result != stored.message_result)
+      fail("statement kind, nesting, or operands at " + std::to_string(index));
+    if ((checked.kind == Stmt::Kind::Let ||
+         checked.kind == Stmt::Kind::Var ||
+         checked.kind == Stmt::Kind::Assign ||
+         checked.kind == Stmt::Kind::For ||
+         checked.kind == Stmt::Kind::Call ||
+         checked.kind == Stmt::Kind::Message ||
+         checked.kind == Stmt::Kind::Case ||
+         checked.kind == Stmt::Kind::Recover) && checked.a != stored.a)
+      fail("statement binder or target at " + std::to_string(index));
+    if (checked.kind == Stmt::Kind::Raw && checked.text != stored.text)
+      fail("unrepresented statement at " + std::to_string(index));
+    using Slot = std::pair<est::ExprSlot, std::uint32_t>;
+    auto roots = [&](const Stmt& statement) {
+      std::map<Slot, const est::Handle*> result;
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.arena_index >= program.expression_arenas.size() ||
+            !program.expression_arenas[handle.arena_index] ||
+            handle.expr >= program.expression_arenas[handle.arena_index]->size() ||
+            !result.emplace(Slot{handle.slot, handle.argument_index}, &handle).second)
+          fail("missing or duplicate retained EST root");
+      }
+      return result;
+    };
+    const auto checked_roots = roots(checked);
+    const auto stored_roots = roots(stored);
+    if (checked_roots.size() != stored_roots.size())
+      fail("expression root count at " + std::to_string(index));
+    for (const auto& [slot, checked_handle] : checked_roots) {
+      const auto stored_handle = stored_roots.find(slot);
+      if (stored_handle == stored_roots.end()) fail("expression slot");
+      const est::ExpressionView left{{},
+          program.expression_arenas[checked_handle->arena_index].get(),
+          checked_handle->expr, {}};
+      const est::ExpressionView right{{},
+          program.expression_arenas[stored_handle->second->arena_index].get(),
+          stored_handle->second->expr, {}};
+      // Full syntax equality includes node kind, callee, identifiers, literals
+      // and operands. No best-effort statement or expression rebinding.
+      if (!est::structurally_equal(left, right))
+        fail("expression shape or callee at " + std::to_string(index));
+    }
+  }
+  // Keep exactly one executable AST. All restored call/return facts already
+  // target these handles, and both backends and checker now use this vector.
+  function.body = std::move(*function.execution_body);
+  function.execution_body.reset();
+}
+
 void project_imported_h3_checked_bodies(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
   // Validate/project direct member leaves before any forwarding caller. A
@@ -4409,6 +4484,15 @@ void project_imported_h3_checked_bodies(Program& program) {
   });
   for (const auto& checked_body_entry : checked_body_functions) {
     auto& function = *checked_body_entry.second;
+    struct CanonicalImportedBodyScope {
+      Program& program;
+      Function& function;
+      int exceptions = std::uncaught_exceptions();
+      ~CanonicalImportedBodyScope() noexcept(false) {
+        if (std::uncaught_exceptions() == exceptions)
+          retain_canonical_imported_body(program, function);
+      }
+    } canonical_body_scope{program, function};
     if (function.imported_checked_body_payload.empty()) continue;
     const abi_v10::Summary summary = abi_v10::read_summary(
         function.imported_checked_summary_payload);
@@ -20291,7 +20375,8 @@ static void project_imported_return_value_artifact_facts(Program& program) {
       if (specialization.spec_id != InvalidSpecId)
         body_spec_ids.push_back(specialization.spec_id);
     project_callable(function.execution_return_value_artifact_records,
-        function.execution_body ? &*function.execution_body : nullptr,
+        function.execution_body ? &*function.execution_body
+            : function.imported_checked_body_projected ? &function.body : nullptr,
         function.execution_body_section_version,
         function.execution_return_value_body_hash, "fn:" + function.name,
         body_spec_ids, module_name_from_symbol(function.name), function.line);
