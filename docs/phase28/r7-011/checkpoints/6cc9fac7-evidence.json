@@ -6138,5 +6138,42 @@
   "compiler_sha256": {
     "moss-dev": "7d06da0dacd590b6917980aad6417c08a7752d56d038cc8626c7d6fdfba22273",
     "moss-opt": "cebe99e4a0b00524ceb79586c800d4a510ede16404afb315d3ff70363d75d851"
+  },
+  "field_classification_correction": {
+    "named_read_rejection": {
+      "fixture": "tests/tooling/fixtures/phase28_l8/field_parameter.moss",
+      "line": 5,
+      "operation": "b = s.frontier",
+      "expected": "accept; output 3",
+      "actual": "OWNERSHIP_ILLEGAL_CONSUME: plain field access cannot consume or transfer a non-Copy field; use take or copy"
+    },
+    "additional_native_failures": [
+      {
+        "cell": "grid-nested-field-new-read-method",
+        "engine": "Native",
+        "cause": "borrowed field lowered as move (E0507)",
+        "diagnostics": [
+          "error[E0507]: cannot move out of `self.inner.frontier` which is behind a shared reference",
+          "3462 |         let mut b = (self.inner).frontier;",
+          "3462 |         let mut b = &(self.inner).frontier;",
+          "3462 |         let mut b = (self.inner).frontier.clone();",
+          "error[E0507]: cannot move out of a shared reference",
+          "3494 |         let mut b = *self.__moss_field_inner().__moss_field_frontier();"
+        ]
+      },
+      {
+        "cell": "grid-nested-field-reassigned-read-method",
+        "engine": "Native",
+        "cause": "borrowed field lowered as move (E0507)",
+        "diagnostics": [
+          "error[E0507]: cannot move out of `self.inner.frontier` which is behind a shared reference",
+          "3464 |         b = (self.inner).frontier;",
+          "3464 |         b = (self.inner).frontier.clone();",
+          "error[E0507]: cannot move out of a shared reference",
+          "3498 |         b = *self.__moss_field_inner().__moss_field_frontier();"
+        ]
+      }
+    ],
+    "note": "Existing at6cc9fac7, independently checked raw logs; zero-field-rule interpretation withdrawn. Counts unchanged."
   }
 }
