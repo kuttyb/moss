@@ -40696,11 +40696,59 @@ class Checker {
         } else {
           const bool delayed_assert_check = statement.a == "assert" &&
               !functions_.count(statement.a);
-          if (!delayed_assert_check)
+          const est::Handle* statement_call_handle = nullptr;
+          if (!delayed_assert_check) {
+            for (const auto& handle : statement.expression_handles) {
+              if (handle.slot != est::ExprSlot::Expression) continue;
+              if (statement_call_handle)
+                err(statement.line,
+                    "direct call statement has duplicate exact EST roots",
+                    "MOSS_INTERNAL_INVARIANT");
+              statement_call_handle = &handle;
+            }
+          }
+          if (!delayed_assert_check && functions_.count(statement.a) &&
+              !statement_call_handle)
+            err(statement.line,
+                "resolved direct function call has no exact EST root",
+                "MOSS_INTERNAL_INVARIANT");
+          std::optional<EstExpressionCursor> statement_call_cursor;
+          if (statement_call_handle) {
+            const auto* arena =
+                expression_arena(statement_call_handle->arena_index);
+            if (!arena || statement_call_handle->expr >= arena->size())
+              err(statement.line,
+                  "direct call statement has a stale exact EST root",
+                  "MOSS_INTERNAL_INVARIANT");
+            const auto expression = est::unparenthesized(
+                *arena, statement_call_handle->expr);
+            if (!std::holds_alternative<est::Call>(arena->at(expression)))
+              err(statement.line,
+                  "direct call statement EST root is not a Call occurrence",
+                  "MOSS_INTERNAL_INVARIANT");
+            statement_call_cursor = EstExpressionCursor{
+                statement_call_handle->arena_index, expression,
+                statement.text, 0};
+          }
+          auto check_direct_call = [&] {
+            if (delayed_assert_check) return;
             check_function_call(statement.line, statement.a, statement.args,
-                                current_env, nullptr, std::nullopt,
-                                call_occurrence_id == UINT32_MAX
-                                    ? nullptr : &selected_function);
+                current_env, nullptr, std::nullopt,
+                call_occurrence_id == UINT32_MAX
+                    ? nullptr : &selected_function);
+          };
+          if (statement_call_cursor) {
+            active_est_expression_cursors_.push_back(*statement_call_cursor);
+            try {
+              check_direct_call();
+            } catch (...) {
+              active_est_expression_cursors_.pop_back();
+              throw;
+            }
+            active_est_expression_cursors_.pop_back();
+          } else {
+            check_direct_call();
+          }
           if (call_occurrence_id != UINT32_MAX) {
             if (selected_function) {
               call_occurrence_state->retain_expression_target(
