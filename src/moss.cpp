@@ -14636,9 +14636,19 @@ static void rewrite_module_program(
   // function invocation into a nominal construction. Resolve only declaration
   // kind here; the checker still selects and stamps the specialization.
   std::set<string> qualified_functions;
-  for (const auto& entry : modules)
+  std::set<string> qualified_nominals;
+  for (const auto& entry : modules) {
     for (const auto& name : module_function_names(entry.second))
       qualified_functions.insert(module_symbol(entry.first, name));
+    for (const auto& file : entry.second.files) {
+      for (const auto& object : file.first.objects)
+        qualified_nominals.insert(module_symbol(entry.first, object.name));
+      for (const auto& enumeration : file.first.enums)
+        qualified_nominals.insert(module_symbol(entry.first, enumeration.name));
+      for (const auto& domain : file.first.domains)
+        qualified_nominals.insert(module_symbol(entry.first, domain.name));
+    }
+  }
   auto retain_function_call_kinds = [&](est::ExprId root) {
     auto& arena = *program.expression_arena;
     std::function<est::ExprId(est::ExprId)> visit = [&](est::ExprId id) {
@@ -14680,7 +14690,8 @@ static void rewrite_module_program(
       if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
         const auto* name = std::get_if<est::Identifier>(&arena.at(constructor->type));
         if (name && constructor->type_arguments.empty() &&
-            qualified_functions.count(name->name)) {
+            qualified_functions.count(name->name) &&
+            !qualified_nominals.count(name->name)) {
           node = est::Call{constructor->type, constructor->arguments};
           changed = true;
         }
