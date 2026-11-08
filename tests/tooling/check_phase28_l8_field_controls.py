@@ -105,7 +105,10 @@ domain Harness:
         body.append("b = [9]")
     body.append("b = " + source_expr)
     if use == "read":
-        body.append("return b |> count")
+        # Proposal §8.2: READ must preserve the field even when its owner is
+        # local to the callee or reached through a receiver/index projection.
+        body.extend(("echo (b |> count)",
+                     f"return ({source_expr} |> count)"))
     else:
         body.extend(("values = [b]", "return values |> count"))
 
@@ -201,9 +204,8 @@ def run_field_grid(compiler: str, scratch: Path) -> tuple[list[str], int, int]:
                     run(["rustc", "--edition=2021", "-D", "warnings", str(rust), "-o", str(scratch / tag)])
                     native = run([str(scratch / tag)]).stdout.strip()
                     expected_output = (
-                        "3\n3" if use == "read" and
-                        (site == "main" or source_kind == "parameter")
-                        else ("3" if use == "read" else "1"))
+                        ("3\n3\n3" if source_kind == "parameter"
+                         else "3\n3") if use == "read" else "1")
                     if native != fast_output or native != expected_output:
                         failures.append(f"{tag}: expected={expected_output!r}, Fast Debug={fast_output!r}, Native={native!r}")
                         case_failed = True
@@ -220,14 +222,22 @@ def run_field_grid(compiler: str, scratch: Path) -> tuple[list[str], int, int]:
         causes = cell_causes.setdefault(tag, set())
         if "unknown local 'source'" in failure:
             causes.add("FIELD: Fast Debug parameter alias binding")
+        elif "-read-" in tag and "OWNERSHIP_ILLEGAL_CONSUME" in failure:
+            causes.add("FIELD: READ field alias rejected as consume")
         elif "OWNERSHIP_USE_AFTER_CONSUME" in failure:
-            causes.add("FIELD-REVIEW: handler caller RootIngress transfer")
+            causes.add("FIELD-REVIEW: unexpected use-after-consume")
+        elif "E0507" in failure:
+            causes.add("NATIVE: borrowed field lowered as move (E0507)")
         elif "indexed read lacks exact checked" in failure:
             causes.add("STEP2: indexed-read authority")
         elif any(text in failure for text in (
                 "checker call authority", "ReturnValue owner SpecId",
                 "checker-owned caller SpecId", "method edge")):
             causes.add("STEP1: call/body SpecId authority")
+        else:
+            # Keep an unmatched engine failure visible even if the same cell
+            # also has a recognized failure in the other engine.
+            causes.add("UNCLASSIFIED: inspect diagnostics")
     for tag, causes in sorted(cell_causes.items()):
         print(f"FAIL-CELL {tag}: " + "; ".join(sorted(causes or {"UNCLASSIFIED: inspect diagnostics"})))
     return failures, passed, unavailable
