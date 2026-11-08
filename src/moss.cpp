@@ -15375,7 +15375,10 @@ static const vector<Stmt>* execution_body_for_spec_id(const Program& program,
   }
   for (const auto& object : program.objects)
     for (const auto& method : object.methods)
-      if (method.spec_id == spec_id)
+      if (std::any_of(method.specializations.begin(),
+                      method.specializations.end(), [&](const auto& item) {
+            return item.spec_id == spec_id;
+          }))
         accept(method.execution_body ? &*method.execution_body : &method.body);
   for (const auto& domain : program.domains)
     for (size_t handler_index = 0; handler_index < domain.handlers.size();
@@ -16070,11 +16073,19 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
             function_spec_id >= provider.specialization_table.size() ||
             provider.specialization_table[function_spec_id].module_identity !=
                 owner_module->second ||
+            (!function->semantic_callable_id.empty() &&
+             provider.specialization_table[function_spec_id]
+                     .semantic_callable_identity !=
+                 function->semantic_callable_id) ||
             std::any_of(specialization_spec_ids.begin(),
                         specialization_spec_ids.end(), [&](SpecId id) {
               return id >= provider.specialization_table.size() ||
                   provider.specialization_table[id].module_identity !=
-                      owner_module->second;
+                      owner_module->second ||
+                  (!function->semantic_callable_id.empty() &&
+                   provider.specialization_table[id]
+                           .semantic_callable_identity !=
+                       function->semantic_callable_id);
             }))
           throw CompileError(std::max(declaration_line, 0),
               "function body SpecId is not owned by the provider module",
@@ -16259,7 +16270,7 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
       std::istringstream header(line.substr(7));
       string owner, name, source_file, return_type, receiver_text, effects_text;
       int declaration_line = 0, result_line = 0, has_result = 0;
-      size_t parameter_count = 0;
+      size_t parameter_count = 0, body_owner_count = 0;
       if (!(header >> std::quoted(owner) >> std::quoted(name) >>
             declaration_line >> result_line >> std::quoted(source_file) >>
             std::quoted(return_type) >> receiver_text >>
@@ -16273,12 +16284,49 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         throw CompileError(std::max(declaration_line, 0),
             "missing method result in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
-      SpecId method_spec_id = InvalidSpecId;
-      if (section.version >= 3 &&
-          (!(header >> method_spec_id) || method_spec_id == InvalidSpecId))
+      SpecId method_declaration_spec_id = InvalidSpecId;
+      string method_callable_identity;
+      if (section.version >= 4 &&
+          (!(header >> method_declaration_spec_id >>
+             std::quoted(method_callable_identity) >> body_owner_count) ||
+           method_declaration_spec_id == InvalidSpecId ||
+           method_callable_identity.empty() || body_owner_count == 0 ||
+           body_owner_count > 100000))
+        throw CompileError(std::max(declaration_line, 0),
+            "missing concrete method SpecId ownership in ABI-v9 execution-body section",
+            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (section.version == 3 &&
+          (!(header >> method_declaration_spec_id) ||
+           method_declaration_spec_id == InvalidSpecId))
         throw CompileError(std::max(declaration_line, 0),
             "missing method SpecId ownership in ABI-v9 execution-body section",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      vector<MethodSpecializationIdentity> method_body_identities;
+      for (size_t index = 0; index < body_owner_count; ++index) {
+        MethodSpecializationIdentity body_identity;
+        size_t body_parameter_count = 0;
+        if (!(header >> std::quoted(body_identity.stable_type_key) >>
+              body_parameter_count) || body_identity.stable_type_key.empty() ||
+            body_parameter_count > 100000)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid concrete method specialization identity",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        for (size_t parameter = 0; parameter < body_parameter_count;
+             ++parameter) {
+          string type;
+          if (!(header >> std::quoted(type)) || type.empty())
+            throw CompileError(std::max(declaration_line, 0),
+                "invalid concrete method specialization parameter type",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          body_identity.parameter_types.push_back(std::move(type));
+        }
+        if (!(header >> body_identity.spec_id) ||
+            body_identity.spec_id == InvalidSpecId)
+          throw CompileError(std::max(declaration_line, 0),
+              "invalid concrete method body SpecId",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        method_body_identities.push_back(std::move(body_identity));
+      }
       string trailing;
       if (header >> trailing)
         throw CompileError(std::max(declaration_line, 0),
@@ -16294,11 +16342,34 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         throw CompileError(std::max(declaration_line, 0),
             "execution-body method has no Section 1 object declaration",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
-      auto method = std::find_if(object->methods.begin(), object->methods.end(),
-          [&](const Method& candidate) { return candidate.name == name; });
+      const vector<string> legacy_method_parameter_types;
+      const auto& method_parameter_types = method_body_identities.empty()
+          ? legacy_method_parameter_types
+          : method_body_identities.front().parameter_types;
+      const auto method_signature_matches = [&](const Method& candidate) {
+        if (candidate.name != name) return false;
+        if (method_body_identities.empty()) return true;
+        if (candidate.params.size() != method_parameter_types.size())
+          return false;
+        for (size_t index = 0; index < candidate.params.size(); ++index)
+          if (canonical_type_name(candidate.params[index].type) !=
+              method_parameter_types[index])
+            return false;
+        return true;
+      };
+      auto method = object->methods.end();
+      for (auto candidate = object->methods.begin();
+           candidate != object->methods.end(); ++candidate) {
+        if (!method_signature_matches(*candidate)) continue;
+        if (method != object->methods.end())
+          throw CompileError(std::max(declaration_line, 0),
+              "method body specialization matches multiple Section 1 overloads",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        method = candidate;
+      }
       if (method == object->methods.end() && object->exported)
         throw CompileError(std::max(declaration_line, 0),
-            "execution-body method has no Section 1 method declaration",
+            "execution-body method has no exact Section 1 overload declaration",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
       if (method == object->methods.end()) {
         Method private_method;
@@ -16314,29 +16385,92 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         private_method.receiver_effect = *receiver;
         private_method.observable_effects =
             interface_effects("effects=" + effects_text);
+        private_method.semantic_callable_id = method_callable_identity;
         object->methods.push_back(std::move(private_method));
         method = std::prev(object->methods.end());
       }
-      if (section.version >= 3) {
+      if (section.version >= 4) {
         const auto owner_module = provider.module_identities.find(
             provider.module_name);
         if (owner_module == provider.module_identities.end() ||
-            method_spec_id >= provider.specialization_table.size() ||
-            provider.specialization_table[method_spec_id].module_identity !=
+            method_declaration_spec_id >= provider.specialization_table.size() ||
+            provider.specialization_table[method_declaration_spec_id].module_identity !=
+                owner_module->second ||
+            provider.specialization_table[method_declaration_spec_id]
+                    .semantic_callable_identity !=
+                method_callable_identity + ":declaration")
+          throw CompileError(std::max(declaration_line, 0),
+              "method declaration SpecId is not owned by the provider module",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (method->spec_id != InvalidSpecId &&
+            method->spec_id != method_declaration_spec_id)
+          throw CompileError(std::max(declaration_line, 0),
+              "method declaration SpecId contradicts Section 1 declaration",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        if (!method->semantic_callable_id.empty() &&
+            method->semantic_callable_id != method_callable_identity)
+          throw CompileError(std::max(declaration_line, 0),
+              "method callable identity contradicts Section 1 overload",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        method->spec_id = method_declaration_spec_id;
+        method->semantic_callable_id = method_callable_identity;
+        for (const auto& body_identity : method_body_identities) {
+          if (body_identity.parameter_types != method_parameter_types ||
+              body_identity.parameter_types.size() != parameter_count ||
+              body_identity.spec_id >= provider.specialization_table.size() ||
+              provider.specialization_table[body_identity.spec_id].module_identity !=
+                  owner_module->second ||
+              provider.specialization_table[body_identity.spec_id]
+                      .semantic_callable_identity != method_callable_identity)
+            throw CompileError(std::max(declaration_line, 0),
+                "method body SpecId does not match one exact checked specialization row",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          register_execution_body_spec_owner(
+              body_identity.spec_id,
+              "method:" + method_callable_identity);
+        }
+        if (!method->specializations.empty()) {
+          if (method->specializations.size() != method_body_identities.size())
+            throw CompileError(std::max(declaration_line, 0),
+                "method specialization count contradicts Section 1 declaration",
+                "SOURCE_FREE_EXECUTION_BODY_INVALID");
+          for (size_t index = 0; index < method_body_identities.size(); ++index)
+            if (method->specializations[index].stable_type_key !=
+                    method_body_identities[index].stable_type_key ||
+                method->specializations[index].parameter_types !=
+                    method_body_identities[index].parameter_types ||
+                method->specializations[index].spec_id !=
+                    method_body_identities[index].spec_id)
+              throw CompileError(std::max(declaration_line, 0),
+                  "method body specialization contradicts Section 1 identity",
+                  "SOURCE_FREE_EXECUTION_BODY_INVALID");
+        }
+        method->specializations = method_body_identities;
+      } else if (section.version == 3) {
+        const auto owner_module = provider.module_identities.find(
+            provider.module_name);
+        if (owner_module == provider.module_identities.end() ||
+            method_declaration_spec_id >= provider.specialization_table.size() ||
+            provider.specialization_table[method_declaration_spec_id].module_identity !=
                 owner_module->second)
           throw CompileError(std::max(declaration_line, 0),
-              "method body SpecId is not owned by the provider module",
+              "legacy method SpecId is not owned by the provider module",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
-        if (method->spec_id != InvalidSpecId && method->spec_id != method_spec_id)
+        if (method->spec_id != InvalidSpecId &&
+            method->spec_id != method_declaration_spec_id)
           throw CompileError(std::max(declaration_line, 0),
-              "method SpecId contradicts Section 1 declaration",
+              "legacy method SpecId contradicts Section 1 declaration",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
-        method->spec_id = method_spec_id;
+        method->spec_id = method_declaration_spec_id;
       }
-      if (!method_bodies.insert(execution_body_short_name(owner) + "::" + name).second)
-        throw CompileError(std::max(declaration_line, 0),
-            "execution-body method is undeclared or duplicated",
-            "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      for (const auto& body_identity : method_body_identities)
+        if (!method_bodies.insert(execution_body_short_name(owner) + "::" +
+                name + "#" + std::to_string(body_identity.spec_id)).second)
+          throw CompileError(std::max(declaration_line, 0),
+              "execution-body method specialization is undeclared or duplicated",
+              "SOURCE_FREE_EXECUTION_BODY_INVALID");
+      if (method_body_identities.empty())
+        method_bodies.insert(execution_body_short_name(owner) + "::" + name);
       if (object->exported &&
           (method->return_type.value_or("unit") != return_type ||
            ownership_effect_name(method->receiver_effect) != receiver_text ||
@@ -16886,12 +17020,20 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
   }
   for (const auto& object : provider.objects)
-    for (const auto& method : object.methods)
-      if (!method_bodies.count(execution_body_short_name(object.name) +
-                               "::" + method.name))
+    for (const auto& method : object.methods) {
+      const bool body_present = method.specializations.empty()
+          ? method_bodies.count(execution_body_short_name(object.name) +
+                                "::" + method.name) != 0
+          : std::all_of(method.specializations.begin(),
+                        method.specializations.end(), [&](const auto& item) {
+              return method_bodies.count(execution_body_short_name(object.name) +
+                  "::" + method.name + "#" + std::to_string(item.spec_id)) != 0;
+            });
+      if (!body_present)
         throw CompileError(std::max(method.line, 0),
             "ABI-v9 execution-body section omits an object method body",
             "SOURCE_FREE_EXECUTION_BODY_INVALID");
+    }
   for (const auto& domain : provider.domains)
     for (const auto& handler : domain.handlers)
       if (!handler_bodies.count(execution_body_short_name(domain.name) +
@@ -17327,7 +17469,7 @@ static ExecutionBodySectionView parse_execution_body_section(
         string("execution_body_version ").size());
     size_t consumed = 0;
     const auto version = std::stoul(version_text, &consumed);
-    if (consumed != version_text.size() || version < 1 || version > 3)
+    if (consumed != version_text.size() || version < 1 || version > 4)
       throw std::out_of_range("execution body version");
     result.version = static_cast<unsigned>(version);
   } catch (const std::exception&) {
@@ -19805,6 +19947,7 @@ static void project_imported_return_value_artifact_facts(Program& program) {
                               unsigned section_version,
                               const string& execution_body_hash,
                               const string& callable_identity,
+                              const vector<SpecId>& body_spec_ids,
                               const string& module, int declaration_line,
                               bool replies_only = false) {
     if (records.empty()) return;
@@ -19852,6 +19995,10 @@ static void project_imported_return_value_artifact_facts(Program& program) {
         if (matching_specializations != 1)
           throw std::invalid_argument(
               "ReturnValue artifact SpecId does not resolve to one qualified provider identity");
+        if (std::find(body_spec_ids.begin(), body_spec_ids.end(),
+                      remapped_specialization_id) == body_spec_ids.end())
+          throw std::invalid_argument(
+              "ReturnValue artifact SpecId is not owned by this exact execution body");
         if (!seen_authorities.emplace(artifact.statement_preorder_ordinal,
                                       artifact.specialization_id).second)
           throw std::invalid_argument(
@@ -19934,36 +20081,65 @@ static void project_imported_return_value_artifact_facts(Program& program) {
           "imported execution body has incomplete ReturnValue authority coverage",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
   };
-  for (auto& function : program.functions)
+  for (auto& function : program.functions) {
+    vector<SpecId> body_spec_ids;
+    if (function.spec_id != InvalidSpecId)
+      body_spec_ids.push_back(function.spec_id);
+    for (const auto& specialization : function.specializations)
+      if (specialization.spec_id != InvalidSpecId)
+        body_spec_ids.push_back(specialization.spec_id);
     project_callable(function.execution_return_value_artifact_records,
         function.execution_body ? &*function.execution_body : nullptr,
         function.execution_body_section_version,
         function.execution_return_value_body_hash, "fn:" + function.name,
-        module_name_from_symbol(function.name), function.line);
+        body_spec_ids, module_name_from_symbol(function.name), function.line);
+  }
   for (auto& object : program.objects)
-    for (auto& method : object.methods)
+    for (auto& method : object.methods) {
+      vector<SpecId> body_spec_ids;
+      for (const auto& specialization : method.specializations)
+        if (specialization.spec_id != InvalidSpecId)
+          body_spec_ids.push_back(specialization.spec_id);
       project_callable(method.execution_return_value_artifact_records,
           method.execution_body ? &*method.execution_body : nullptr,
           method.execution_body_section_version,
           method.execution_return_value_body_hash,
           "method:" + method.owner + "." + method.name,
-          module_name_from_symbol(method.owner), method.line);
+          body_spec_ids, module_name_from_symbol(method.owner), method.line);
+    }
   for (auto& domain : program.domains)
     for (auto& handler : domain.handlers) {
       const string callable_identity =
           "handler:" + domain.name + "." + handler.name;
       const string module = module_name_from_symbol(domain.name);
+      vector<SpecId> body_spec_ids;
+      if (handler.spec_id != InvalidSpecId)
+        body_spec_ids.push_back(handler.spec_id);
+      for (const auto& instance : program.domain_specializations)
+        if (instance.source_domain == domain.name &&
+            !instance.handler_spec_ids.empty()) {
+          const auto handler_index = static_cast<size_t>(
+              std::distance(domain.handlers.begin(),
+                  std::find_if(domain.handlers.begin(), domain.handlers.end(),
+                      [&](const Handler& candidate) {
+                return &candidate == &handler;
+              })));
+          if (handler_index < instance.handler_spec_ids.size() &&
+              instance.handler_spec_ids[handler_index] != InvalidSpecId)
+            body_spec_ids.push_back(
+                instance.handler_spec_ids[handler_index]);
+        }
       project_callable(handler.execution_return_value_artifact_records,
           handler.execution_body ? &*handler.execution_body : nullptr,
           handler.execution_body_section_version,
           handler.execution_return_value_body_hash, callable_identity,
-          module, handler.line, true);
+          body_spec_ids, module, handler.line, true);
       for (auto& arm : handler.failure_arms)
         project_callable(arm.execution_return_value_artifact_records,
             arm.execution_body ? &*arm.execution_body : nullptr,
             arm.execution_body_section_version,
             arm.execution_return_value_body_hash, callable_identity,
-            module, arm.line, true);
+            body_spec_ids, module, arm.line, true);
     }
 }
 
@@ -23838,7 +24014,11 @@ static string encode_execution_body_payload(
   for (const auto* function : functions) {
     const auto mapped_function_id = artifact_spec_ids.find(function->spec_id);
     if (function->spec_id == InvalidSpecId ||
-        mapped_function_id == artifact_spec_ids.end())
+        mapped_function_id == artifact_spec_ids.end() ||
+        (!function->semantic_callable_id.empty() &&
+         program.specialization_table[function->spec_id]
+                 .semantic_callable_identity !=
+             function->semantic_callable_id))
       throw std::invalid_argument("function body owner SpecId is absent from projected .mossi table");
     payload << "function " << std::quoted(function->name) << " "
             << (function->exported ? 1 : 0) << " " << function->line << " "
@@ -23853,7 +24033,11 @@ static string encode_execution_body_payload(
     for (const auto& specialization : function->specializations) {
       const auto mapped = artifact_spec_ids.find(specialization.spec_id);
       if (specialization.spec_id == InvalidSpecId ||
-          mapped == artifact_spec_ids.end())
+          mapped == artifact_spec_ids.end() ||
+          (!function->semantic_callable_id.empty() &&
+           program.specialization_table[specialization.spec_id]
+                   .semantic_callable_identity !=
+               function->semantic_callable_id))
         throw std::invalid_argument("function specialization owner SpecId is absent from projected .mossi table");
       payload << " " << mapped->second;
     }
@@ -23898,8 +24082,21 @@ static string encode_execution_body_payload(
     for (const auto* method : methods) {
       const auto mapped_method_id = artifact_spec_ids.find(method->spec_id);
       if (method->spec_id == InvalidSpecId ||
-          mapped_method_id == artifact_spec_ids.end())
+          mapped_method_id == artifact_spec_ids.end() ||
+          method->semantic_callable_id.empty() ||
+          program.specialization_table[method->spec_id]
+                  .semantic_callable_identity !=
+              method->semantic_callable_id + ":declaration")
         throw std::invalid_argument("method body owner SpecId is absent from projected .mossi table");
+      if (method->specializations.empty() ||
+          std::any_of(method->specializations.begin(),
+                      method->specializations.end(), [&](const auto& item) {
+            return item.spec_id == InvalidSpecId ||
+                !artifact_spec_ids.count(item.spec_id) ||
+                item.stable_type_key.empty();
+          }))
+        throw std::invalid_argument(
+            "method body has a missing checked concrete SpecId owner");
       payload << "method " << std::quoted(object->name) << " "
               << std::quoted(method->name) << " " << method->line << " "
               << method->result_line << " "
@@ -23911,7 +24108,26 @@ static string encode_execution_body_payload(
               << " " << method->params.size() << " "
               << (method->result_expression ? 1 : 0) << " "
               << std::quoted(method->result_expression.value_or(string())) << " "
-              << mapped_method_id->second << "\n";
+              << mapped_method_id->second << " "
+              << std::quoted(method->semantic_callable_id) << " "
+              << method->specializations.size();
+      for (const auto& specialization : method->specializations) {
+        const auto mapped_body_id = artifact_spec_ids.find(
+            specialization.spec_id);
+        if (mapped_body_id == artifact_spec_ids.end() ||
+            specialization.stable_type_key.empty() ||
+            program.specialization_table[specialization.spec_id]
+                    .semantic_callable_identity !=
+                method->semantic_callable_id)
+          throw std::invalid_argument(
+              "method body specialization identity is absent from projected .mossi table");
+        payload << " " << std::quoted(specialization.stable_type_key) << " "
+                << specialization.parameter_types.size();
+        for (const auto& parameter_type : specialization.parameter_types)
+          payload << " " << std::quoted(parameter_type);
+        payload << " " << mapped_body_id->second;
+      }
+      payload << "\n";
       for (size_t index = 0; index < method->params.size(); ++index) {
         const Effect effect = index < method->parameter_effects.size()
             ? method->parameter_effects[index] : Effect::Read;
@@ -24024,7 +24240,7 @@ static string append_execution_body_section(
   const string payload = encode_execution_body_payload(
       manifest, program, module, package_fingerprint, interface_digest);
   std::ostringstream section;
-  section << "execution_body_version 3\n"
+  section << "execution_body_version 4\n"
           << "execution_body_length " << payload.size() << "\n"
           << "execution_body_hash sha256:"
           << source_free_contract_sha256(payload) << "\n"
