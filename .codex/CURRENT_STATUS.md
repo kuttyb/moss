@@ -19183,3 +19183,25 @@ untouched.
   compilation for the method gate, the method gate itself, feedback validation,
   and `git diff --check` pass. Full identity gate, field grid, full suites, and
   corpus were not rerun as acceptance evidence.
+
+## Phase 28 R7-011 Team B consumer follow-up (2026-11-07)
+
+- Isolated Team B branch `phase28-r7-011-team-b-dynamic-fastdebug` advanced to
+  `48e52cd2` and was pushed. Native ordinary/path-sensitive handler bodies now
+  pass an exact body SpecId resolved through the declaration-aligned
+  `DomainSpecialization.handler_spec_ids` row; borrowed-view method bodies pass
+  the checked concrete method body SpecId and use it for result pipeline plans.
+- Validation on `48e52cd2`: `make --jobs=2 MOSS_LDFLAGS= moss-dev` succeeded;
+  `python3 tests/tooling/check_phase28_method_parameter_return.py
+  ./build/compiler/moss-dev` passed, including source-free Native/Fast output
+  and exact ReturnValue DROP/DUPLICATE invariant diagnostics. Feedback
+  validation and `git diff --check` passed.
+- A minimal Native handler probe is blocked before emission by checker error
+  `functional pipeline has no checker-owned caller SpecId`; Team A owns this
+  producer authority gap. No handler runtime validation, full identity/field
+  gate, full suite, corpus result, or GO is claimed for this isolated SHA.
+- The 36-cell frozen-design generic-call matrix is documented at
+  `docs/phase28/r7-011/team-b-consumer-contract.md:159`; it is not currently an
+  executable 36-cell gate in this branch. Next: sync only a coherent Team A
+  producer checkpoint after coordination, rerun the handler/method identity
+  probes, and keep Fast Debug unknown-local parameter failures with Team A.
