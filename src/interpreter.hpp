@@ -24,6 +24,7 @@
 #include "ast.hpp"
 #include "numeric_literal.hpp"
 #include "numeric_runtime.hpp"
+#include "program_identity.hpp"
 #include "rust_float_display.hpp"
 #include "type_placeholders.hpp"
 #include "semantic_checker_support.hpp"
@@ -141,6 +142,41 @@ class FastInterpreter {
 
 #ifdef MOSS_TEST_BUILD
   void init_test_hooks() {
+    const char* constructor_mutation =
+        std::getenv("MOSS_TEST_CONSTRUCTOR_OBJECT_MUTATION");
+    const char* constructor_target =
+        std::getenv("MOSS_TEST_CONSTRUCTOR_TARGET_ID");
+    if (constructor_mutation && constructor_target) {
+      test_constructor_object_table_ = program_.objects;
+      auto& objects = *test_constructor_object_table_;
+      std::vector<std::size_t> matches;
+      for (std::size_t index = 0; index < objects.size(); ++index) {
+        const auto& candidate = objects[index];
+        std::string module_identity;
+        try {
+          module_identity = program_module_identity(
+              program_, candidate.defining_module);
+        } catch (const std::exception&) {
+          continue;
+        }
+        const std::string candidate_name = candidate.declaration_name.empty()
+            ? candidate.name : candidate.declaration_name;
+        if (declaration_identity(DeclarationKind::Record, module_identity,
+                                 candidate_name) == constructor_target)
+          matches.push_back(index);
+      }
+      if (matches.size() == 1) {
+        const std::size_t index = matches.front();
+        if (std::string_view(constructor_mutation) == "drop") {
+          objects.erase(objects.begin() + static_cast<std::ptrdiff_t>(index));
+        } else if (std::string_view(constructor_mutation) == "duplicate") {
+          objects.push_back(objects[index]);
+        } else if (std::string_view(constructor_mutation) == "wrong-module") {
+          objects[index].defining_module = "__moss_test_wrong_module__";
+        }
+      }
+    }
+
     auto* semantics = program_.typed_semantics.get();
     if (!semantics) return;
 
@@ -990,6 +1026,9 @@ class FastInterpreter {
   };
 
   const Program& program_;
+#ifdef MOSS_TEST_BUILD
+  std::optional<std::vector<ObjectType>> test_constructor_object_table_;
+#endif
   const TypedConditionalCollectionErrorFactV1*
       active_conditional_collection_error_fact_ = nullptr;
   const TypedCollectionViewFactV1* active_collection_view_fact_ = nullptr;
@@ -1983,10 +2022,15 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT constructor ExprId is out of range");
     const auto* facts = tree.arena->facts(expression, caller_spec_id);
     if (!facts || facts->specialization_id != caller_spec_id ||
-        !facts->resolved_target.empty() || !facts->type ||
+        !facts->type ||
         facts->type->kind != TypeKind::NominalInstance ||
         !facts->type->declaration ||
         facts->type->declaration->kind != DeclarationKind::Record)
+      return nullptr;
+    if (facts->resolved_target.empty())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT checked constructor lacks declaration identity");
+    if (facts->resolved_target != facts->type->declaration->id)
       return nullptr;
     if (!program_.type_context)
       throw RuntimeError(line,
@@ -2000,11 +2044,25 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT checked constructor declaration identity is missing or contradictory");
     const ObjectType* selected = nullptr;
     std::size_t matches = 0;
-    for (const auto& candidate : program_.objects) {
-      const auto candidate_declaration = program_.type_context->find(
-          candidate.name);
-      if (!candidate_declaration ||
-          candidate_declaration->id != declaration->id)
+#ifdef MOSS_TEST_BUILD
+    const auto& object_table = test_constructor_object_table_
+        ? *test_constructor_object_table_ : program_.objects;
+#else
+    const auto& object_table = program_.objects;
+#endif
+    for (const auto& candidate : object_table) {
+      std::string candidate_module_identity;
+      try {
+        candidate_module_identity = program_module_identity(
+            program_, candidate.defining_module);
+      } catch (const std::exception&) {
+        continue;
+      }
+      const std::string candidate_name = candidate.declaration_name.empty()
+          ? candidate.name : candidate.declaration_name;
+      if (declaration_identity(DeclarationKind::Record,
+                               candidate_module_identity, candidate_name) !=
+          declaration->id)
         continue;
       selected = &candidate;
       ++matches;
@@ -2065,8 +2123,14 @@ class FastInterpreter {
     };
     if (!std::holds_alternative<est::Pipeline>(tree.arena->at(root)))
       return std::nullopt;
-    return est::functional_pipeline(*tree.arena, root,
+    auto parsed = est::functional_pipeline(*tree.arena, root,
         expression_node_text(tree, root), resolve_stage);
+    if (parsed) {
+      parsed->arena_index = tree.arena_index;
+      for (auto& stage : parsed->stages)
+        stage.arena_index = tree.arena_index;
+    }
+    return parsed;
   }
 
   Value invoke_pipeline_callable(const std::vector<Value>& values,
@@ -2823,9 +2887,12 @@ class FastInterpreter {
     if (tree && expression_call(*tree, current_root, callee, args)) {
       const auto* call_node = std::get_if<est::Call>(
           &tree->arena->at(current_root));
-      const std::vector<est::ExprId>* call_argument_nodes = nullptr;
-      if (call_node) call_argument_nodes = &call_node->arguments;
-      if (call_node) {
+      const auto* constructor_node = std::get_if<est::Constructor>(
+          &tree->arena->at(current_root));
+      const std::vector<est::ExprId>* call_argument_nodes = call_node
+          ? &call_node->arguments
+          : constructor_node ? &constructor_node->arguments : nullptr;
+      if (call_node || constructor_node) {
         if (const auto* constructor = checked_record_constructor_for_occurrence(
                 *tree, current_root, frame.spec_id, line))
           return construct(*constructor, args, frame, line, output, tree,
@@ -2836,9 +2903,106 @@ class FastInterpreter {
         exact_call_edge = checked_call_fact_for_occurrence(
             frame, tree, current_root, line);
       auto evaluate_call_argument = [&](std::size_t index) {
-        if (call_argument_nodes && index < call_argument_nodes->size())
-          return evaluate_tree_node(*tree, call_argument_nodes->at(index),
-                                    frame, line, output);
+        if (call_argument_nodes && index < call_argument_nodes->size()) {
+          const auto argument_expr = call_argument_nodes->at(index);
+          if (exact_call_edge &&
+              exact_call_edge->target_kind == SemanticCallTargetKind::Static) {
+            if (exact_call_edge->callee_spec_id == InvalidSpecId ||
+                exact_call_edge->callee_spec_id >=
+                    program_.specialization_table.size() ||
+                exact_call_edge->argument_callable_spec_ids.size() !=
+                    call_argument_nodes->size())
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT checked callable argument row has invalid callee or arity");
+            const auto& callee_row = program_.specialization_table[
+                exact_call_edge->callee_spec_id];
+            if (callee_row.id != exact_call_edge->callee_spec_id)
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT checked callable argument callee row is contradictory");
+            const auto* callee = function_by_semantic_identity(
+                callee_row.semantic_callable_identity);
+            if (!callee)
+              throw RuntimeError(line,
+                  "MOSS_INTERNAL_INVARIANT checked callable argument callee has no function body");
+            std::string parameter_type;
+            if (callee->static_dispatch) {
+              const FunctionSpecialization* selected = nullptr;
+              for (const auto& candidate : callee->specializations)
+                if (candidate.spec_id == exact_call_edge->callee_spec_id) {
+                  if (selected)
+                    throw RuntimeError(line,
+                        "MOSS_INTERNAL_INVARIANT checked callable argument callee specialization is duplicated");
+                  selected = &candidate;
+                }
+              if (!selected || index >= selected->parameter_types.size())
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT checked callable argument callee specialization is missing");
+              parameter_type = selected->parameter_types[index];
+            } else {
+              if (callee->spec_id != exact_call_edge->callee_spec_id ||
+                  index >= callee->params.size())
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT checked callable argument callee declaration is contradictory");
+              parameter_type = callee->params[index].type;
+            }
+            const bool callable_parameter =
+                parameter_type.rfind("callable-v1:", 0) == 0 ||
+                parameter_type.rfind("callable:", 0) == 0;
+            const SpecId argument_spec_id =
+                exact_call_edge->argument_callable_spec_ids[index];
+            if (!callable_parameter) {
+              if (argument_spec_id != InvalidSpecId)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT non-callable argument slot has a checked callable SpecId");
+            } else {
+              if (argument_spec_id == InvalidSpecId ||
+                  argument_spec_id >= program_.specialization_table.size())
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument slot lacks checked SpecId authority");
+              const std::string expected_callable =
+                  parameter_type.rfind("callable:", 0) == 0
+                      ? parameter_type.substr(9) : parameter_type;
+              const auto& argument_row =
+                  program_.specialization_table[argument_spec_id];
+              if (argument_row.id != argument_spec_id ||
+                  argument_row.semantic_callable_identity != expected_callable)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument SpecId contradicts the checked parameter identity");
+              const auto* argument_target = unique_function_owner_for_spec_id(
+                  program_, argument_spec_id);
+              if (!argument_target)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument SpecId has no unique checked function owner");
+              const auto* identifier = std::get_if<est::Identifier>(
+                  &tree->arena->at(argument_expr));
+              if (!identifier)
+                throw RuntimeError(line,
+                    "MOSS_INTERNAL_INVARIANT callable argument SpecId is not attached to an Identifier argument occurrence");
+              const auto local = frame.locals.find(identifier->name);
+              if (local != frame.locals.end()) {
+                if (local->second.kind != Value::Kind::Callable ||
+                    local->second.callable_target != argument_target ||
+                    local->second.callable_spec_id != argument_spec_id)
+                  throw RuntimeError(line,
+                      "MOSS_INTERNAL_INVARIANT local callable argument contradicts its checked SpecId");
+                return local->second;
+              }
+              const auto alias = frame.aliases.find(identifier->name);
+              if (alias != frame.aliases.end() && alias->second.value) {
+                const auto& value = *alias->second.value;
+                if (value.kind != Value::Kind::Callable ||
+                    value.callable_target != argument_target ||
+                    value.callable_spec_id != argument_spec_id)
+                  throw RuntimeError(line,
+                      "MOSS_INTERNAL_INVARIANT aliased callable argument contradicts its checked SpecId");
+                return value;
+              }
+              return Value::callable_value(identifier->name, argument_target,
+                                           argument_spec_id);
+            }
+          }
+          return evaluate_tree_node(*tree, argument_expr, frame, line, output);
+        }
         throw RuntimeError(line, "internal error: callable argument has no EST node");
       };
       // Fast Debug may see the whitespace-preserving spelling used by typed
@@ -4046,12 +4210,16 @@ class FastInterpreter {
     // Keep parameter binding identical for checked specialized and ordinary
     // functions; ordinary functions use the checker-inferred declaration
     // parameter effects below.
+    const bool functional_callback_invocation =
+        call_edge.invocation_kind == "functional_callback" ||
+        call_edge.invocation_kind == "dynamic_callback";
     bind_parameters(target.params,
                     specialization ? specialization->parameter_effects : target.parameter_effects,
                     arguments, caller, frame, line, output,
                     specialization ? &specialization->parameter_types : nullptr,
                     tree, argument_nodes, argument_values,
-                    &call_edge.argument_callable_spec_ids);
+                    functional_callback_invocation ? nullptr
+                        : &call_edge.argument_callable_spec_ids);
     int enter_id = emit("FunctionEnter", frame, target.line);
     EventScope function_scope(*this, enter_id, true);
     const auto& executable_body = target.execution_body
@@ -4631,11 +4799,6 @@ class FastInterpreter {
       throw RuntimeError(line,
           "MOSS_INTERNAL_INVARIANT missing exact checked return-value EST handle");
     SpecId query_spec_id = frame.spec_id;
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT") ||
-        std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
-      ++query_spec_id;
-#endif
     if (query_spec_id == InvalidSpecId ||
         query_spec_id >= program_.specialization_table.size() ||
         program_.specialization_table[query_spec_id].id != query_spec_id)
@@ -4643,23 +4806,53 @@ class FastInterpreter {
           "MOSS_INTERNAL_INVARIANT ReturnValue caller SpecId is missing or contradictory");
     const auto& owner_identity =
         program_.specialization_table[query_spec_id];
+    const Function* spec_owner =
+        unique_function_owner_for_spec_id(program_, query_spec_id);
+    const ObjectType* spec_owner_object = nullptr;
+    const Method* spec_owner_method = unique_method_owner_for_spec_id(
+        program_, query_spec_id, &spec_owner_object);
+    const std::string* spec_owner_callable = spec_owner
+        ? &spec_owner->semantic_callable_id
+        : spec_owner_method ? &spec_owner_method->semantic_callable_id : nullptr;
+    const std::string* spec_owner_module_name = spec_owner
+        ? &spec_owner->defining_module
+        : spec_owner_object ? &spec_owner_object->defining_module : nullptr;
+    const bool spec_owner_imported = spec_owner
+        ? (spec_owner->imported_checked_body_projected ||
+           (spec_owner->execution_body.has_value() &&
+            spec_owner->execution_body_section_version > 0 &&
+            !spec_owner->execution_return_value_body_hash.empty()))
+        : spec_owner_method && spec_owner_method->execution_body.has_value() &&
+              spec_owner_method->execution_body_section_version > 0;
+    const auto spec_owner_module_entry = spec_owner_module_name &&
+            !spec_owner_module_name->empty()
+        ? program_.module_identities.find(*spec_owner_module_name)
+        : program_.module_identities.end();
+    const std::string* spec_owner_module =
+        spec_owner_module_entry == program_.module_identities.end()
+            ? nullptr : &spec_owner_module_entry->second;
+    const std::string* spec_owner_table_module =
+        owner_identity.provider_module_identity.empty()
+            ? &owner_identity.module_identity
+            : &owner_identity.provider_module_identity;
+    const std::size_t spec_owner_module_matches =
+        !spec_owner_module || spec_owner_module->empty() ? 0 :
+        std::count_if(program_.module_identities.begin(),
+                      program_.module_identities.end(),
+                      [&](const auto& entry) {
+          return entry.second == *spec_owner_module;
+        });
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      const std::string provider_module_identity =
-          owner_identity.provider_module_identity.empty()
-              ? owner_identity.module_identity
-              : owner_identity.provider_module_identity;
-      if (provider_module_identity.empty() ||
-          candidate.specialization_id != query_spec_id) return false;
-      const auto module_identity_matches = std::count_if(
-          program_.module_identities.begin(), program_.module_identities.end(),
-          [&](const auto& entry) {
-            return entry.second == provider_module_identity &&
-                program_.external_modules.count(entry.first) != 0;
-          });
-      return module_identity_matches == 1 &&
-          candidate.provenance.defining_module_id ==
-              provider_module_identity &&
+      return spec_owner_imported && spec_owner_callable &&
+          owner_identity.semantic_callable_identity == *spec_owner_callable &&
+          spec_owner_module && !spec_owner_module->empty() &&
+          spec_owner_module_matches == 1 && spec_owner_module_name &&
+          program_.external_modules.count(*spec_owner_module_name) != 0 &&
+          owner_identity.module_identity == *spec_owner_module &&
+          *spec_owner_table_module == *spec_owner_module &&
+          candidate.specialization_id == query_spec_id &&
+          candidate.provenance.defining_module_id == *spec_owner_module &&
           !statement.source_file.empty() &&
           candidate.provenance.source_file == statement.source_file &&
           candidate.provenance.line == statement.line;
@@ -4754,39 +4947,36 @@ class FastInterpreter {
         throw RuntimeError(line,
             "MOSS_INTERNAL_INVARIANT perturbed source-free ReturnValue EST context unexpectedly passed");
       }
-      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
-        auto corrupted = *requirement;
-        corrupted.provenance.defining_module_id += ":wrong-module";
-        (void)program_.typed_semantics->find_return_value_fact(corrupted);
-        throw RuntimeError(line,
-            "MOSS_INTERNAL_INVARIANT perturbed imported ReturnValue module authority unexpectedly passed");
+#endif
+      const TypedReturnValueFactV1* fact =
+          program_.typed_semantics->find_return_value_fact(*requirement);
+#ifdef MOSS_TEST_BUILD
+      std::optional<TypedReturnValueFactV1> injected_source_free_fact;
+      if (fact && fact->source_free_checked_body_occurrence &&
+          (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_CONTEXT") ||
+           std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION") ||
+           std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))) {
+        injected_source_free_fact = *fact;
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))
+          injected_source_free_fact->provenance.defining_module_id += ":wrong-module";
+        else
+          injected_source_free_fact->specialization_id = InvalidSpecId;
+        fact = &*injected_source_free_fact;
       }
 #endif
-      const auto* fact =
-          program_.typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
       if (fact->source_free_checked_body_occurrence) {
-        const Function* owner = function_by_semantic_identity(
-            owner_identity.semantic_callable_identity);
-        const std::size_t owner_count = owner ? 1 : 0;
-        const bool source_free_occurrence_matches = owner && handle
+        const bool source_free_occurrence_matches = spec_owner && handle
             ? typed_return_value_source_free_occurrence_matches(
-                  *fact, *owner, statement, *handle)
-            : false;
-        const std::string source_free_module = owner
-            ? module_name_from_symbol(owner->name) : std::string();
-        const auto source_free_module_identity =
-            program_.module_identities.find(source_free_module);
-        if (owner_count != 1 || !owner || !owner->imported_checked_body_projected ||
-            !handle || source_free_module.empty() ||
-            !program_.external_modules.count(source_free_module) ||
-            source_free_module_identity == program_.module_identities.end() ||
-            source_free_module_identity->second.empty() ||
-            fact->provenance.defining_module_id !=
-                source_free_module_identity->second ||
-            fact->provenance.enclosing_callable_id != owner_identity.semantic_callable_identity ||
-            !source_free_occurrence_matches)
+                  *fact, program_, query_spec_id, *spec_owner, statement,
+                  *handle)
+            : spec_owner_method && spec_owner_object && handle
+                ? typed_return_value_source_free_occurrence_matches(
+                      *fact, program_, query_spec_id, *spec_owner_object,
+                      *spec_owner_method, statement, *handle)
+                : false;
+        if (!spec_owner_imported || !handle || !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
       }
@@ -4802,40 +4992,34 @@ class FastInterpreter {
       const auto* occurrence = arena->facts(handle->expr,
                                              fact->specialization_id);
       if (!occurrence || !occurrence->type) {
-        const Function* imported_checked_owner =
-            function_by_semantic_identity(
-                owner_identity.semantic_callable_identity);
-        const std::size_t imported_checked_owner_count =
-            imported_checked_owner &&
-                    imported_checked_owner->imported_checked_body_projected
-                ? 1 : 0;
-        if (imported_checked_owner_count == 0)
-          imported_checked_owner = nullptr;
-        if (imported_checked_owner_count > 1 ||
-            (imported_checked_owner &&
-             imported_checked_owner->semantic_callable_id.empty()))
-          throw std::invalid_argument(
-              "imported checked ReturnValue owner identity is ambiguous");
-        const bool imported_checked_body_owner =
-            imported_checked_owner_count == 1 && imported_checked_owner;
 #ifdef MOSS_TEST_BUILD
         if (std::getenv("MOSS_TEST_TRACE_IMPORTED_RETURN_VALUE_OWNER")) {
           std::cerr << "IMPORTED_RETURN_OWNER spec=" << query_spec_id
-                    << " module=" << owner_identity.provider_module_identity
+                    << " module=" << *spec_owner_table_module
                     << " row_module=" << owner_identity.module_identity
                     << " callable=" << owner_identity.semantic_callable_identity
+                    << " owner_present=" << (spec_owner != nullptr || spec_owner_method != nullptr)
+                    << " owner_name=" << (spec_owner ? spec_owner->name : "<none>")
+                    << " owner_callable=" << (spec_owner_callable ? *spec_owner_callable : "<none>")
+                    << " owner_module=" << (spec_owner_module_name ? *spec_owner_module_name : "<none>")
+                    << " owner_imported=" << spec_owner_imported
+                    << " owner_execution_body=" << (spec_owner && spec_owner->execution_body.has_value())
+                    << " owner_section=" << (spec_owner ? spec_owner->execution_body_section_version : 0)
+                    << " owner_body_hash=" << (spec_owner ? spec_owner->imported_checked_body_semantic_hash : "<none>")
+                    << " module_identity=" << (spec_owner_module ? *spec_owner_module : "<none>")
+                    << " module_matches=" << spec_owner_module_matches
+                    << " external=" << (spec_owner_module_name && program_.external_modules.count(*spec_owner_module_name) != 0)
                     << " exact_owner=" << fact_is_from_exact_imported_owner(*fact)
                     << " fact_module=" << fact->provenance.defining_module_id
-                    << " fact_callable=" << fact->provenance.enclosing_callable_id
                     << " fact_source=" << fact->provenance.source_file
                     << " stmt_source=" << statement.source_file
                     << " fact_spec=" << fact->specialization_id
-                    << " imported_function_owner=" << imported_checked_body_owner
+                    << " fact_source_free=" << fact->source_free_checked_body_occurrence
+                    << " fact_body_hash=" << fact->checked_body_semantic_hash
                     << "\n";
         }
 #endif
-        if (imported_checked_body_owner ||
-            !fact_is_from_exact_imported_owner(*fact))
+        if (!fact_is_from_exact_imported_owner(*fact))
           throw std::invalid_argument(
               "return-value EST type fact missing outside exact imported owner");
       } else if (occurrence->type->is_closed()

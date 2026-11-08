@@ -251,10 +251,13 @@ string module_name_from_symbol(const string& symbol) {
 void build_type_context(Program& program) {
   auto context = std::make_shared<moss::TypeContext>();
   for (auto& function : program.functions) {
+    if (!function.semantic_callable_id.empty()) continue;
     const string& declaration = function.declaration_name.empty()
         ? function.name : function.declaration_name;
+    const string& defining_module = function.defining_module.empty()
+        ? program.module_name : function.defining_module;
     function.semantic_callable_id = "callable-v1:" +
-        program_module_identity(program, function.defining_module) +
+        program_module_identity(program, defining_module) +
         ":fn:" + declaration;
   }
   auto declare = [&](moss::DeclarationKind kind, const string& program_name,
@@ -4386,6 +4389,81 @@ static void attach_imported_checked_body_expression(
           program.expression_arenas.begin(), arena_position))});
 }
 
+static void retain_canonical_imported_body(Program& program,
+                                           Function& function) {
+  if (!function.execution_body || !function.imported_checked_body_projected)
+    return;
+  const auto& retained = *function.execution_body;
+  const auto& projected = function.body;
+  auto fail = [&](const string& reason) -> void {
+    throw CompileError(std::max(function.line, 1),
+        "checked and retained imported body disagree: " + reason,
+        "SOURCE_FREE_CHECKED_BODY_INVALID");
+  };
+  if (projected.size() != retained.size()) fail("statement count");
+  auto base_indent = [](const vector<Stmt>& body) {
+    int base = body.empty() ? 0 : body.front().indent;
+    for (const auto& statement : body) base = std::min(base, statement.indent);
+    return base;
+  };
+  const int projected_base = base_indent(projected);
+  const int retained_base = base_indent(retained);
+  for (size_t index = 0; index < projected.size(); ++index) {
+    const auto& checked = projected[index];
+    const auto& stored = retained[index];
+    if (checked.kind != stored.kind ||
+        checked.indent - projected_base != stored.indent - retained_base ||
+        checked.args.size() != stored.args.size() ||
+        checked.message_result != stored.message_result)
+      fail("statement kind, nesting, or operands at " + std::to_string(index));
+    if ((checked.kind == Stmt::Kind::Let ||
+         checked.kind == Stmt::Kind::Var ||
+         checked.kind == Stmt::Kind::Assign ||
+         checked.kind == Stmt::Kind::For ||
+         checked.kind == Stmt::Kind::Call ||
+         checked.kind == Stmt::Kind::Message ||
+         checked.kind == Stmt::Kind::Case ||
+         checked.kind == Stmt::Kind::Recover) && checked.a != stored.a)
+      fail("statement binder or target at " + std::to_string(index));
+    if (checked.kind == Stmt::Kind::Raw && checked.text != stored.text)
+      fail("unrepresented statement at " + std::to_string(index));
+    using Slot = std::pair<est::ExprSlot, std::uint32_t>;
+    auto roots = [&](const Stmt& statement) {
+      std::map<Slot, const est::Handle*> result;
+      for (const auto& handle : statement.expression_handles) {
+        if (handle.arena_index >= program.expression_arenas.size() ||
+            !program.expression_arenas[handle.arena_index] ||
+            handle.expr >= program.expression_arenas[handle.arena_index]->size() ||
+            !result.emplace(Slot{handle.slot, handle.argument_index}, &handle).second)
+          fail("missing or duplicate retained EST root");
+      }
+      return result;
+    };
+    const auto checked_roots = roots(checked);
+    const auto stored_roots = roots(stored);
+    if (checked_roots.size() != stored_roots.size())
+      fail("expression root count at " + std::to_string(index));
+    for (const auto& [slot, checked_handle] : checked_roots) {
+      const auto stored_handle = stored_roots.find(slot);
+      if (stored_handle == stored_roots.end()) fail("expression slot");
+      const est::ExpressionView left{{},
+          program.expression_arenas[checked_handle->arena_index].get(),
+          checked_handle->expr, {}};
+      const est::ExpressionView right{{},
+          program.expression_arenas[stored_handle->second->arena_index].get(),
+          stored_handle->second->expr, {}};
+      // Full syntax equality includes node kind, callee, identifiers, literals
+      // and operands. No best-effort statement or expression rebinding.
+      if (!est::structurally_equal(left, right))
+        fail("expression shape or callee at " + std::to_string(index));
+    }
+  }
+  // Keep exactly one executable AST. All restored call/return facts already
+  // target these handles, and both backends and checker now use this vector.
+  function.body = std::move(*function.execution_body);
+  function.execution_body.reset();
+}
+
 void project_imported_h3_checked_bodies(Program& program) {
   if (!staged_abi_v10() || !program.type_context) return;
   // Validate/project direct member leaves before any forwarding caller. A
@@ -4406,6 +4484,15 @@ void project_imported_h3_checked_bodies(Program& program) {
   });
   for (const auto& checked_body_entry : checked_body_functions) {
     auto& function = *checked_body_entry.second;
+    struct CanonicalImportedBodyScope {
+      Program& program;
+      Function& function;
+      int exceptions = std::uncaught_exceptions();
+      ~CanonicalImportedBodyScope() noexcept(false) {
+        if (std::uncaught_exceptions() == exceptions)
+          retain_canonical_imported_body(program, function);
+      }
+    } canonical_body_scope{program, function};
     if (function.imported_checked_body_payload.empty()) continue;
     const abi_v10::Summary summary = abi_v10::read_summary(
         function.imported_checked_summary_payload);
@@ -14544,6 +14631,75 @@ static void rewrite_module_program(
   auto params = [&](vector<Param>& values) {
     for (auto& param : values) param.set_type(type(param.type));
   };
+  // Qualification may give a function an uppercase module prefix. The
+  // expression parser's constructor spelling rule must not turn that known
+  // function invocation into a nominal construction. Resolve only declaration
+  // kind here; the checker still selects and stamps the specialization.
+  std::set<string> qualified_functions;
+  std::set<string> qualified_nominals;
+  for (const auto& entry : modules) {
+    for (const auto& name : module_function_names(entry.second))
+      qualified_functions.insert(module_symbol(entry.first, name));
+    for (const auto& file : entry.second.files) {
+      for (const auto& object : file.first.objects)
+        qualified_nominals.insert(module_symbol(entry.first, object.name));
+      for (const auto& enumeration : file.first.enums)
+        qualified_nominals.insert(module_symbol(entry.first, enumeration.name));
+      for (const auto& domain : file.first.domains)
+        qualified_nominals.insert(module_symbol(entry.first, domain.name));
+    }
+  }
+  auto retain_function_call_kinds = [&](est::ExprId root) {
+    auto& arena = *program.expression_arena;
+    std::function<est::ExprId(est::ExprId)> visit = [&](est::ExprId id) {
+      // Appending invalidates arena references. Work on a value copy and keep
+      // all existing spans and distinct child occurrences.
+      est::Node node = arena.at(id);
+      bool changed = false;
+      auto child = [&](est::ExprId& value) {
+        const auto rewritten = visit(value);
+        changed |= rewritten != value;
+        value = rewritten;
+      };
+      auto children = [&](vector<est::ExprId>& values) {
+        for (auto& value : values) child(value);
+      };
+      std::visit([&](auto& value) {
+        using T = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<T, est::Unary>) child(value.operand);
+        else if constexpr (std::is_same_v<T, est::Binary>) {
+          child(value.left); child(value.right);
+        } else if constexpr (std::is_same_v<T, est::Call>) {
+          child(value.callee); children(value.arguments);
+        } else if constexpr (std::is_same_v<T, est::Take>) children(value.arguments);
+        else if constexpr (std::is_same_v<T, est::Member>) child(value.base);
+        else if constexpr (std::is_same_v<T, est::Index>) {
+          child(value.base); child(value.index);
+        } else if constexpr (std::is_same_v<T, est::Parenthesized>) child(value.inner);
+        else if constexpr (std::is_same_v<T, est::Message>) {
+          child(value.target); children(value.arguments);
+        } else if constexpr (std::is_same_v<T, est::NamedArgument>) child(value.value);
+        else if constexpr (std::is_same_v<T, est::Collection> ||
+                           std::is_same_v<T, est::Tuple>) children(value.elements);
+        else if constexpr (std::is_same_v<T, est::Constructor>) {
+          child(value.type); children(value.type_arguments); children(value.arguments);
+        } else if constexpr (std::is_same_v<T, est::Pipeline>) {
+          child(value.input); children(value.stages);
+        }
+      }, node);
+      if (const auto* constructor = std::get_if<est::Constructor>(&node)) {
+        const auto* name = std::get_if<est::Identifier>(&arena.at(constructor->type));
+        if (name && constructor->type_arguments.empty() &&
+            qualified_functions.count(name->name) &&
+            !qualified_nominals.count(name->name)) {
+          node = est::Call{constructor->type, constructor->arguments};
+          changed = true;
+        }
+      }
+      return changed ? arena.append(std::move(node), arena.span(id)) : id;
+    };
+    return visit(root);
+  };
   auto expression_text = [&](const Stmt& statement,
                              const est::Handle& handle) -> string {
     switch (handle.slot) {
@@ -14601,6 +14757,7 @@ static void rewrite_module_program(
             candidate.argument_index == argument;
       });
       assert(refreshed != handles.end() && refreshed->expr != old_expr);
+      refreshed->expr = retain_function_call_kinds(refreshed->expr);
       (void)program.expression_arena->at(old_expr);
       return;
     }
@@ -14624,6 +14781,7 @@ static void rewrite_module_program(
       });
       assert(refreshed != after.expression_handles.end() &&
              refreshed->expr != old_expr);
+      refreshed->expr = retain_function_call_kinds(refreshed->expr);
       (void)program.expression_arena->at(old_expr);
     }
   };
@@ -15968,6 +16126,18 @@ static string execution_body_resolve_source_path(
   return (*root / path).lexically_normal().string();
 }
 
+// Generic declarations carry a checked open scheme, not an executable concrete
+// ownership decision. Concrete instantiations must produce their own authority.
+static bool uninstantiated_open_return_template(const Function& function) {
+  if (!(function.generic || function.static_dispatch) ||
+      !function.specializations.empty()) return false;
+  if (function.return_type_ref)
+    return !function.return_type_ref->is_closed();
+  if (!function.return_type) return false;
+  const auto type = Type::parse_canonical(*function.return_type);
+  return type && !(*type)->is_closed();
+}
+
 static void parse_execution_body_payload(ExecutionBodySectionView& section,
                                          Program& provider,
                                          const std::filesystem::path& file) {
@@ -16379,7 +16549,11 @@ static void parse_execution_body_payload(ExecutionBodySectionView& section,
         std::set<std::uint32_t> artifact_return_ordinals;
         for (const auto& artifact : artifact_ordinals)
           artifact_return_ordinals.insert(artifact.first);
-        if (artifact_return_ordinals != valued_return_ordinals)
+        const bool deferred_template = section.version >= 3 &&
+            artifact_ordinals.empty() &&
+            uninstantiated_open_return_template(*function);
+        if (artifact_return_ordinals != valued_return_ordinals &&
+            !deferred_template)
           throw CompileError(std::max(declaration_line, 0),
               "source-free execution body has missing or duplicate ReturnValue authority",
               "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -17211,13 +17385,18 @@ static void bind_imported_return_value_artifact_handles(Program& provider) {
         statement.checked_statement_occurrence_id =
             0x80000000u + static_cast<std::uint32_t>(ordinal);
     }
-    std::set<std::uint32_t> seen;
+    std::set<std::pair<std::uint32_t, SpecId>> seen_authorities;
+    std::set<std::uint32_t> seen_ordinals;
     for (const auto& encoded : records) {
       try {
         const auto artifact = decode_return_value_artifact_record(encoded);
-        if (artifact.statement_preorder_ordinal >= body.size() ||
-            !seen.insert(artifact.statement_preorder_ordinal).second)
-          throw std::invalid_argument("duplicate or out-of-range ReturnValue ordinal");
+        if (artifact.specialization_id == InvalidSpecId ||
+            artifact.statement_preorder_ordinal >= body.size() ||
+            !seen_authorities.emplace(artifact.statement_preorder_ordinal,
+                                      artifact.specialization_id).second)
+          throw std::invalid_argument(
+              "duplicate, invalid, or out-of-range ReturnValue ordinal and SpecId");
+        seen_ordinals.insert(artifact.statement_preorder_ordinal);
         const auto& statement = body[artifact.statement_preorder_ordinal];
         if (statement.checked_statement_occurrence_id == UINT32_MAX ||
             statement.line != artifact.source_line)
@@ -17247,7 +17426,7 @@ static void bind_imported_return_value_artifact_handles(Program& provider) {
       if ((statement.kind == Stmt::Kind::Return ||
            statement.kind == Stmt::Kind::Reply) && !statement.a.empty())
         ++valued_returns;
-    if (seen.size() != valued_returns)
+    if (seen_ordinals.size() != valued_returns)
       throw CompileError(std::max(line, 0),
           "imported execution body has incomplete ReturnValue authority coverage",
           "SOURCE_FREE_EXECUTION_BODY_INVALID");
@@ -17954,11 +18133,14 @@ static ParsedModuleUnit load_module_interface(
   const bool v10_interface = starts_with(text, "moss-module-interface-v3\n");
   const size_t section2_marker = text.find("\nexecution_body_version ");
   ExecutionBodySectionView execution_bodies;
-  if (load_execution_bodies)
+  // Both consumers need the provider's stored arenas and SpecIds whenever
+  // Section 2 is present. Native linking cannot bypass identity restoration.
+  const bool restore_checked_execution = load_execution_bodies ||
+      section2_marker != string::npos;
+  if (restore_checked_execution)
     execution_bodies = parse_execution_body_section(text);
-  // Section 2 is deliberately outside semantic admission and interface
-  // fingerprints. Ordinary imports parse only Section 1; the interpreter
-  // explicitly requests and validates executable bodies.
+  // Section 2 stays outside Section 1 semantic/interface fingerprints; both
+  // consumers validate and restore it through the same import implementation.
   const string semantic_text = section2_marker == string::npos
       ? text : text.substr(0, section2_marker + 1);
   if (v10_interface != staged_abi_v10())
@@ -19312,7 +19494,7 @@ static ParsedModuleUnit load_module_interface(
                             handler.name + ":" + std::to_string(arm.line));
     }
   std::unique_ptr<moss::TypeContext::Scope> provider_type_scope;
-  if (load_execution_bodies) {
+  if (restore_checked_execution) {
     if (execution_bodies.present) {
       // ReturnValue artifact types may be nominal. Decode them against the
       // declarations already admitted from Section 1 so the artifact's
@@ -20270,7 +20452,8 @@ static void project_imported_return_value_artifact_facts(Program& program) {
       if (specialization.spec_id != InvalidSpecId)
         body_spec_ids.push_back(specialization.spec_id);
     project_callable(function.execution_return_value_artifact_records,
-        function.execution_body ? &*function.execution_body : nullptr,
+        function.execution_body ? &*function.execution_body
+            : function.imported_checked_body_projected ? &function.body : nullptr,
         function.execution_body_section_version,
         function.execution_return_value_body_hash, "fn:" + function.name,
         body_spec_ids, module_name_from_symbol(function.name), function.line);
@@ -23634,7 +23817,8 @@ static void write_execution_body_statement(std::ostream& out,
 
 static vector<string> execution_return_value_artifact_records(
     const ProjectManifest& manifest, const Program& program,
-    const vector<Stmt>& body, const string& callable_identity) {
+    const vector<Stmt>& body, const string& callable_identity,
+    bool deferred_template = false) {
   vector<string> records;
   const string body_hash = execution_body_statements_hash(body);
   for (size_t ordinal = 0; ordinal < body.size(); ++ordinal) {
@@ -23698,6 +23882,18 @@ static vector<string> execution_return_value_artifact_records(
       }
     }
 #endif
+    if (matching_facts.empty() && deferred_template) {
+      const bool has_requirement = std::any_of(
+          program.typed_semantics->required_return_value_occurrences.begin(),
+          program.typed_semantics->required_return_value_occurrences.end(),
+          [&](const TypedReturnValueRequirementV1& requirement) {
+        return requirement.statement_occurrence_id ==
+                   statement.checked_statement_occurrence_id &&
+               requirement.est_arena_index == handle->arena_index &&
+               requirement.expression_occurrence_id == handle->expr;
+      });
+      if (!has_requirement) continue;
+    }
     if (matching_facts.empty())
       throw CompileError(statement.line,
           "source-free body has missing or ambiguous checked ReturnValue fact",
@@ -23773,7 +23969,8 @@ static vector<string> execution_return_value_artifact_records(
     const ProjectManifest& manifest, const Program& program,
     const Function& function) {
   return execution_return_value_artifact_records(
-      manifest, program, function.body, "fn:" + function.name);
+      manifest, program, function.body, "fn:" + function.name,
+      uninstantiated_open_return_template(function));
 }
 
 static vector<string> execution_return_value_artifact_records(

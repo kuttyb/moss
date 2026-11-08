@@ -1472,17 +1472,40 @@ class Generator {
           "MOSS_INTERNAL_INVARIANT ReturnValue owner SpecId is missing or contradictory");
     const auto& owner_identity =
         checked_program.specialization_table[codegen_body_spec_id_];
-#ifdef MOSS_TEST_BUILD
-    if (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION"))
-      throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT ReturnValue SpecId was perturbed");
-#endif
+    const Function* spec_owner = unique_function_owner_for_spec_id(
+        checked_program, codegen_body_spec_id_);
+    const bool spec_owner_imported = spec_owner &&
+        (spec_owner->imported_checked_body_projected ||
+         (spec_owner->execution_body.has_value() &&
+          spec_owner->execution_body_section_version > 0 &&
+          !spec_owner->execution_return_value_body_hash.empty()));
+    const std::string spec_owner_module = spec_owner &&
+            !spec_owner->defining_module.empty() &&
+            checked_program.module_identities.count(spec_owner->defining_module)
+        ? checked_program.module_identities.at(spec_owner->defining_module)
+        : std::string();
+    const std::string spec_owner_table_module =
+        owner_identity.provider_module_identity.empty()
+            ? owner_identity.module_identity
+            : owner_identity.provider_module_identity;
+    const std::size_t spec_owner_module_matches = spec_owner_module.empty() ? 0 :
+        std::count_if(checked_program.module_identities.begin(),
+                      checked_program.module_identities.end(),
+                      [&](const auto& entry) {
+          return entry.second == spec_owner_module;
+        });
     auto fact_is_from_exact_imported_owner =
         [&](const TypedReturnValueFactV1& candidate) {
-      return candidate.specialization_id == codegen_body_spec_id_ &&
-          !owner_identity.provider_module_identity.empty() &&
+      return spec_owner_imported &&
+          owner_identity.semantic_callable_identity ==
+              spec_owner->semantic_callable_id &&
+          !spec_owner_module.empty() && spec_owner_module_matches == 1 &&
+          checked_program.external_modules.count(spec_owner->defining_module) != 0 &&
+          owner_identity.module_identity == spec_owner_module &&
+          spec_owner_table_module == spec_owner_module &&
+          candidate.specialization_id == codegen_body_spec_id_ &&
           candidate.provenance.defining_module_id ==
-              owner_identity.provider_module_identity &&
+              spec_owner_module &&
           !statement.source_file.empty() &&
           candidate.provenance.source_file == statement.source_file;
     };
@@ -1589,39 +1612,32 @@ class Generator {
             "perturbed source-free ReturnValue EST context unexpectedly passed");
       }
 
-      if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID")) {
-        auto corrupted = *requirement;
-        corrupted.provenance.defining_module_id += ":wrong-module";
-        (void)typed_semantics->find_return_value_fact(corrupted);
-        throw std::runtime_error(
-            "perturbed imported ReturnValue module authority unexpectedly passed");
+#endif
+      const TypedReturnValueFactV1* fact =
+          typed_semantics->find_return_value_fact(*requirement);
+#ifdef MOSS_TEST_BUILD
+      std::optional<TypedReturnValueFactV1> injected_source_free_fact;
+      if (fact && fact->source_free_checked_body_occurrence &&
+          (std::getenv("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION") ||
+           std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))) {
+        injected_source_free_fact = *fact;
+        if (std::getenv("MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"))
+          injected_source_free_fact->provenance.defining_module_id += ":wrong-module";
+        else
+          injected_source_free_fact->specialization_id = InvalidSpecId;
+        fact = &*injected_source_free_fact;
       }
 #endif
-      const auto* fact = typed_semantics->find_return_value_fact(*requirement);
       if (!fact || !fact->is_authoritative())
         throw std::invalid_argument("return-value fact is not authoritative");
       if (fact->source_free_checked_body_occurrence) {
-        const Function* owner = nullptr;
-        std::size_t owner_count = 0;
-        for (const auto& candidate : checked_program.functions) {
-          bool owns_spec = candidate.spec_id == codegen_body_spec_id_;
-          for (const auto& specialization : candidate.specializations)
-            owns_spec = owns_spec ||
-                specialization.spec_id == codegen_body_spec_id_;
-          if (owns_spec) {
-            owner = &candidate;
-            ++owner_count;
-          }
-        }
+        const Function* owner = spec_owner;
         const bool source_free_occurrence_matches = owner && handle
             ? typed_return_value_source_free_occurrence_matches(
-                  *fact, *owner, statement, *handle)
+                  *fact, checked_program, codegen_body_spec_id_, *owner,
+                  statement, *handle)
             : false;
-        if (owner_count != 1 || !owner ||
-            !owner->imported_checked_body_projected ||
-            owner_identity.provider_module_identity.empty() || !handle ||
-            fact->provenance.defining_module_id !=
-                owner_identity.provider_module_identity ||
+        if (!spec_owner_imported || !owner || !handle ||
             !source_free_occurrence_matches)
           throw std::invalid_argument(
               "source-free ReturnValue fact does not bind its exact checked body occurrence");
@@ -5157,8 +5173,14 @@ class Generator {
     const auto root = est::unparenthesized(*cursor->arena, cursor->expression);
     if (!std::holds_alternative<est::Pipeline>(cursor->arena->at(root)))
       return std::nullopt;
-    return est::functional_pipeline(*cursor->arena, root, expression,
-                                    resolve_stage);
+    auto parsed = est::functional_pipeline(*cursor->arena, root, expression,
+                                           resolve_stage);
+    if (parsed) {
+      parsed->arena_index = cursor->arena_index;
+      for (auto& stage : parsed->stages)
+        stage.arena_index = cursor->arena_index;
+    }
+    return parsed;
   }
 
   std::optional<string> generated_functional_pipeline_type(
@@ -5648,7 +5670,8 @@ class Generator {
     }
 
     std::ostringstream call;
-    call << viewed_function_name(name, arguments, domain, locals, types) << "(";
+    call << viewed_function_name(name, arguments, domain, locals, types,
+                                 occurrence) << "(";
     auto nested_occurrence = [&](size_t index) {
       uint32_t occurrence = 0;
       for (size_t prior = 0; prior < index; ++prior)
@@ -5667,9 +5690,12 @@ class Generator {
       const NativeEstCursor* parent_cursor = occurrence
           ? occurrence : active_native_est_cursor_;
       auto child_cursor = native_call_argument_cursor(parent_cursor, index);
-      if (parent_cursor && !child_cursor)
+      if (parent_cursor && !child_cursor) {
         throw std::runtime_error(
             "MOSS_INTERNAL_INVARIANT Native call argument lacks exact EST child");
+      }
+      NativeEstCursorScope child_cursor_scope(
+          active_native_est_cursor_, child_cursor ? &*child_cursor : nullptr);
       NestedArgumentScope nested_scope(codegen_nested_argument_occurrence_,
                                        nested_occurrence(index));
       bool compile_time_callable = is_compile_time_callable(
@@ -5917,11 +5943,109 @@ class Generator {
             node.est_argument_expression_ids.size())
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT functional callback Call edge contradicts checked stage identity");
-    if (edge.target_kind != SemanticCallTargetKind::Static)
+    SpecId callback_spec_id = InvalidSpecId;
+    if (edge.target_kind == SemanticCallTargetKind::Static) {
+      callback_spec_id = edge.callee_spec_id;
+      if (callback_spec_id == InvalidSpecId ||
+          edge.argument_callable_spec_ids[node.callable_argument_index] !=
+              callback_spec_id)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT static functional callback row has contradictory target SpecId");
+    } else if (edge.target_kind == SemanticCallTargetKind::DynamicCallback) {
+      if (edge.callee_spec_id != InvalidSpecId ||
+          edge.argument_callable_spec_ids[node.callable_argument_index] !=
+              InvalidSpecId)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic functional callback row carries a static target");
+      const auto& checked_program = semantic_program_ ? *semantic_program_ : p_;
+      const Function* owner = unique_function_owner_for_spec_id(
+          checked_program, codegen_body_spec_id_);
+      const FunctionSpecialization* owner_specialization = nullptr;
+      if (owner)
+        for (const auto& candidate : owner->specializations)
+          if (candidate.spec_id == codegen_body_spec_id_) {
+            if (owner_specialization)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT duplicate dynamic callback owner specialization");
+            owner_specialization = &candidate;
+          }
+      if (!owner || !owner_specialization ||
+          owner_specialization->parameter_types.size() != owner->params.size() ||
+          node.callable_argument_index >= node.est_argument_expression_ids.size())
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback has no exact owning function specialization");
+      const auto callback_expr = node.est_argument_expression_ids[
+          node.callable_argument_index];
+      const auto* stage_arena = stage.arena_index <
+              checked_program.expression_arenas.size()
+          ? checked_program.expression_arenas[stage.arena_index].get()
+          : nullptr;
+      const auto* callback_identifier = stage_arena &&
+              callback_expr < stage_arena->size()
+          ? std::get_if<est::Identifier>(&stage_arena->at(callback_expr))
+          : nullptr;
+      if (!callback_identifier)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback argument is not its checked Identifier occurrence");
+      std::size_t parameter_index = owner->params.size();
+      std::size_t parameter_matches = 0;
+      for (std::size_t index = 0; index < owner->params.size(); ++index)
+        if (owner->params[index].name == callback_identifier->name) {
+          parameter_index = index;
+          ++parameter_matches;
+        }
+      if (parameter_matches != 1)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback Identifier does not bind one function parameter");
+      const string expected_callable = canonical_type_name(
+          owner_specialization->parameter_types[parameter_index]);
+      if (!starts_with(expected_callable, "callable-v1:"))
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback parameter lacks checked callable identity");
+      const ProgramSpecializationIdentity* owner_row =
+          codegen_body_spec_id_ < checked_program.specialization_table.size()
+              ? &checked_program.specialization_table[codegen_body_spec_id_]
+              : nullptr;
+      if (!owner_row || owner_row->id != codegen_body_spec_id_)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback owner SpecId row is invalid");
+      for (const auto& incoming : checked_program.semantic_call_edges) {
+        if (incoming.target_kind != SemanticCallTargetKind::Static ||
+            incoming.callee_spec_id != codegen_body_spec_id_)
+          continue;
+        if (incoming.caller_spec_id == InvalidSpecId ||
+            incoming.call_est_arena_index == UINT32_MAX ||
+            incoming.call_expression_occurrence_id == UINT32_MAX ||
+            incoming.target_callable_identity != owner_row->semantic_callable_identity ||
+            incoming.argument_callable_spec_ids.size() != owner->params.size() ||
+            parameter_index >= incoming.argument_callable_spec_ids.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback owner call row is incomplete or contradictory");
+        const SpecId incoming_callback =
+            incoming.argument_callable_spec_ids[parameter_index];
+        if (incoming_callback == InvalidSpecId ||
+            incoming_callback >= checked_program.specialization_table.size())
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback owner call lacks callable argument SpecId");
+        const auto& callback_row =
+            checked_program.specialization_table[incoming_callback];
+        if (callback_row.id != incoming_callback ||
+            callback_row.semantic_callable_identity != expected_callable)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback argument SpecId contradicts its checked specialization parameter");
+        if (callback_spec_id != InvalidSpecId &&
+            callback_spec_id != incoming_callback)
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT dynamic callback owner call rows disagree on callback SpecId");
+        callback_spec_id = incoming_callback;
+      }
+      if (callback_spec_id == InvalidSpecId)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT dynamic callback has no exact incoming call argument SpecId");
+    } else {
       throw std::runtime_error(
-          "MOSS_INTERNAL_INVARIANT Native functional callback lacks a static checked target");
-    const SpecId callback_spec_id =
-        edge.argument_callable_spec_ids[node.callable_argument_index];
+          "MOSS_INTERNAL_INVARIANT functional callback Call edge target kind is unsupported");
+    }
     if (callback_spec_id == InvalidSpecId ||
         callback_spec_id >= checked_program.specialization_table.size() ||
         checked_program.specialization_table[callback_spec_id].id !=
@@ -7251,9 +7375,14 @@ class Generator {
             if (field != object->second->fields.end()) {
               string p_b, p_i;
               const bool indexed_base = tree_parse_index(projection_base, p_b, p_i);
+              const auto projection_base_cursor =
+                  native_member_receiver_cursor(active_native_est_cursor_);
               string base_rendered = indexed_base
                   ? read_call_place(projection_base, d, locals, types)
-                  : expr(projection_base, d, locals, types);
+                  : expr(projection_base, d, locals, types, 0, nullptr,
+                         std::nullopt,
+                         projection_base_cursor ? &*projection_base_cursor
+                                                : nullptr);
               string projected = "(" + base_rendered + ")." + rust_identifier(projection_field);
               if (indexed_base && !copy_type(field->type)) {
                 string indexed_collection, indexed_key;
@@ -8162,7 +8291,8 @@ class Generator {
           }
         }
         std::ostringstream r; if (d && objects_.count(d->name) && !known_function) r << "self.";
-        r << viewed_function_name(head, call_args, d, locals, types) << "(";
+        r << viewed_function_name(head, call_args, d, locals, types,
+                                  active_native_est_cursor_) << "(";
         size_t emitted_arguments = 0;
         for (size_t i = 0; i < call_args.size(); ++i) {
           bool compile_time_callable = known_function &&
@@ -9405,6 +9535,34 @@ class Generator {
     }
 
     return found_fact;
+  }
+
+  void require_field_ownership_authority_when_nonprimitive(
+      const Stmt& statement,
+      const TypedLocalOwnershipFactV1* ownership_fact) const {
+    if (ownership_fact) return;
+
+    const NativeEstCursor cursor = checked_statement_cursor(
+        statement, est::ExprSlot::RhsValue);
+    est::ExprId expression = cursor.expression;
+    while (expression < cursor.arena->size()) {
+      const auto* parenthesized =
+          std::get_if<est::Parenthesized>(&cursor.arena->at(expression));
+      if (!parenthesized) break;
+      expression = parenthesized->inner;
+    }
+    if (expression >= cursor.arena->size() ||
+        !std::holds_alternative<est::Member>(cursor.arena->at(expression)))
+      return;
+
+    const auto* facts = cursor.arena->facts(cursor.expression,
+                                             codegen_body_spec_id_);
+    if (!facts || !facts->type)
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT field binding lacks checked type authority");
+    if (!is_primitive_copy_type(facts->type))
+      throw std::runtime_error(
+          "MOSS_INTERNAL_INVARIANT nonprimitive field binding lacks checker ownership authority");
   }
 
   const TypedTryContinuationFactV1& resolve_try_continuation_fact(
@@ -11743,6 +11901,7 @@ class Generator {
               annotation = "f64";
             const auto* take_fact = resolve_take_fact(s, "");
             const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, "");
+            require_field_ownership_authority_when_nonprimitive(s, ownership_fact);
             if (take_fact) {
               string rhs_val = emit_take_expression(*take_fact, s, d, locals, &types);
               o << indent(level) << "let mut " << rust_identifier(s.a) << " = " << rhs_val << ";\n";
@@ -11932,6 +12091,8 @@ class Generator {
                   ? nullptr : resolve_take_fact(s, "");
               const auto* ownership_fact = (take_fact || transfer_fact)
                   ? nullptr : resolve_local_ownership_fact(s, "");
+              if (!transfer_fact)
+                require_field_ownership_authority_when_nonprimitive(s, ownership_fact);
               string assigned;
               vector<string> concat_operands;
               std::function<void(string)> collect_concat = [&](string source) {
@@ -12268,7 +12429,9 @@ class Generator {
           }
           string method_receiver_expression = (implicit_method ? "self." : "") +
             (s.b.empty() && known_function
-                    ? viewed_function_name(function_target->name, s.args, d, locals, &types)
+                    ? viewed_function_name(function_target->name, s.args, d,
+                                           locals, &types,
+                                           active_native_est_cursor_)
                     : !s.b.empty() ? method_receiver_place(s.a, s.b, s.args, d, locals, &types)
                     : expr(s.a, d, locals, &types));
           std::ostringstream bridge_before, bridge_after, call_output;
@@ -12283,7 +12446,17 @@ class Generator {
           }
           call_output << "(";
           size_t emitted_arguments = 0;
+          const NativeEstCursor* direct_call_cursor =
+              active_native_est_cursor_;
           for (size_t k = 0; k < s.args.size(); ++k) {
+            auto child_cursor = native_call_argument_cursor(
+                direct_call_cursor, k);
+            if (direct_call_cursor && !child_cursor)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT Native direct-call argument lacks exact EST child");
+            NativeEstCursorScope argument_cursor_scope(
+                active_native_est_cursor_,
+                child_cursor ? &*child_cursor : nullptr);
             bool compile_time_callable = known_function &&
                 is_compile_time_callable(generated_expr_type(s.args[k], &types).value_or(""));
             if (compile_time_callable) continue;
@@ -12298,7 +12471,7 @@ class Generator {
                                               s, "", k),
                                           call_specialization(*function_target,
                                                               s.args, &types,
-                                                              active_native_est_cursor_));
+                                                              direct_call_cursor));
             } else if (!s.b.empty() || implicit_method) {
               if (call_method) {
                 string rendered = method_call_argument(
@@ -12427,6 +12600,7 @@ class Generator {
             }
             const auto* take_fact = resolve_take_fact(s, "");
             const auto* ownership_fact = take_fact ? nullptr : resolve_local_ownership_fact(s, "");
+            require_field_ownership_authority_when_nonprimitive(s, ownership_fact);
             o << indent(level);
             if (!joined_assignment) {
               bool mutable_decl = (s.kind == Stmt::Kind::Var) || (take_fact != nullptr);

@@ -25,6 +25,8 @@ def main() -> int:
     compiler = str(Path(sys.argv[1]).resolve())
     margo = str(ROOT / "margo")
     base_env = os.environ.copy()
+    base_env.pop("MOSS_MODULE_PATH", None)
+    base_env.pop("MOSS_EST", None)
     shutil.rmtree(SCRATCH, ignore_errors=True)
     provider_project = SCRATCH / "provider"
     provider_source = provider_project / "src"
@@ -150,15 +152,22 @@ fn main():
                              f"{source_free_fast.returncode}/"
                              f"{source_free_fast.stdout!r}/"
                              f"{source_free_fast.stderr!r}")
-    for hook in ("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION",
-                 "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"):
-        shutil.rmtree(source_free_project / "build", ignore_errors=True)
-        corrupted = run([margo, "debug"],
-                        {**source_free_env, hook: "1"}, source_free_project)
-        if corrupted.returncode == 0:
+    constructor_target = (
+        "nominal-template-v1:module-v1:phase28_method_parameter_return@0.1.0::provider:type:Payload")
+    constructor_diagnostic = (
+        "MOSS_INTERNAL_INVARIANT checked constructor declaration has no unique ObjectType")
+    for mutation in ("drop", "duplicate", "wrong-module"):
+        corrupted = run(
+            [margo, "debug"],
+            {**source_free_env,
+             "MOSS_TEST_CONSTRUCTOR_OBJECT_MUTATION": mutation,
+             "MOSS_TEST_CONSTRUCTOR_TARGET_ID": constructor_target},
+            source_free_project)
+        combined = corrupted.stdout + corrupted.stderr
+        if corrupted.returncode == 0 or constructor_diagnostic not in combined:
             raise AssertionError(
-                f"source-free ReturnValue consumer accepted contradictory {hook}")
-
+                f"source-free constructor {mutation} did not reach the production "
+                f"ObjectType validator: exit={corrupted.returncode}, {combined!r}")
     for hook in ("MOSS_TEST_DROP_RETURN_VALUE_FACT",
                  "MOSS_TEST_DUPLICATE_RETURN_VALUE_FACT",
                  "MOSS_TEST_PERTURB_RETURN_VALUE_FACT"):
@@ -181,7 +190,203 @@ fn main():
             raise AssertionError(f"native ReturnValue consumer accepted {hook}: "
                                  f"{result!r}\n{failed.stderr}")
 
-    print("Phase 28 method parameter ReturnValue authority: PASS")
+    function_provider = SCRATCH / "function_provider"
+    function_src = function_provider / "src"
+    function_src.mkdir(parents=True, exist_ok=True)
+    (function_provider / "moss.toml").write_text(
+        '[project]\nname = "phase28_function_return_provider"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (function_src / "provider.moss").write_text(
+        "module provider\nexport fn identity(value):\n  return value\n",
+        encoding="utf-8")
+    function_provider_build = run(
+        [margo, "build", "--json"],
+        {**base_env, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"},
+        function_provider)
+    function_provider_response = json.loads(function_provider_build.stdout)
+    if (function_provider_build.returncode or
+            not function_provider_response.get("ok")):
+        raise AssertionError("source-free generic function provider failed: "
+                             f"{function_provider_response!r}\n"
+                             f"{function_provider_build.stderr}")
+    function_consumer = SCRATCH / "function_consumer"
+    function_consumer_src = function_consumer / "src"
+    function_consumer_src.mkdir(parents=True, exist_ok=True)
+    (function_consumer / "moss.toml").write_text(
+        '[project]\nname = "phase28_function_return_consumer"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (function_consumer_src / "main.moss").write_text(
+        "module app\nimport provider\nfn main():\n"
+        "  echo provider.identity(9)\n", encoding="utf-8")
+    function_env = {
+        **base_env,
+        "MOSS": compiler,
+        "MOSS_STAGED_ABI": "v10",
+        "MOSS_MODULE_PATH": str(function_provider / "build" / "debug"),
+    }
+    function_build = run([margo, "build", "--json"], function_env,
+                         function_consumer)
+    function_build_response = json.loads(function_build.stdout)
+    if function_build.returncode or not function_build_response.get("ok"):
+        raise AssertionError("source-free generic function consumer build failed: "
+                             f"{function_build_response!r}\n"
+                             f"{function_build.stderr}")
+    function_executable = Path(
+        function_build_response["artifacts"]["artifacts"]["executable"])
+    function_native = run([str(function_executable)], function_env,
+                          function_consumer)
+    function_fast = run([margo, "debug"], function_env, function_consumer)
+    if (function_native.returncode or function_native.stdout != "9\n" or
+            function_fast.returncode or function_fast.stdout != "9\n"):
+        raise AssertionError("source-free generic function output mismatch: "
+                             f"Native={function_native.returncode}/"
+                             f"{function_native.stdout!r}/"
+                             f"{function_native.stderr!r}; Fast Debug="
+                             f"{function_fast.returncode}/"
+                             f"{function_fast.stdout!r}/"
+                             f"{function_fast.stderr!r}")
+    owner_mutation_diagnostic = (
+        "MOSS_INTERNAL_INVARIANT source-free ReturnValue fact does not bind its "
+        "exact checked body occurrence")
+    for hook in ("MOSS_TEST_CONSUMER_WRONG_RETURN_VALUE_SPECIALIZATION",
+                 "MOSS_TEST_CONSUMER_PERTURB_IMPORTED_RETURN_MODULE_ID"):
+        shutil.rmtree(function_consumer / "build", ignore_errors=True)
+        native_corruption = run([margo, "build", "--json"],
+                                {**function_env, hook: "1"}, function_consumer)
+        if (native_corruption.returncode == 0 or
+                owner_mutation_diagnostic not in
+                native_corruption.stdout + native_corruption.stderr):
+            raise AssertionError(
+                f"Native {hook} did not reach the production owner validator: "
+                f"{native_corruption.returncode}, {native_corruption.stderr!r}")
+        shutil.rmtree(function_consumer / "build", ignore_errors=True)
+        fast_corruption = run([margo, "debug"],
+                              {**function_env, hook: "1"}, function_consumer)
+        if (fast_corruption.returncode == 0 or
+                owner_mutation_diagnostic not in
+                fast_corruption.stdout + fast_corruption.stderr):
+            raise AssertionError(
+                f"Fast Debug {hook} did not reach the production owner validator: "
+                f"{fast_corruption.returncode}, {fast_corruption.stderr!r}")
+
+    paired_provider = SCRATCH / "paired_function_provider"
+    paired_provider_src = paired_provider / "src"
+    paired_provider_src.mkdir(parents=True, exist_ok=True)
+    (paired_provider / "moss.toml").write_text(
+        '[project]\nname = "phase28_paired_function_provider"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (paired_provider_src / "provider.moss").write_text(
+        "module provider\n"
+        "export type Payload:\n  value: Int\n"
+        "export fn identity(payload: Payload) -> Payload:\n"
+        "  return payload\n"
+        "export fn normalize(value):\n  return value\n",
+        encoding="utf-8")
+    paired_consumer = SCRATCH / "paired_function_consumer"
+    paired_consumer_src = paired_consumer / "src"
+    paired_consumer_src.mkdir(parents=True, exist_ok=True)
+    (paired_consumer / "moss.toml").write_text(
+        '[project]\nname = "phase28_paired_function_consumer"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (paired_consumer_src / "main.moss").write_text(
+        "module app\nimport provider\n"
+        "fn pair(left, right):\n  echo left\n  echo right\n"
+        "fn main():\n"
+        "  payload = provider.Payload(value: 9)\n"
+        "  echo provider.identity(payload).value\n"
+        "  pair(provider.normalize(10), provider.normalize(3.5))\n",
+        encoding="utf-8")
+    paired_provider_build = run(
+        [margo, "build", "--json"],
+        {**base_env, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"},
+        paired_provider)
+    paired_provider_response = json.loads(paired_provider_build.stdout)
+    if (paired_provider_build.returncode or
+            not paired_provider_response.get("ok")):
+        raise AssertionError("source-free Payload/generic provider failed: "
+                             f"{paired_provider_response!r}\n"
+                             f"{paired_provider_build.stderr}")
+    paired_env = {
+        **base_env,
+        "MOSS": compiler,
+        "MOSS_STAGED_ABI": "v10",
+        "MOSS_MODULE_PATH": str(paired_provider / "build" / "debug"),
+    }
+    paired_build = run([margo, "build", "--json"], paired_env,
+                       paired_consumer)
+    paired_response = json.loads(paired_build.stdout)
+    if paired_build.returncode or not paired_response.get("ok"):
+        raise AssertionError("source-free Payload/generic consumer build failed: "
+                             f"{paired_response!r}\n{paired_build.stderr}")
+    paired_executable = Path(
+        paired_response["artifacts"]["artifacts"]["executable"])
+    paired_native = run([str(paired_executable)], paired_env, paired_consumer)
+    paired_fast = run([margo, "debug"], paired_env, paired_consumer)
+    if (paired_native.returncode or paired_native.stdout != "9\n10\n3.5\n" or
+            paired_fast.returncode or paired_fast.stdout != "9\n10\n3.5\n"):
+        raise AssertionError("source-free Payload/generic output mismatch: "
+                             f"Native={paired_native.returncode}/"
+                             f"{paired_native.stdout!r}/"
+                             f"{paired_native.stderr!r}; Fast Debug="
+                             f"{paired_fast.returncode}/"
+                             f"{paired_fast.stdout!r}/"
+                             f"{paired_fast.stderr!r}")
+
+    id_only_provider = SCRATCH / "id_only_provider"
+    id_only_source_dir = id_only_provider / "src"
+    id_only_source_dir.mkdir(parents=True, exist_ok=True)
+    (id_only_provider / "moss.toml").write_text(
+        '[project]\nname = "phase28_id_only_provider"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    (id_only_source_dir / "provider.moss").write_text(
+        "module provider\n"
+        "export fn normalize(value):\n  return value\n"
+        "export fn exercise():\n  echo normalize(1)\n",
+        encoding="utf-8")
+    id_only_provider_build = run(
+        [margo, "build", "--json"],
+        {**base_env, "MOSS": compiler, "MOSS_STAGED_ABI": "v10"},
+        id_only_provider)
+    id_only_response = json.loads(id_only_provider_build.stdout)
+    if id_only_provider_build.returncode or not id_only_response.get("ok"):
+        raise AssertionError("ID-only specialization provider failed to build: "
+                             f"{id_only_response!r}\n"
+                             f"{id_only_provider_build.stderr}")
+
+    id_only_consumer = SCRATCH / "id_only_consumer"
+    id_only_consumer_src = id_only_consumer / "src"
+    id_only_consumer_src.mkdir(parents=True, exist_ok=True)
+    (id_only_consumer / "moss.toml").write_text(
+        '[project]\nname = "phase28_id_only_consumer"\n'
+        'version = "0.1.0"\n', encoding="utf-8")
+    id_only_main = id_only_consumer_src / "main.moss"
+    id_only_main.write_text(
+        "module app\nimport provider\nfn main():\n  echo 0\n",
+        encoding="utf-8")
+    id_only_env = {
+        **base_env,
+        "MOSS_STAGED_ABI": "v10",
+        "MOSS_MODULE_PATH": str(id_only_provider / "build" / "debug"),
+    }
+    id_only_check = run(
+        [compiler, "check", str(id_only_main), "--json"],
+        id_only_env, id_only_consumer)
+    try:
+        id_only_check_response = json.loads(id_only_check.stdout)
+    except json.JSONDecodeError as error:
+        raise AssertionError(
+            "ID-only imported specialization did not fail with structured "
+            f"checker output: exit={id_only_check.returncode}, "
+            f"stdout={id_only_check.stdout!r}, stderr={id_only_check.stderr!r}") from error
+    id_only_error = id_only_check_response.get("error", {})
+    if (id_only_check.returncode == 0 or id_only_error.get("code") !=
+            "MOSS_INTERNAL_INVARIANT" or
+            id_only_error.get("message") !=
+            "checked function specialization has missing or contradictory parameter metadata"):
+        raise AssertionError("ID-only imported specialization was not rejected "
+                             f"at the metadata boundary: {id_only_check_response!r}")
+
+    print("Phase 28 method/function ReturnValue, generic pair, and ID-only metadata guard: PASS")
     return 0
 
 

@@ -3325,6 +3325,52 @@ class Checker {
     return id;
   }
 
+  bool is_imported_declaration_module(const string& defining_module) const {
+    return !defining_module.empty() &&
+        p_.external_modules.count(defining_module) != 0;
+  }
+
+  const ProgramSpecializationIdentity& require_declared_specification(
+      SpecId id, const string& module_identity,
+      const string& semantic_callable_identity, bool imported,
+      int line, const string& description) {
+    if (id == InvalidSpecId || id >= p_.specialization_table.size())
+      err(line, description + " has a missing or unknown checker SpecId",
+          "MOSS_INTERNAL_INVARIANT");
+    const auto& row = p_.specialization_table[id];
+    if (row.id != id || row.module_identity != module_identity ||
+        row.semantic_callable_identity != semantic_callable_identity)
+      err(line, description + " SpecId contradicts its checked module/callable row",
+          "MOSS_INTERNAL_INVARIANT");
+    if (imported) {
+      if (row.provider_module_identity != module_identity ||
+          row.provider_spec_id == InvalidSpecId)
+        err(line, description + " imported SpecId lost its qualified provider origin",
+            "MOSS_INTERNAL_INVARIANT");
+    } else if (!row.provider_module_identity.empty() ||
+               row.provider_spec_id != InvalidSpecId) {
+      err(line, description + " source-owned SpecId has an imported provider origin",
+          "MOSS_INTERNAL_INVARIANT");
+    }
+    return row;
+  }
+
+  void validate_existing_specialization_table() {
+    std::set<std::pair<string, SpecId>> provider_ids;
+    for (std::size_t index = 0; index < p_.specialization_table.size(); ++index) {
+      const auto& row = p_.specialization_table[index];
+      if (row.id != index || row.id == InvalidSpecId ||
+          row.semantic_callable_identity.empty() || row.module_identity.empty() ||
+          (row.provider_module_identity.empty() !=
+           (row.provider_spec_id == InvalidSpecId)) ||
+          (!row.provider_module_identity.empty() &&
+           !provider_ids.emplace(row.provider_module_identity,
+                                 row.provider_spec_id).second))
+        err(0, "existing checker SpecId table is malformed or contradictory",
+            "MOSS_INTERNAL_INVARIANT");
+    }
+  }
+
   const FunctionSpecialization* checked_static_specialization_for_occurrence(
       const Function& target, std::uint32_t arena, est::ExprId expression,
       int line) const {
@@ -3354,28 +3400,61 @@ class Checker {
   }
 
   void assign_declared_spec_ids() {
-    p_.specialization_table.clear();
+    // Imported Section 2 rows and their EST fact keys were restored and
+    // remapped once by the project loader. Keep those destination-local IDs
+    // and provider origins intact; this pass only appends source-owned rows.
+    validate_existing_specialization_table();
     for (auto& function : p_.functions) {
-      const auto callable = function.semantic_callable_id.empty()
-          ? function_semantic_identity(function)
-          : function.semantic_callable_id;
-      function.spec_id = register_program_specification(
-          callable,
-          "fn:" + function.name, std::nullopt,
-          program_module_identity(p_, function.defining_module));
+      const bool imported =
+          is_imported_declaration_module(function.defining_module);
+      if (imported && function.semantic_callable_id.empty())
+        err(function.line,
+            "imported function has no canonical callable identity for SpecId validation",
+            "MOSS_INTERNAL_INVARIANT");
+      const auto callable = imported ? function.semantic_callable_id
+          : function.semantic_callable_id.empty()
+              ? function_semantic_identity(function)
+              : function.semantic_callable_id;
+      function.semantic_callable_id = callable;
+      const auto module_identity =
+          program_module_identity(p_, function.defining_module);
+      if (imported) {
+        require_declared_specification(function.spec_id, module_identity,
+            callable, true, function.line, "imported function declaration");
+      } else if (function.spec_id == InvalidSpecId) {
+        function.spec_id = register_program_specification(callable,
+            "fn:" + function.name, std::nullopt, module_identity);
+      } else {
+        require_declared_specification(function.spec_id, module_identity,
+            callable, false, function.line, "function declaration");
+      }
+      std::set<SpecId> function_spec_ids{function.spec_id};
       for (auto& specialization : function.specializations) {
-        if (specialization.stable_type_key.empty()) continue;
-        specialization.spec_id = register_program_specification(
-            callable, specialization.stable_type_key,
-            specialization.semantic_key,
-            program_module_identity(p_, function.defining_module),
-            compiled_interface_file(function.source_file)
-                ? program_module_identity(p_, function.defining_module)
-                : string(),
-            specialization.spec_id);
+        if (!imported && specialization.stable_type_key.empty()) continue;
+        if (imported) {
+          require_declared_specification(specialization.spec_id,
+              module_identity, callable, true, function.line,
+              "imported function specialization");
+        } else if (specialization.spec_id == InvalidSpecId) {
+          specialization.spec_id = register_program_specification(
+              callable, specialization.stable_type_key,
+              specialization.semantic_key, module_identity);
+        } else {
+          require_declared_specification(specialization.spec_id,
+              module_identity, callable, false, function.line,
+              "function specialization");
+        }
+        if (!function_spec_ids.insert(specialization.spec_id).second)
+          err(function.line,
+              "function declaration and specialization share a checker SpecId",
+              "MOSS_INTERNAL_INVARIANT");
       }
     }
     for (auto& object : p_.objects) {
+      const bool imported =
+          is_imported_declaration_module(object.defining_module);
+      const auto module_identity =
+          program_module_identity(p_, object.defining_module);
       const string owner = object.declaration_name.empty()
           ? object.name : object.declaration_name;
       for (auto& method : object.methods) {
@@ -3386,13 +3465,37 @@ class Checker {
           signature += ":" + std::to_string(type.size()) + ":" + type;
         }
         signature += ":source-line:" + std::to_string(method.line);
+        if (imported) {
+          if (method.semantic_callable_id.empty())
+            err(method.line,
+                "imported method has no canonical callable identity for SpecId validation",
+                "MOSS_INTERNAL_INVARIANT");
+          require_declared_specification(method.spec_id, module_identity,
+              method.semantic_callable_id + ":declaration", true,
+              method.line, "imported method declaration");
+          std::set<SpecId> method_spec_ids{method.spec_id};
+          for (const auto& specialization : method.specializations) {
+            require_declared_specification(specialization.spec_id,
+                module_identity, method.semantic_callable_id, true,
+                method.line, "imported method body specialization");
+            if (!method_spec_ids.insert(specialization.spec_id).second)
+              err(method.line,
+                  "method declaration and body specialization share a checker SpecId",
+                  "MOSS_INTERNAL_INVARIANT");
+          }
+          continue;
+        }
         const string declaration_signature = signature;
         method.semantic_callable_id = "method-v1:" + declaration_signature;
-        method.spec_id = register_program_specification(
-            method.semantic_callable_id + ":declaration",
-            "method:" + object.name + "." + method.name,
-            std::nullopt,
-            program_module_identity(p_, object.defining_module));
+        if (method.spec_id == InvalidSpecId)
+          method.spec_id = register_program_specification(
+              method.semantic_callable_id + ":declaration",
+              "method:" + object.name + "." + method.name,
+              std::nullopt, module_identity);
+        else
+          require_declared_specification(method.spec_id, module_identity,
+              method.semantic_callable_id + ":declaration", false,
+              method.line, "method declaration");
         // A declaration identity is not a checked body identity. Methods are
         // currently checked once per closed source signature, so create one
         // explicit body specialization row for that checked body. Keeping the
@@ -3410,14 +3513,16 @@ class Checker {
         const SpecId body_spec_id = register_program_specification(
             method.semantic_callable_id,
             "method-body:" + object.name + "." + method.name,
-            std::nullopt,
-            program_module_identity(p_, object.defining_module));
-        method.specializations.clear();
-        method.specializations.push_back(
-            {body_key, std::move(parameter_types), body_spec_id});
+            std::nullopt, module_identity);
+        method.specializations = {{body_key, std::move(parameter_types),
+                                   body_spec_id}};
       }
     }
     for (auto& domain : p_.domains) {
+      const bool imported =
+          is_imported_declaration_module(domain.defining_module);
+      const auto module_identity =
+          program_module_identity(p_, domain.defining_module);
       const string owner = program_module_identity(p_, domain.defining_module) + ":" +
           (domain.declaration_name.empty() ? domain.name
                                             : domain.declaration_name);
@@ -3429,26 +3534,56 @@ class Checker {
           signature += ":" + std::to_string(type.size()) + ":" + type;
         }
         signature += ":source-line:" + std::to_string(handler.line);
-        handler.spec_id = register_program_specification(
-            std::move(signature), "handler:" + domain.name + "." + handler.name,
-            std::nullopt,
-            program_module_identity(p_, domain.defining_module));
+        if (imported) {
+          require_declared_specification(handler.spec_id, module_identity,
+              signature, true, handler.line, "imported handler declaration");
+        } else if (handler.spec_id == InvalidSpecId) {
+          handler.spec_id = register_program_specification(
+              std::move(signature), "handler:" + domain.name + "." + handler.name,
+              std::nullopt, module_identity);
+        } else {
+          require_declared_specification(handler.spec_id, module_identity,
+              signature, false, handler.line, "handler declaration");
+        }
       }
     }
-    if (p_.main)
-      p_.main->spec_id = register_program_specification("program:main", "main",
-          std::nullopt, program_module_identity(p_, p_.main_module));
+    if (p_.main) {
+      const auto module_identity =
+          program_module_identity(p_, p_.main_module);
+      if (p_.main->spec_id == InvalidSpecId)
+        p_.main->spec_id = register_program_specification("program:main",
+            "main", std::nullopt, module_identity);
+      else
+        require_declared_specification(p_.main->spec_id, module_identity,
+            "program:main", is_imported_declaration_module(p_.main_module),
+            p_.main->line, "main body");
+    }
     for (auto& test : p_.tests)
-      test.spec_id = register_program_specification(
-          "test:" + test.name + "@" + test.source_file + ":" +
-              std::to_string(test.line), "test:" + test.name, std::nullopt,
-          program_module_identity(p_, p_.main_module));
+      if (test.spec_id == InvalidSpecId)
+        test.spec_id = register_program_specification(
+            "test:" + test.name + "@" + test.source_file + ":" +
+                std::to_string(test.line), "test:" + test.name, std::nullopt,
+            program_module_identity(p_, p_.main_module));
+      else
+        require_declared_specification(test.spec_id,
+            program_module_identity(p_, p_.main_module),
+            "test:" + test.name + "@" + test.source_file + ":" +
+                std::to_string(test.line),
+            is_imported_declaration_module(p_.main_module), test.line,
+            "test body");
     for (auto& benchmark : p_.benchmarks)
-      benchmark.spec_id = register_program_specification(
-          "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
-              std::to_string(benchmark.line), "bench:" + benchmark.name,
-          std::nullopt,
-          program_module_identity(p_, p_.main_module));
+      if (benchmark.spec_id == InvalidSpecId)
+        benchmark.spec_id = register_program_specification(
+            "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
+                std::to_string(benchmark.line), "bench:" + benchmark.name,
+            std::nullopt, program_module_identity(p_, p_.main_module));
+      else
+        require_declared_specification(benchmark.spec_id,
+            program_module_identity(p_, p_.main_module),
+            "bench:" + benchmark.name + "@" + benchmark.source_file + ":" +
+                std::to_string(benchmark.line),
+            is_imported_declaration_module(p_.main_module), benchmark.line,
+            "benchmark body");
   }
 
   void assign_domain_instance_handler_spec_ids() {
@@ -3460,15 +3595,58 @@ class Checker {
           break;
         }
       if (!domain) continue;
-      instance.handler_spec_ids.clear();
-      instance.handler_spec_ids.reserve(domain->handlers.size());
-      for (const auto& handler : domain->handlers) {
+      if (instance.handler_spec_ids.size() > domain->handlers.size())
+        err(domain->line,
+            "domain instance has more handler SpecIds than its checked declaration",
+            "MOSS_INTERNAL_INVARIANT");
+      instance.handler_spec_ids.resize(domain->handlers.size(), InvalidSpecId);
+      const auto module_identity =
+          program_module_identity(p_, domain->defining_module);
+      for (std::size_t index = 0; index < domain->handlers.size(); ++index) {
+        const auto& handler = domain->handlers[index];
         const string identity = "domain-instance-handler:" +
             std::to_string(handler.spec_id) + ":" + instance.identity();
-        instance.handler_spec_ids.push_back(register_program_specification(
-            identity, "handler:" + instance.source_domain + "." +
-                handler.name + "@" + instance.instance, std::nullopt,
-            program_module_identity(p_, domain->defining_module)));
+        auto& instance_spec_id = instance.handler_spec_ids[index];
+        if (instance_spec_id == InvalidSpecId) {
+          instance_spec_id = register_program_specification(identity,
+              "handler:" + instance.source_domain + "." + handler.name +
+                  "@" + instance.instance,
+              std::nullopt, module_identity);
+          continue;
+        }
+        if (instance_spec_id >= p_.specialization_table.size() ||
+            p_.specialization_table[instance_spec_id].id != instance_spec_id ||
+            p_.specialization_table[instance_spec_id].module_identity !=
+                module_identity)
+          err(handler.line,
+              "domain instance handler SpecId has a missing or contradictory owner row",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto& instance_row =
+            p_.specialization_table[instance_spec_id];
+        SpecId source_handler_spec_id = handler.spec_id;
+        if (!instance_row.provider_module_identity.empty()) {
+          if (instance_row.provider_module_identity != module_identity ||
+              instance_row.provider_spec_id == InvalidSpecId)
+            err(handler.line,
+                "imported domain instance handler lost its qualified provider origin",
+                "MOSS_INTERNAL_INVARIANT");
+          if (handler.spec_id < p_.specialization_table.size()) {
+          const auto& source_handler_row =
+              p_.specialization_table[handler.spec_id];
+            if (source_handler_row.provider_module_identity != module_identity ||
+                source_handler_row.provider_spec_id == InvalidSpecId)
+              err(handler.line,
+                  "imported handler declaration has a malformed provider origin",
+                  "MOSS_INTERNAL_INVARIANT");
+            source_handler_spec_id = source_handler_row.provider_spec_id;
+          }
+        }
+        const string expected_identity = "domain-instance-handler:" +
+            std::to_string(source_handler_spec_id) + ":" + instance.identity();
+        if (instance_row.semantic_callable_identity != expected_identity)
+          err(handler.line,
+              "domain instance handler SpecId contradicts its checked handler instance",
+              "MOSS_INTERNAL_INVARIANT");
       }
     }
   }
@@ -18095,6 +18273,56 @@ class Checker {
                     [&](const Field& field) { return field.name == name; });
   }
 
+  string current_object_field_name(const StorageLocation& location) const {
+    if (!current_object_) return {};
+    const string name = location.root == "self"
+        ? (location.path.empty() ? string() : location.path.front())
+        : location.root;
+    return is_current_object_field(name) ? name : string();
+  }
+
+  string current_object_field_identity(const string& name) const {
+    if (!current_object_) return {};
+    const auto field = std::find_if(current_object_->fields.begin(),
+        current_object_->fields.end(), [&](const Field& candidate) {
+          return candidate.name == name;
+        });
+    if (field == current_object_->fields.end()) return {};
+    const string declaration_name =
+        current_object_->declaration_name.empty()
+            ? current_object_->name : current_object_->declaration_name;
+    return moss::declaration_identity(
+               moss::DeclarationKind::Record,
+               program_module_identity(p_, current_object_->defining_module),
+               declaration_name) +
+        ":field:" + field->name + "@" + std::to_string(field->line);
+  }
+
+  string current_domain_field_name(const Domain* domain,
+                                   const StorageLocation& location) const {
+    if (!domain) return {};
+    const string name = location.root == "self"
+        ? (location.path.empty() ? string() : location.path.front())
+        : location.root;
+    return std::any_of(domain->state.begin(), domain->state.end(),
+        [&](const Field& field) { return field.name == name; })
+        ? name : string();
+  }
+
+  string current_domain_field_identity(const Domain* domain,
+                                      const string& name) const {
+    if (!domain || name.empty()) return {};
+    const auto field = std::find_if(domain->state.begin(), domain->state.end(),
+        [&](const Field& candidate) { return candidate.name == name; });
+    if (field == domain->state.end()) return {};
+    return moss::declaration_identity(
+               moss::DeclarationKind::Domain,
+               program_module_identity(p_, domain->defining_module),
+               domain->declaration_name.empty()
+                   ? domain->name : domain->declaration_name) +
+        ":state-field:" + field->name + "@" + std::to_string(field->line);
+  }
+
   std::optional<StorageLocation> indexed_borrow_storage_location(
       const string& expression, const TypeEnv& env) const {
     string value = tree_strip_expression_parens(tree_normalize_pipeline(trim(expression)));
@@ -24601,6 +24829,15 @@ class Checker {
       function.result_functional_expression_plans_by_spec_id.clear();
       if (function.static_dispatch && !function.specializations.empty()) {
         for (const auto& specialization : function.specializations) {
+          if (specialization.spec_id == InvalidSpecId ||
+              specialization.spec_id >= p_.specialization_table.size() ||
+              specialization.parameter_types.size() != function.params.size() ||
+              std::any_of(specialization.parameter_types.begin(),
+                          specialization.parameter_types.end(),
+                          [](const string& type) { return type.empty(); }))
+            err(function.line,
+                "checked function specialization has missing or contradictory parameter metadata",
+                "MOSS_INTERNAL_INVARIANT");
           SpecIdScope spec_id_scope(current_spec_id_, specialization.spec_id);
           TypeEnv env;
           for (size_t index = 0; index < function.params.size(); ++index) {
@@ -30751,7 +30988,6 @@ class Checker {
                              OwnershipEnv& env, const Domain* current_domain,
                              const Handler* current_handler,
                              vector<ExceptionalOwnershipExit>* exceptional = nullptr) {
-    (void)current_domain;
     while (index < statements.size()) {
       for (auto it = env.active_read_borrow_last_use.begin();
            it != env.active_read_borrow_last_use.end();) {
@@ -31599,6 +31835,7 @@ class Checker {
           string source_root;
           bool is_projected_borrow_source = false;
           bool is_plain_field_borrow_source = false;
+          std::optional<StorageLocation> plain_field_source_location;
           if (local_source) {
             source_root = *local_source;
           } else if (auto loc = indexed_borrow_storage_location(s.b, env.types)) {
@@ -31623,16 +31860,35 @@ class Checker {
             // provisional transfer effect must not decide extraction.
             source_root = loc->root;
             is_plain_field_borrow_source = true;
+            plain_field_source_location = *loc;
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const string receiver_field_name = plain_field_source_location
+              ? current_object_field_name(*plain_field_source_location)
+              : string();
+          const string receiver_domain_field_name =
+              receiver_field_name.empty() && plain_field_source_location
+                  ? current_domain_field_name(current_domain,
+                                              *plain_field_source_location)
+                  : string();
+          const string receiver_field_identity = source_binding ==
+                  env.binding_identities.end()
+              ? (!receiver_field_name.empty()
+                    ? current_object_field_identity(receiver_field_name)
+                    : current_domain_field_identity(current_domain,
+                                                   receiver_domain_field_name))
+              : string();
+          const string source_binding_identity = source_binding !=
+                  env.binding_identities.end()
+              ? source_binding->second : receiver_field_identity;
           const bool is_indexed_source = !source_root.empty() && !local_source &&
               !is_plain_field_borrow_source;
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);
-          if (transfers && source_binding != env.binding_identities.end() &&
-              !source_binding->second.empty() && transfer_type(*source_type) &&
+          if (transfers && !source_binding_identity.empty() &&
+              transfer_type(*source_type) &&
               (!local_source ||
                !env.borrowed_enum_payloads.count(*local_source))) {
             TypedLocalOwnershipFactV1::UnsupportedReason unsupported =
@@ -31658,7 +31914,11 @@ class Checker {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  source_root, source_binding->second, env.types,
+                  !receiver_field_name.empty() ? receiver_field_name
+                      : !receiver_domain_field_name.empty()
+                          ? receiver_domain_field_name : source_root,
+                  receiver_field_identity.empty()
+                      ? source_binding_identity : string(), env.types,
                   env.binding_identities,
                   &unsupported);
             }
@@ -31675,11 +31935,11 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_definition_identity,
+                  source_binding_identity, source_definition_identity,
                   source_access,
                   source_access == Effect::Consume
                       ? TypedLocalOwnershipFactV1::Disposition::Transferred
@@ -31693,10 +31953,10 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               retain_unsupported_local_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line),
-                  source_binding->second, source_definition_identity, unsupported);
+                  source_binding_identity, source_definition_identity, unsupported);
             }
           }
           if (source_access == Effect::Consume) {
@@ -31810,6 +32070,7 @@ class Checker {
           const bool targets_object_field = is_current_object_field(s.a);
           string source_root;
           bool is_plain_field_borrow_source = false;
+          std::optional<StorageLocation> plain_field_source_location;
           if (local_source) {
             source_root = *local_source;
           } else if (!targets_object_field && !env.state_fields.count(s.a)) {
@@ -31831,14 +32092,34 @@ class Checker {
               // that alias is READ or CONSUME from its downstream uses.
               source_root = loc->root;
               is_plain_field_borrow_source = true;
+              plain_field_source_location = *loc;
             }
           }
           auto source_binding = !source_root.empty()
               ? env.binding_identities.find(source_root)
               : env.binding_identities.end();
+          const string receiver_field_name = plain_field_source_location
+              ? current_object_field_name(*plain_field_source_location)
+              : string();
+          const string receiver_domain_field_name =
+              receiver_field_name.empty() && plain_field_source_location
+                  ? current_domain_field_name(current_domain,
+                                              *plain_field_source_location)
+                  : string();
+          const string receiver_field_identity = source_binding ==
+                  env.binding_identities.end()
+              ? (!receiver_field_name.empty()
+                    ? current_object_field_identity(receiver_field_name)
+                    : current_domain_field_identity(current_domain,
+                                                   receiver_domain_field_name))
+              : string();
+          const string source_binding_identity = source_binding !=
+                  env.binding_identities.end()
+              ? source_binding->second : receiver_field_identity;
           const bool is_indexed_source = !source_root.empty() && !local_source &&
               !is_plain_field_borrow_source;
           if (transfers && is_plain_field_borrow_source &&
+              source_binding_identity.empty() &&
               source_binding == env.binding_identities.end() &&
               !targets_object_field && !env.state_fields.count(s.a)) {
             // A field rooted in the implicit method/domain receiver has no
@@ -31854,8 +32135,8 @@ class Checker {
           retain_local_transfer_authority(s, index, env);
           const bool protected_borrow_source = local_source &&
               env.message_payloads.count(*local_source);
-          if (transfers && source_binding != env.binding_identities.end() &&
-              !source_binding->second.empty() && transfer_type(*source_type) &&
+          if (transfers && !source_binding_identity.empty() &&
+              transfer_type(*source_type) &&
               (!local_source ||
                !env.borrowed_enum_payloads.count(*local_source)) &&
               !env.state_fields.count(s.a) && !targets_object_field) {
@@ -31881,7 +32162,11 @@ class Checker {
                 (!current_ownership_flow_ || is_plain_field_borrow_source)) {
               inferred = infer_straight_line_definition_effect(
                   statements, index, s.a, target_binding_identity,
-                  source_root, source_binding->second, env.types,
+                  !receiver_field_name.empty() ? receiver_field_name
+                      : !receiver_domain_field_name.empty()
+                          ? receiver_domain_field_name : source_root,
+                  receiver_field_identity.empty()
+                      ? source_binding_identity : string(), env.types,
                   env.binding_identities,
                   &unsupported);
             }
@@ -31898,11 +32183,11 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               const auto retained_access = retain_local_ownership_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_definition_identity,
+                  source_binding_identity, source_definition_identity,
                   source_access,
                   source_access == Effect::Consume
                       ? TypedLocalOwnershipFactV1::Disposition::Transferred
@@ -31915,11 +32200,11 @@ class Checker {
               const string source_definition_identity =
                   env.definition_identities.count(source_root)
                       ? env.definition_identities.at(source_root)
-                      : source_binding->second;
+                      : source_binding_identity;
               retain_unsupported_local_fact(s,
                   statement_binding_identity(current_semantic_context_, s.line) +
                       ":" + s.a,
-                  source_binding->second, source_definition_identity, unsupported);
+                  source_binding_identity, source_definition_identity, unsupported);
             }
           }
           const auto prior_borrow = env.borrowed_local_sources.find(s.a);
@@ -36788,8 +37073,12 @@ class Checker {
         -> std::optional<ParsedFunctionalPipeline> {
       const auto* arena = expression_arena(arena_index);
       if (!arena) return std::nullopt;
-      auto parsed = est::functional_pipeline(*arena, expression, source,
-                                              resolve_stage);
+      const auto pipeline_expression = est::unparenthesized(*arena, expression);
+      const auto exact_source = est::view(*arena, expression, source)
+          .source_text(pipeline_expression);
+      if (!exact_source) return std::nullopt;
+      auto parsed = est::functional_pipeline(*arena, pipeline_expression,
+                                              *exact_source, resolve_stage);
       if (parsed) {
         parsed->arena_index = arena_index;
         for (auto& stage : parsed->stages) stage.arena_index = arena_index;
@@ -38948,6 +39237,20 @@ class Checker {
               !supplied.count(field.name) && field.init.empty())
             err(line, "enum field '" + callee + "." + field.name +
                 "' requires an explicit constructor value", "ENUM_FIELD_INITIALIZER_REQUIRED");
+        const ObjectType& constructed_object = *objects_.at(callee);
+        const string constructed_name = constructed_object.declaration_name.empty()
+            ? constructed_object.name : constructed_object.declaration_name;
+        const string constructed_identity = moss::declaration_identity(
+            moss::DeclarationKind::Record,
+            program_module_identity(p_, constructed_object.defining_module),
+            constructed_name);
+        const auto constructed_declaration = p_.type_context
+            ? p_.type_context->find(constructed_object.name) : nullptr;
+        if (!constructed_declaration ||
+            constructed_declaration->id != constructed_identity)
+          err(line,
+              "checked record constructor has missing or contradictory declaration identity",
+              "MOSS_INTERNAL_INVARIANT");
         if (current_body_types_ && !checking_specialization_ &&
             !current_body_types_->active_expression_occurrences.empty()) {
           const auto occurrence_id =
@@ -39020,6 +39323,54 @@ class Checker {
           else
             current_body_types_->expression_occurrence_ledger_complete = false;
         }
+        moss::TypeRef checked_constructor_type = current_body_types_
+            ? current_body_types_->known_expression(value) : nullptr;
+        if (!checked_constructor_type)
+          checked_constructor_type = inferred_expr_term(value, env);
+        if (checked_constructor_type && current_body_types_)
+          checked_constructor_type = current_body_types_->solver.resolve(
+              checked_constructor_type);
+        if (!checked_constructor_type ||
+            checked_constructor_type->kind != moss::TypeKind::NominalInstance ||
+            !checked_constructor_type->declaration ||
+            checked_constructor_type->declaration->id != constructed_identity)
+          err(line,
+              "checked record constructor type contradicts its declaration identity",
+              "MOSS_INTERNAL_INVARIANT");
+        if (active_est_expression_cursors_.empty() ||
+            !active_est_expression_cursors_.back() ||
+            current_spec_id_ == InvalidSpecId)
+          err(line,
+              "checked record constructor has no exact EST occurrence owner",
+              "MOSS_INTERNAL_INVARIANT");
+        const auto& constructor_cursor =
+            *active_est_expression_cursors_.back();
+        const auto* constructor_arena =
+            expression_arena(constructor_cursor.arena_index);
+        if (!constructor_arena ||
+            constructor_cursor.expr >= constructor_arena->size())
+          err(line,
+              "checked record constructor does not match its exact EST constructor occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+        // Local record syntax lowers to EST Constructor; qualified imported
+        // syntax can retain an EST Call node. This branch is entered only
+        // after checker name resolution selected `constructed_object`, and
+        // both forms must still carry the exact matching NominalInstance.
+        const auto& constructor_node =
+            constructor_arena->at(constructor_cursor.expr);
+        if (!std::holds_alternative<est::Constructor>(constructor_node) &&
+            !std::holds_alternative<est::Call>(constructor_node))
+          err(line,
+              "checked record constructor does not match its exact EST constructor occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+        retain_active_expression_target(constructed_identity);
+        const auto* constructor_facts = constructor_arena->facts(
+            constructor_cursor.expr, current_spec_id_);
+        if (!constructor_facts ||
+            constructor_facts->resolved_target != constructed_identity)
+          err(line,
+              "checked record constructor authority was not retained on its EST Constructor",
+              "MOSS_INTERNAL_INVARIANT");
       } else {
         // Validate the operand of assert before its builtin signature check.
         // This preserves the operand's more specific diagnostic (for example,
@@ -40385,6 +40736,7 @@ class Checker {
         } call_occurrence_scope{call_occurrence_state, call_occurrence_id,
                                 &statement_call_type, false};
         Function* selected_function = nullptr;
+        std::optional<EstExpressionCursor> statement_call_cursor;
         if (!statement.b.empty()) {
           auto receiver = current_env.find(statement.a);
           auto receiver_type = receiver != current_env.end()
@@ -40456,11 +40808,55 @@ class Checker {
         } else {
           const bool delayed_assert_check = statement.a == "assert" &&
               !functions_.count(statement.a);
-          if (!delayed_assert_check)
+          const est::Handle* statement_call_handle = nullptr;
+          if (!delayed_assert_check) {
+            for (const auto& handle : statement.expression_handles) {
+              if (handle.slot != est::ExprSlot::Expression) continue;
+              if (statement_call_handle)
+                err(statement.line,
+                    "direct call statement has duplicate exact EST roots",
+                    "MOSS_INTERNAL_INVARIANT");
+              statement_call_handle = &handle;
+            }
+          }
+          if (statement_call_handle) {
+            const auto* arena =
+                expression_arena(statement_call_handle->arena_index);
+            if (!arena || statement_call_handle->expr >= arena->size())
+              err(statement.line,
+                  "direct call statement has a stale exact EST root",
+                  "MOSS_INTERNAL_INVARIANT");
+            const auto expression = est::unparenthesized(
+                *arena, statement_call_handle->expr);
+            if (std::holds_alternative<est::Call>(arena->at(expression)))
+              statement_call_cursor = EstExpressionCursor{
+                  statement_call_handle->arena_index, expression,
+                  statement.text, 0};
+          }
+          auto check_direct_call = [&] {
+            if (delayed_assert_check) return;
             check_function_call(statement.line, statement.a, statement.args,
-                                current_env, nullptr, std::nullopt,
-                                call_occurrence_id == UINT32_MAX
-                                    ? nullptr : &selected_function);
+                current_env, nullptr, std::nullopt,
+                call_occurrence_id == UINT32_MAX
+                    ? nullptr : &selected_function);
+          };
+          if (statement_call_cursor) {
+            active_est_expression_cursors_.push_back(*statement_call_cursor);
+            try {
+              check_direct_call();
+            } catch (...) {
+              active_est_expression_cursors_.pop_back();
+              throw;
+            }
+            active_est_expression_cursors_.pop_back();
+          } else {
+            check_direct_call();
+          }
+          if (selected_function && selected_function->static_dispatch &&
+              !statement_call_cursor)
+            err(statement.line,
+                "resolved direct function call has no exact EST Call occurrence",
+                "MOSS_INTERNAL_INVARIANT");
           if (call_occurrence_id != UINT32_MAX) {
             if (selected_function) {
               call_occurrence_state->retain_expression_target(
@@ -40522,13 +40918,79 @@ class Checker {
             const string slot = "call-argument:" + std::to_string(index);
             const auto occurrence_slot = statement.b.empty()
                 ? std::string_view(slot) : std::string_view{};
-            if (tree_parse_named_argument(argument, name, val))
-              check_expression(statement.line, val, current_env, occurrence_slot,
-                               "call-argument:" + std::to_string(index));
-            else
-              check_expression(statement.line, argument, current_env,
-                               occurrence_slot,
-                               "call-argument:" + std::to_string(index));
+            const string& checked_argument =
+                tree_parse_named_argument(argument, name, val) ? val : argument;
+            std::optional<EstExpressionCursor> exact_argument_cursor;
+            if (statement_call_cursor && statement.b.empty() &&
+                !tree_parse_named_argument(argument, name, val)) {
+              const auto* call_arena = expression_arena(
+                  statement_call_cursor->arena_index);
+              if (!call_arena ||
+                  statement_call_cursor->expr >= call_arena->size())
+                err(statement.line,
+                    "direct call argument has a stale outer EST occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
+              const auto* call = std::get_if<est::Call>(
+                  &call_arena->at(statement_call_cursor->expr));
+              if (!call || call->arguments.size() != statement.args.size())
+                err(statement.line,
+                    "direct call arguments contradict the exact outer EST Call",
+                    "MOSS_INTERNAL_INVARIANT");
+              const est::Handle* argument_handle = nullptr;
+              for (const auto& handle : statement.expression_handles) {
+                if (handle.slot != est::ExprSlot::Argument ||
+                    handle.argument_index != index) continue;
+                if (argument_handle)
+                  err(statement.line,
+                      "direct call argument has duplicate retained EST roots",
+                      "MOSS_INTERNAL_INVARIANT");
+                argument_handle = &handle;
+              }
+              if (!argument_handle)
+                err(statement.line,
+                    "direct call argument has no retained EST root",
+                    "MOSS_INTERNAL_INVARIANT");
+              est::assert_fresh(*argument_handle, checked_argument);
+              const auto argument_expression = est::unparenthesized(
+                  *call_arena, call->arguments[index]);
+              const auto* argument_arena = expression_arena(
+                  argument_handle->arena_index);
+              if (!argument_arena ||
+                  argument_handle->expr >= argument_arena->size() ||
+                  !est::structurally_equal(
+                      est::view(*call_arena, argument_expression,
+                                checked_argument),
+                      est::view(*argument_arena, argument_handle->expr,
+                                checked_argument)))
+                err(statement.line,
+                    "direct call child disagrees with its exact argument occurrence",
+                    "MOSS_INTERNAL_INVARIANT");
+              exact_argument_cursor = EstExpressionCursor{
+                  statement_call_cursor->arena_index, argument_expression,
+                  checked_argument, 0};
+            }
+            auto check_call_argument = [&] {
+              check_expression(statement.line, checked_argument,
+                  current_env, occurrence_slot,
+                  "call-argument:" + std::to_string(index));
+            };
+            if (exact_argument_cursor) {
+              struct ExactArgumentRootScope {
+                std::optional<EstExpressionCursor>& slot;
+                std::optional<EstExpressionCursor> prior;
+                ExactArgumentRootScope(
+                    std::optional<EstExpressionCursor>& target,
+                    EstExpressionCursor cursor)
+                    : slot(target), prior(target) {
+                  slot = std::move(cursor);
+                }
+                ~ExactArgumentRootScope() { slot = std::move(prior); }
+              } exact_argument_scope(forced_root_expression_cursor_,
+                                    std::move(*exact_argument_cursor));
+              check_call_argument();
+            } else {
+              check_call_argument();
+            }
           } else if (call_occurrence_id != UINT32_MAX &&
                      statement.b.empty()) {
             call_occurrence_state->expression_occurrences.at(

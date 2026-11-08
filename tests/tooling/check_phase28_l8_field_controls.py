@@ -370,6 +370,29 @@ def main() -> int:
                 failures.append(f"{name}: {error}")
                 print(f"FAIL {name}: {error}", file=sys.stderr)
 
+        # The positive field_parameter control above proves the exact checked
+        # standalone constructor is resolvable before its table is corrupted.
+        constructor_source = FIXTURES / "field_parameter.moss"
+        constructor_target = (
+            "nominal-template-v1:module-v1:__standalone__@0.0.0::main:type:State")
+        constructor_diagnostic = (
+            "MOSS_INTERNAL_INVARIANT checked constructor declaration has no unique ObjectType")
+        for mutation in ("drop", "duplicate", "wrong-module"):
+            result = subprocess.run(
+                [compiler, "run", "--interp", str(constructor_source)],
+                cwd=ROOT, capture_output=True, text=True,
+                env={**os.environ,
+                     "MOSS_TEST_CONSTRUCTOR_OBJECT_MUTATION": mutation,
+                     "MOSS_TEST_CONSTRUCTOR_TARGET_ID": constructor_target},
+                timeout=120)
+            combined = result.stdout + result.stderr
+            if result.returncode == 0 or constructor_diagnostic not in combined:
+                failures.append(
+                    f"standalone constructor {mutation}: expected production validator "
+                    f"diagnostic {constructor_diagnostic!r}, got exit={result.returncode}: {combined}")
+            else:
+                print(f"PASS standalone constructor {mutation}: production validator rejected corrupted ObjectType table")
+
         consume = FIXTURES / "field_consume.moss"
         diagnostic = (
             "moss:9: error: [OWNERSHIP_ILLEGAL_CONSUME] "
