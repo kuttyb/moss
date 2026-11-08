@@ -39059,11 +39059,20 @@ class Checker {
         const auto* constructor_arena =
             expression_arena(constructor_cursor.arena_index);
         if (!constructor_arena ||
-            constructor_cursor.expr >= constructor_arena->size() ||
-            !std::holds_alternative<est::Constructor>(
-                constructor_arena->at(constructor_cursor.expr)))
+            constructor_cursor.expr >= constructor_arena->size())
           err(line,
-              "checked record constructor does not match its exact EST Constructor occurrence",
+              "checked record constructor does not match its exact EST constructor occurrence",
+              "MOSS_INTERNAL_INVARIANT");
+        // Local record syntax lowers to EST Constructor; qualified imported
+        // syntax can retain an EST Call node. This branch is entered only
+        // after checker name resolution selected `constructed_object`, and
+        // both forms must still carry the exact matching NominalInstance.
+        const auto& constructor_node =
+            constructor_arena->at(constructor_cursor.expr);
+        if (!std::holds_alternative<est::Constructor>(constructor_node) &&
+            !std::holds_alternative<est::Call>(constructor_node))
+          err(line,
+              "checked record constructor does not match its exact EST constructor occurrence",
               "MOSS_INTERNAL_INVARIANT");
         retain_active_expression_target(constructed_identity);
         const auto* constructor_facts = constructor_arena->facts(
