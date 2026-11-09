@@ -2340,6 +2340,8 @@ class FastInterpreter {
           compact_callee.size() > 8 && compact_callee.back() == ']')
         return Value::vector_value({}, compact_callee.substr(7, compact_callee.size() - 8));
       if (callee.find('.') == std::string::npos) {
+        if (callee == "copy")
+          return independent(evaluate_call_argument(0));
         if (callee == "replace" && args.size() == 2) {
           Value replacement = evaluate_call_argument(1);
           const auto* replacement_identifier =

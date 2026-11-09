@@ -5433,6 +5433,20 @@ class Generator {
                                                    call->callee);
       if (const auto* callee = std::get_if<est::Identifier>(
               &expression.arena->at(callee_id))) {
+        if (callee->name == "copy") {
+          const auto* facts = checked_expression_facts(expression);
+          const string checked_target = facts ? facts->resolved_target : string();
+          if (checked_target == "builtin:copy-v1") {
+            if (call->arguments.size() != 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked copy call has invalid arity");
+            return "(" + expr(expression.child(call->arguments.front()),
+                               d, locals, types) + ").clone()";
+          }
+          if (checked_target != "builtin:copy-v1")
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked copy builtin target is missing or perturbed");
+        }
         auto object = objects_.find(callee->name);
         if (object != objects_.end() && !call->arguments.empty()) {
           std::unordered_map<string, EmitterExpr> values;

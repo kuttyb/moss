@@ -18136,3 +18136,25 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Commit `4109306044c83226e6c2adfe79d82acc540a0e86` (`Make message sends
   read borrows`) was pushed to `origin/main`. The Phase 28 branch was not
   merged or pushed.
+
+## Moss::Copy final delivery checkpoint (2026-11-08)
+
+- `moss-copy-final` is one commit (`Add Moss::Copy builtin`) directly on
+  `origin/main` `a71fe9b97f0d43da288e89aa9ae2e9f240515a1c`. Its net diff is
+  exactly ten Copy-related files; message-send ownership is inherited from
+  main and no duplicate send commits are present.
+- Fast Debug evaluates the reserved `copy` argument directly and returns an
+  independent value without EST fact lookup or source context. Native has one
+  checked-target `copy` lowering. The checker derives Moss::Copy and reserves
+  the spelling; the 13 directed cases pass in Native and Fast Debug.
+- Plain-clone full suites completed: Default and Shadow baseline each 150/165;
+  candidate each 151/166. Both candidate failure sets exactly match the same
+  15 baseline failures listed in `docs/MOSS_COMPILER_CONTRACT.md`; there are
+  no candidate-only failing jobs.
+- Corpus comparison: 1,828 sources on both sides, 1,123 emitted and 705 failed;
+  no status changes. Only `examples/message_payload_reply.moss` has a generated
+  Rust hash change, from the approved local rename. Agent 2 independently
+  reviewed the diff and reran the 13 directed cases; verdict GO.
+- The compiler contract's `D-BASELINE-SUITE` row is updated from the stale
+  pre-C5 baseline to the measured `a71fe9b9` and candidate results. The final
+  branch is ready for fast-forward to main and push; no merge has happened yet.
