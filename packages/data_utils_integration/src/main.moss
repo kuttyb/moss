@@ -23,7 +23,7 @@ export fn archive_text(pattern: String, raw_text: String) -> ArchivedRecord:
   let matches = regex.find_all(pattern, raw_text)
   var payload = raw_text
   if (matches |> count) > 0:
-    payload = matches[0].text
+    payload = copy(matches[0].text)
 
 
   let raw_bytes = hash.string_to_bytes(payload)
