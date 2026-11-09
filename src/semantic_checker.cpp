@@ -560,7 +560,8 @@ class Checker {
         {"FileError", {"NotFound", "PermissionDenied", "NotRegularFile",
                        "InUse", "Full", "IO"}},
         {"ParseError", {"Invalid", "Overflow"}},
-        {"ConversionError", {"NonFinite", "Overflow"}}};
+        {"ConversionError", {"NonFinite", "Overflow"}},
+        {"CollectionError", {"Empty", "MissingKey", "InvalidIndex"}}};
     // A legacy source declaration of a standard error (`enum ParseError:`)
     // is rewritten to the std spelling at parse time. It is the compiler's
     // own standard error, so it keeps the std declaration identity.
@@ -21382,6 +21383,9 @@ class Checker {
         if (const auto* builtin = builtin_operation(*receiver_type, method);
             builtin && builtin->argument_effects.size() == arguments.size()) {
           effects.may_panic = effects.may_panic || builtin->may_panic;
+          effects.raise_set = raise_set_union(
+              std::move(effects.raise_set),
+              collection_operation_raise_set(*receiver_type, method));
           auto mark_write = [&](const string& expression) {
             auto location = storage_location(expression, env);
             if (location && domain_fields.count(location->root)) effects.domain_write = true;
@@ -22897,6 +22901,10 @@ class Checker {
     string receiver, method;
     if (tree_parse_member_call(value, receiver, method, arguments)) {
       auto receiver_type = inferred_expr_type(receiver, types);
+      if (receiver_type) {
+        auto raises = collection_operation_raise_set(*receiver_type, method);
+        if (!raises.empty()) return raises;
+      }
       if ((receiver == "FileIO" && method == "open") ||
           (receiver_type && canonical_type_name(*receiver_type) == "FileIO"))
         return fileio_operation_raise_set(method);

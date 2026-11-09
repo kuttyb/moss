@@ -426,7 +426,7 @@ std::optional<string> nominal_field_type(const string& type, const string& field
 
 static bool standard_error_short_name(const string& name) {
   return name == "FileError" || name == "ParseError" ||
-         name == "ConversionError";
+         name == "ConversionError" || name == "CollectionError";
 }
 
 string standard_error_identity(const string& name) {
@@ -439,6 +439,8 @@ vector<string> standard_error_variants(const string& identity) {
             "Full", "IO"};
   if (identity == "std__ParseError") return {"Invalid", "Overflow"};
   if (identity == "std__ConversionError") return {"NonFinite", "Overflow"};
+  if (identity == "std__CollectionError")
+    return {"Empty", "MissingKey", "InvalidIndex"};
   return {};
 }
 
@@ -686,9 +688,12 @@ static const vector<BuiltinOperationDescriptor>& builtin_operations() {
   static const vector<BuiltinOperationDescriptor> operations = {
       {BuiltinReceiverFamily::Vector, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
       {BuiltinReceiverFamily::Vector, "pop", "pop()", "$element", Effect::Write, {}, {}, true},
+      {BuiltinReceiverFamily::Vector, "remove", "remove(index)", "$element", Effect::Write, {Effect::Read}, {"int"}},
+      {BuiltinReceiverFamily::Vector, "swap_remove", "swap_remove(index)", "$element", Effect::Write, {Effect::Read}, {"int"}},
       {BuiltinReceiverFamily::Map, "get", "get(key, default)", "$value", Effect::Read, {Effect::Read, Effect::Read}, {"$key", "$value"}},
       {BuiltinReceiverFamily::Map, "keys", "keys()", "$keys", Effect::Read, {}, {}},
       {BuiltinReceiverFamily::Map, "values", "values()", "$values", Effect::Read, {}, {}},
+      {BuiltinReceiverFamily::Map, "remove", "remove(key)", "$value", Effect::Write, {Effect::Read}, {"$key"}},
       {BuiltinReceiverFamily::Map, "delete", "delete(key, fallback, found)", "$value", Effect::Write, {Effect::Read, Effect::Consume, Effect::Write}, {"$key", "$value", "bool"}},
       {BuiltinReceiverFamily::Queue, "push", "push(item)", "unit", Effect::Write, {Effect::Consume}, {"$element"}},
       {BuiltinReceiverFamily::Queue, "pop", "pop()", "$element", Effect::Write, {}, {}, true},

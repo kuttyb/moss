@@ -2956,8 +2956,62 @@ class FastInterpreter {
               else values->pop_back();
               return result;
             }
+            if (receiver.kind == Value::Kind::Vector && method_name == "remove" && method_args.size() == 1) {
+              Value index_val = evaluate_method_argument(0);
+              int64_t idx = index_val.integer;
+              if (idx < 0 || static_cast<size_t>(idx) >= values->size()) {
+                const std::string error_type = "std__CollectionError";
+                const std::string variant = "InvalidIndex";
+                Value raised = Value::struct_value(error_type);
+                raised.object->case_name = variant;
+                emit("raise", frame, line, "variant:" + error_type + "." + variant);
+                throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                                   std::move(raised), line, frame.source_file, {}};
+              }
+              Value result = independent((*values)[idx]);
+              values->erase(values->begin() + idx);
+              return result;
+            }
+            if (receiver.kind == Value::Kind::Vector && method_name == "swap_remove" && method_args.size() == 1) {
+              Value index_val = evaluate_method_argument(0);
+              int64_t idx = index_val.integer;
+              if (idx < 0 || static_cast<size_t>(idx) >= values->size()) {
+                const std::string error_type = "std__CollectionError";
+                const std::string variant = "InvalidIndex";
+                Value raised = Value::struct_value(error_type);
+                raised.object->case_name = variant;
+                emit("raise", frame, line, "variant:" + error_type + "." + variant);
+                throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                                   std::move(raised), line, frame.source_file, {}};
+              }
+              Value result = independent((*values)[idx]);
+              if (static_cast<size_t>(idx) + 1 < values->size()) {
+                (*values)[idx] = std::move(values->back());
+              }
+              values->pop_back();
+              return result;
+            }
           }
           if (receiver.kind == Value::Kind::Map) {
+            if (method_name == "remove" && method_args.size() == 1) {
+              Value key = evaluate_method_argument(0);
+              if (auto position = map_position(receiver, key, frame, line, output)) {
+                Value removed = independent(receiver.map->at(*position).second);
+                receiver.map->erase(receiver.map->begin() + *position);
+                if (staged_abi_v10()) {
+                  receiver.map_hashes->erase(receiver.map_hashes->begin() + *position);
+                  rebuild_map_index(receiver);
+                }
+                return removed;
+              }
+              const std::string error_type = "std__CollectionError";
+              const std::string variant = "MissingKey";
+              Value raised = Value::struct_value(error_type);
+              raised.object->case_name = variant;
+              emit("raise", frame, line, "variant:" + error_type + "." + variant);
+              throw RaisedSignal{RaisedIdentity::enum_variant(error_type, variant),
+                                 std::move(raised), line, frame.source_file, {}};
+            }
             if (method_name == "delete" && method_args.size() == 3) {
               Value key = evaluate_method_argument(0);
               Value fallback = evaluate_method_argument(1);

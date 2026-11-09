@@ -669,6 +669,57 @@ class Generator {
     return result;
   }
 
+  bool program_uses_collection_error() const {
+    const RaiseSet raised = phase21_program_raise_set();
+    for (const auto& identity : raised) {
+      if (canonical_type_name(identity.type) == "std__CollectionError")
+        return true;
+    }
+    const auto mentions_collection_error = [](const string& text) {
+      return text.find("CollectionError") != string::npos;
+    };
+    const auto check_statements = [&](const vector<Stmt>& body) {
+      for (const auto& s : body) {
+        if (mentions_collection_error(s.text) ||
+            mentions_collection_error(s.a) ||
+            mentions_collection_error(s.b))
+          return true;
+        for (const auto& identity : s.exceptional_alternatives)
+          if (canonical_type_name(identity.type) == "std__CollectionError")
+            return true;
+      }
+      return false;
+    };
+    if (p_.main && check_statements(p_.main->body)) return true;
+    for (const auto& f : p_.functions) {
+      if (f.return_type && mentions_collection_error(*f.return_type)) return true;
+      for (const auto& param : f.params)
+        if (mentions_collection_error(param.type)) return true;
+      if (check_statements(f.body)) return true;
+    }
+    for (const auto& obj : p_.objects) {
+      for (const auto& m : obj.methods) {
+        if (m.return_type && mentions_collection_error(*m.return_type)) return true;
+        for (const auto& param : m.params)
+          if (mentions_collection_error(param.type)) return true;
+        if (check_statements(m.body)) return true;
+      }
+    }
+    for (const auto& d : p_.domains) {
+      for (const auto& h : d.handlers) {
+        if (h.reply_type && mentions_collection_error(*h.reply_type)) return true;
+        for (const auto& param : h.params)
+          if (mentions_collection_error(param.type)) return true;
+        if (check_statements(h.body)) return true;
+        for (const auto& arm : h.failure_arms)
+          if (check_statements(arm.body)) return true;
+      }
+    }
+    for (const auto& t : p_.tests)
+      if (check_statements(t.body)) return true;
+    return false;
+  }
+
   void gen_phase21_raised_type(std::ostringstream& o) const {
     const RaiseSet raised = phase21_program_raise_set();
     if (raised.empty()) return;
@@ -728,8 +779,10 @@ class Generator {
     for (const auto& module : rust_dependencies_) {
       if (module == "__moss_specializations__") continue;
       const string crate = tooling_name("moss_" + module);
-      for (const char* short_name :
-           {"FileError", "ParseError", "ConversionError"}) {
+      vector<const char*> error_names = {"FileError", "ParseError", "ConversionError"};
+      if (program_uses_collection_error())
+        error_names.push_back("CollectionError");
+      for (const char* short_name : error_names) {
         const string local = standard_error_identity(short_name);
         const string external = crate + "::" + local;
         const auto cases = standard_error_variants(local);
@@ -6169,13 +6222,91 @@ class Generator {
             ends_with(target, "].pop"))
           return method_receiver_place(member_receiver, member->name,
               vector<EmitterExpr>{}, d, locals, types) +
-              ".pop().unwrap_or_else(|| std::process::abort())";
+              ".pop().unwrap_or_else(|| panic!(\"pop from empty collection\"))";
         if (member->name == "pop" && call->arguments.empty() &&
             starts_with(target, "builtin-method:queue[") &&
             ends_with(target, "].pop"))
           return method_receiver_place(member_receiver, "pop_front",
               vector<EmitterExpr>{}, d, locals, types) +
-              ".pop_front().unwrap_or_else(|| std::process::abort())";
+              ".pop_front().unwrap_or_else(|| panic!(\"pop from empty collection\"))";
+        if (member->name == "remove" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:vector[") &&
+            ends_with(target, "].remove")) {
+          const auto argument = expression.child(call->arguments.front());
+          const string receiver = method_receiver_place(member_receiver,
+              member->name, vector<EmitterExpr>{argument}, d, locals, types);
+          const string index = expr(argument, d, locals, types);
+          const RaisedIdentity identity =
+              RaisedIdentity::enum_variant("std__CollectionError", "InvalidIndex");
+          const string variant = phase21_rust_variant(identity);
+          return "{ let __moss_idx = " + index +
+              "; let __moss_vec = &mut (" + receiver +
+              "); let __moss_res = if __moss_idx >= 0 && (__moss_idx as usize) < __moss_vec.len() { Ok(__moss_vec.remove(__moss_idx as usize)) } else { Err(__MossRaised::" +
+              variant + "(std__CollectionError::InvalidIndex)) }; " +
+              phase21_propagate("__moss_res") + " }";
+        }
+        if (member->name == "swap_remove" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:vector[") &&
+            ends_with(target, "].swap_remove")) {
+          const auto argument = expression.child(call->arguments.front());
+          const string receiver = method_receiver_place(member_receiver,
+              member->name, vector<EmitterExpr>{argument}, d, locals, types);
+          const string index = expr(argument, d, locals, types);
+          const RaisedIdentity identity =
+              RaisedIdentity::enum_variant("std__CollectionError", "InvalidIndex");
+          const string variant = phase21_rust_variant(identity);
+          return "{ let __moss_idx = " + index +
+              "; let __moss_vec = &mut (" + receiver +
+              "); let __moss_res = if __moss_idx >= 0 && (__moss_idx as usize) < __moss_vec.len() { Ok(__moss_vec.swap_remove(__moss_idx as usize)) } else { Err(__MossRaised::" +
+              variant + "(std__CollectionError::InvalidIndex)) }; " +
+              phase21_propagate("__moss_res") + " }";
+        }
+        if (member->name == "remove" && call->arguments.size() == 1 &&
+            starts_with(target, "builtin-method:map[") &&
+            ends_with(target, "].remove")) {
+          const auto receiver_expression = expression.child(member->base);
+          const auto receiver_type = generated_expr_type(receiver_expression,
+                                                           types);
+          const auto map_types = receiver_type
+              ? map_key_value_types(canonical_type_name(*receiver_type))
+              : std::nullopt;
+          if (!map_types)
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked Map.remove lacks a concrete map type");
+          const auto key_node = expression.child(call->arguments[0]);
+          string key = expr(key_node, d, locals, types);
+          const string receiver = method_receiver_place(member_receiver,
+              member->name, vector<EmitterExpr>{key_node}, d, locals, types);
+          const RaisedIdentity identity =
+              RaisedIdentity::enum_variant("std__CollectionError", "MissingKey");
+          const string variant = phase21_rust_variant(identity);
+          const bool shared_key = shared_protocol_map_key(map_types->first);
+          if (shared_key) {
+            const bool view_key = is_object_view(key_node, d, locals, types);
+            if (view_key) key = "(" + key + ").__moss_value()";
+            const auto key_binding = tree_identifier_name(key_node);
+            const string borrowed = !view_key && key_binding &&
+                borrowed_function_parameters_.count(*key_binding)
+                ? "__moss_key" : "&__moss_key";
+            return "{ let __moss_key = " + key +
+                "; let __moss_map = &mut (" + receiver +
+                "); let __moss_removed = __moss_map.remove_with(" +
+                shared_map_hash(map_types->first, "__moss_key") + ", " +
+                borrowed + ", |a, b| " +
+                shared_map_equal(map_types->first, "a", "b") +
+                "); let __moss_res = match __moss_removed { Some(__moss_val) => Ok(__moss_val), None => Err(__MossRaised::" +
+                variant + "(std__CollectionError::MissingKey)) }; " +
+                phase21_propagate("__moss_res") + " }";
+          }
+          const string lookup = map_types->first == "string"
+              ? "__moss_key.as_str()" : "&__moss_key";
+          return "{ let __moss_key = " + key +
+              "; let __moss_map = &mut (" + receiver +
+              "); let __moss_removed = __moss_map.remove(" + lookup +
+              "); let __moss_res = match __moss_removed { Some(__moss_val) => Ok(__moss_val), None => Err(__MossRaised::" +
+              variant + "(std__CollectionError::MissingKey)) }; " +
+              phase21_propagate("__moss_res") + " }";
+        }
         if (starts_with(target, "builtin-method:map[") &&
             ends_with(target, "].get") && member->name == "get" &&
             call->arguments.size() == 2) {
@@ -8686,6 +8817,10 @@ class Generator {
   }
 
   void gen_enum(std::ostringstream& o, const EnumType& declaration) {
+    if (declaration.name == "std__CollectionError" &&
+        declaration.source_file == "<moss-std>" &&
+        !program_uses_collection_error())
+      return;
     string enum_identity = "enum:" + declaration.name + "@" +
         std::to_string(declaration.line);
     tooling_begin(o, 0, "enum", enum_identity, declaration.name);

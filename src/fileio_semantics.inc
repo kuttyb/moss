@@ -118,6 +118,20 @@
     return {};
   }
 
+  RaiseSet collection_operation_raise_set(const string& receiver_type,
+                                          const string& method) const {
+    auto family = builtin_receiver_family(receiver_type);
+    if (!family) return {};
+    if (*family == BuiltinReceiverFamily::Vector) {
+      if (method == "remove" || method == "swap_remove")
+        return {RaisedIdentity::enum_variant("std__CollectionError", "InvalidIndex")};
+    } else if (*family == BuiltinReceiverFamily::Map) {
+      if (method == "remove")
+        return {RaisedIdentity::enum_variant("std__CollectionError", "MissingKey")};
+    }
+    return {};
+  }
+
   static std::optional<string> fileio_method_requirement_result(
       const string& type, const string& method, size_t arity) {
     string concrete = canonical_type_name(type);

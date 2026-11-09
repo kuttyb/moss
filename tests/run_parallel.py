@@ -145,6 +145,7 @@ TOOLING_TESTS: list[tuple] = [
     ("check_phase27_5_match_copy", [sys.executable, "tests/tooling/check_phase27_5_match_copy.py", "{compiler}"]),
     ("check_moss_copy", [sys.executable, "tests/tooling/check_moss_copy.py", "{compiler}", "{out}/moss_copy"]),
     ("check_moss_take", [sys.executable, "tests/tooling/check_moss_take.py", "{compiler}", "{out}/moss_take"]),
+    ("check_moss_collection_removes", [sys.executable, "tests/tooling/check_moss_collection_removes.py", "{compiler}", "{out}/moss_collection_removes"]),
     ("check_moss_explicit_copy", [sys.executable, "tests/tooling/check_moss_explicit_copy.py", "{compiler}", "{out}/moss_explicit_copy"]),
     ("check_phase27_5_guard_removals", [sys.executable, "tests/tooling/check_phase27_5_guard_removals.py", "{compiler}"]),
     ("check_phase27_5_1_facts_fast_debug", [sys.executable, "tests/tooling/check_phase27_5_1_facts_and_fast_debug.py", "{compiler}"]),
@@ -271,6 +272,7 @@ def build_manifest() -> list[Job]:
         "check_teaching_diagnostics",
         "check_moss_copy",
         "check_moss_take",
+        "check_moss_collection_removes",
         "check_semantic_queries",
         "check_phase225_semantic_ide",
     }
