@@ -85,7 +85,7 @@ mod adversarial {
     fn call(worker: WorkerRef, path: String) -> i64 {
         runtime_invoke(move || {
             PATH.with(|slot| *slot.borrow_mut() = Some(path.clone()));
-            let value = worker.Fail_root(path);
+            let value = worker.Fail_root(&path);
             PHASE.with(|phase| {
                 if phase.get() != 4 { BAD_ORDER.store(true, Ordering::SeqCst); }
             });

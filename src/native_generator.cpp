@@ -739,6 +739,12 @@ class Generator {
           o << "        " << external << "::" << name << " => "
             << local << "::" << name << ",\n";
         o << "    } }\n}\n";
+        o << "impl From<&" << external << "> for " << local << " {\n"
+          << "    fn from(value: &" << external << ") -> Self { match value {\n";
+        for (const auto& name : cases)
+          o << "        " << external << "::" << name << " => "
+            << local << "::" << name << ",\n";
+        o << "    } }\n}\n";
         o << "impl From<" << local << "> for " << external << " {\n"
           << "    fn from(value: " << local << ") -> Self { match value {\n";
         for (const auto& name : cases)

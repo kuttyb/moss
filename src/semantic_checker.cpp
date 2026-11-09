@@ -10803,6 +10803,10 @@ class Checker {
     // a compile-time borrow marker used to reject structural mutation of the
     // traversed collection.
     std::set<string> active_read_traversals;
+    // Native Vector iteration uses `.iter()` for non-Rust-Copy elements.
+    // Those Moss bindings are borrowed and cannot be transferred into queued
+    // executor work without an explicit `copy(...)`.
+    std::set<string> borrowed_iterator_bindings;
     std::unordered_map<string,string> borrowed_enum_payloads;
     std::map<string,MoveInfo> moved;
   };
@@ -22546,6 +22550,11 @@ class Checker {
                        const string& destination) const {
     auto type = env.types.find(name);
     if (type == env.types.end() || !transfer_type(type->second)) return;
+    if (env.borrowed_iterator_bindings.count(name))
+      err(line, "cannot consume borrowed loop value '" + name +
+          "'; use copy(" + name + ") to pass an independent value to " +
+          destination,
+          "OWNERSHIP_BORROWED_ITERATOR_CONSUME");
     if (auto source = active_read_overlap(name, env))
       err(line, "cannot consume '" + name + "' while '" + *source +
           "' is READ-borrowed by a match or traversal",
@@ -23620,6 +23629,9 @@ class Checker {
         body.types[s.a] = element.value_or("_value");
         body.binding_identities[s.a] = statement_binding_identity(
             current_semantic_context_, s.line);
+        if (element && transfer_type(*element) && source_type &&
+            starts_with(canonical_type_name(*source_type), "vector["))
+          body.borrowed_iterator_bindings.insert(s.a);
         if (!source_root.empty() && source_effect == Effect::Read)
           body.active_read_traversals.insert(source_root);
         ++index;

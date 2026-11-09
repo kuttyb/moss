@@ -283,7 +283,7 @@ fn main():
     p = subprocess.run([str(binary)], text=True, capture_output=True, timeout=120)
     assert p.returncode != 0 and needle in p.stderr, (name, p.returncode, p.stderr)
 
-# Main-originated messages use runtime_invoke before start, while ACTIVE,
+# Main-originated messages use scoped synchronous ingress before start, while ACTIVE,
 # and after join. Their arguments are evaluated once, and handler-to-handler
 # messages stay within the current Root.
 root_source = write_source('phase20_root_message', """fn label() -> String:
@@ -320,7 +320,7 @@ fn main():
 """)
 root_rust, root_binary = native_build('phase20_root_message', root_source, observe=True)
 root_text = code_only(root_rust.read_text())
-assert root_text.count('runtime_invoke(') == 4, root_text
+assert root_text.count('runtime_invoke_scoped(') == 4, root_text
 work_body = re.search(r'fn __moss_body_Worker_Work\b.*?\n}\n', root_text, re.S)
 assert work_body and 'runtime_invoke' not in work_body.group(0), work_body
 root_output = run_binary(root_binary).stdout
@@ -356,7 +356,7 @@ fn main():
 nested_rust, nested_binary = native_build(
     'phase20_root_message_nested_control', nested_root_source, observe=True)
 nested_text = code_only(nested_rust.read_text())
-assert nested_text.count('runtime_invoke(') == 4, nested_text
+assert nested_text.count('runtime_invoke_scoped(') == 4, nested_text
 assert program_output(run_binary(nested_binary).stdout) == ['10']
 
 exported_root_source = write_source('phase20_root_message_exported_domain', """export domain Boundary:
@@ -373,10 +373,10 @@ fn main():
 exported_rust, exported_binary = native_build(
     'phase20_root_message_exported_domain', exported_root_source, observe=True)
 exported_text = code_only(exported_rust.read_text())
-assert 'runtime_invoke(move ||' in exported_text and '.__moss_message_Read()' in exported_text
+assert 'runtime_invoke_scoped(move ||' in exported_text and '.__moss_message_Read()' in exported_text
 assert program_output(run_binary(exported_binary).stdout) == ['23']
 
-# runtime_invoke is emitted for executor-free main messages as well; the
+# scoped ingress is emitted for executor-free main messages as well; the
 # normal executable root includes Agent C's runtime in INLINE mode.
 free_root_source = write_source('phase20_root_message_executor_free', """domain Counter:
   fn Read() -> Int:
@@ -387,7 +387,7 @@ fn main():
   echo message counter.Read()
 """)
 free_rust, free_binary = native_build('phase20_root_message_executor_free', free_root_source)
-assert 'runtime_invoke(move ||' in code_only(free_rust.read_text())
+assert 'runtime_invoke_scoped(move ||' in code_only(free_rust.read_text())
 assert run_binary(free_binary).stdout == '17\n'
 
 # ---------------------------------------------------------------------------

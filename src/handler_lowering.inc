@@ -1010,7 +1010,6 @@
     o << ((d.exported || p_.explicit_module) ? "pub " : "") << "trait " << d.name << "Messages {\n";
     for (const auto& h : d.handlers) {
       for (const string& prefix : {string(""), string("__moss_message_")}) {
-        bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
         for (const auto& p : h.params)
           o << ", " << shared_message_parameter(p);
@@ -1179,11 +1178,7 @@
                   canonical_type_name(p.type)).empty()) {
             const string local = canonical_type_name(p.type);
             o << (borrowed_message_type(p.type) ? "&" : "")
-              << local << "::from("
-              << (shared ? (borrowed_message_type(p.type)
-                    ? "(*" + p.name + ").clone()" : p.name)
-                         : p.name)
-              << "), ";
+              << local << "::from(" << p.name << "), ";
           } else o << shared_message_forward_argument(p, !shared) << ", ";
         }
         o << ")";

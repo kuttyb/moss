@@ -21,5 +21,6 @@ fn main():
   files = ["tmp/phase20-review/input.txt", "tmp/phase20-review/input2.txt"]
   executor = Executor().threads(8).start()
   for path in files:
-    executor.invoke(worker.Process(path))
+    owned_path = copy(path)
+    executor.invoke(worker.Process(owned_path))
   executor.join()

@@ -1664,8 +1664,9 @@ grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/n
 warning_stdout="$test_build/large_payload_warning.stdout"
 warning_stderr="$test_build/large_payload_warning.stderr"
 "$compiler" --check tests/large_payload_warning.moss >"$warning_stdout" 2>"$warning_stderr"
-grep -F 'warning: message payload materializes 1088 bytes at an owned domain boundary' \
-  "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
+if grep -F 'MESSAGE_PAYLOAD_COPY_LARGE' "$warning_stderr" >/dev/null; then
+  fail "read-only message send reported payload materialization"
+fi
 
 reject_case branch_divergent_domain_types \
   "domain handles cannot be used as ordinary values or payloads"

@@ -18158,3 +18158,29 @@ future optimizer-isolated proof and must remain explicit in final review.
 - The compiler contract's `D-BASELINE-SUITE` row is updated from the stale
   pre-C5 baseline to the measured `a71fe9b9` and candidate results. The final
   branch is ready for fast-forward to main and push; no merge has happened yet.
+
+# Message-send regression repair checkpoint (2026-11-08)
+
+- Work began on `fix-message-send-regressions`, based on `origin/main` at
+  `00ab90a5`; Agent 2 returned GO. The scoped code, tests, feedback and contract
+  updates are delivered as one change on `main`, per user authorization. No
+  merge is in scope.
+- All 11 jobs that passed at `9b840e8a` and failed at `41093060` pass on the
+  candidate. None failed as a correct new ownership error under the send rules.
+  The copy-free Vector loop argument is rejected with `copy(path)` guidance;
+  the positive review probe creates `owned_path = copy(path)` before invoking.
+- `check_phase151_borrowed_payloads.py` passed. `check_moss_copy.py` passed all
+  13 directed cases in Native and Fast Debug. `check_borrowed_reads.py` passed
+  its non-Clone, clone-counter and borrow-lifetime audit. The two focused loop
+  probes passed. `git diff --check` and feedback validation passed.
+- Full candidate Default and Shadow each passed 163/166. Both have the same
+  three failures as the 9b baseline (162/165): `check_phase25_conformance`
+  gate 10 (`compiled_only_custom_key` Cargo build), `check_phase27_accepts_rustc`,
+  and `shard_swarm_cases` (`swarm_035_nested_mutating_calls.moss`, Rust E0499).
+  There are no candidate-only failing names. The user confirmed the acceptance
+  floor is 162 passing, so both suites meet it.
+- `runtime_invoke_scoped` now returns its reply through `runtime_invoke`'s
+  Mutex/Condvar path; the original forbidden-transport grep is restored.
+  Message sends remain READ borrows; executor arguments remain CONSUME.
+  Next: switch this worktree to `main`, commit the complete change once, and
+  push `main` to `origin`.

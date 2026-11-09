@@ -245,14 +245,14 @@ run_optimized_case phase26_direct_payload tests/phase26_direct_payload.moss '7 8
 grep -F "fn __moss_body_Worker_Process(state: &mut WorkerProcessState<'_>, payload: &impl MossAccess_Payload)" \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
   fail 'direct handler did not receive the internal borrowed payload ABI'
-grep -F 'let __moss_root_arg_1 = (data).clone(); runtime_invoke(move || __moss_root_domain_0.Process_shared(&__moss_root_arg_1)' \
+grep -F 'let __moss_root_arg_1 = &(data); runtime_invoke_scoped(move || __moss_root_domain_0.Process_shared(__moss_root_arg_1)' \
   "$test_build/phase26_direct_payload.rs" >/dev/null ||
-  fail 'main Root ingress did not snapshot and borrow its non-Copy payload inside runtime_invoke'
+  fail 'main Root ingress did not lend its non-Copy payload through scoped synchronous ingress'
 run_optimized_case phase26_repeated_payload tests/phase26_repeated_payload.moss '7 8'
 run_case phase26_message_payload tests/phase26_message_payload.moss '9'
-grep -F 'runtime_invoke(move || __moss_root_domain_0.Process_shared(&__moss_root_arg_1))' \
+grep -F 'runtime_invoke_scoped(move || __moss_root_domain_0.Process_shared(__moss_root_arg_1))' \
   "$test_build/phase26_message_payload.rs" >/dev/null ||
-  fail 'one-way main message did not use runtime_invoke with an owned payload snapshot'
+  fail 'one-way main message did not use scoped ingress with a borrowed payload'
 run_case phase26_payload_forward tests/phase26_payload_forward.moss '11'
 run_optimized_case phase26_copy_payloads tests/phase26_copy_payloads.moss \
   "forwarded: 10
@@ -281,8 +281,9 @@ grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/n
 warning_stdout="$test_build/large_payload_warning.stdout"
 warning_stderr="$test_build/large_payload_warning.stderr"
 "$compiler" --check tests/large_payload_warning.moss >"$warning_stdout" 2>"$warning_stderr"
-grep -F 'warning: message payload materializes 1088 bytes at an owned domain boundary' \
-  "$warning_stderr" >/dev/null || fail "large payload did not report its copy cost"
+if grep -F 'MESSAGE_PAYLOAD_COPY_LARGE' "$warning_stderr" >/dev/null; then
+  fail "read-only message send reported payload materialization"
+fi
 
 reject_case branch_divergent_domain_types \
   "domain handles cannot be used as ordinary values or payloads"

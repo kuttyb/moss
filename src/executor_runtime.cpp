@@ -1150,12 +1150,7 @@ where
     let erased: std::boxed::Box<dyn FnOnce() -> R + Send + 'static> = unsafe {
         std::mem::transmute(scoped)
     };
-    let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
-    runtime_invoke(move || {
-        let result = erased();
-        reply_tx.send(result).unwrap_or_else(|_| std::process::abort());
-    });
-    reply_rx.recv().unwrap_or_else(|_| std::process::abort())
+    runtime_invoke(move || erased())
 }
 
 // ─── Branch join scope ────────────────────────────────────────────────────

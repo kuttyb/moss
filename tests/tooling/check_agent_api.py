@@ -254,8 +254,8 @@ warning, _ = invoke(
     "check", str(root / "tests" / "large_payload_warning.moss"), "--json"
 )
 warning_codes = [item["code"] for item in warning["result"]["diagnostics"]]
-if "MESSAGE_PAYLOAD_COPY_LARGE" not in warning_codes:
-    fail("large message warning omitted its stable diagnostic code")
+if "MESSAGE_PAYLOAD_COPY_LARGE" in warning_codes:
+    fail("read-only message send reported payload materialization")
 
 ownership_error, _ = invoke(
     "check",

@@ -135,6 +135,15 @@
    }
   },
   {
+   "name": "guard_executor_invoke_borrowed_loop_value",
+   "file": "probes/guard_executor_invoke_borrowed_loop_value.moss",
+   "category": "guard",
+   "spec": "§23",
+   "note": "A borrowed Vector iteration element must be copied before executor.invoke.",
+   "check": "reject",
+   "code": "OWNERSHIP_BORROWED_ITERATOR_CONSUME"
+  },
+  {
    "name": "guard_executor_config",
    "file": "probes/guard_executor_config.moss",
    "category": "guard",
