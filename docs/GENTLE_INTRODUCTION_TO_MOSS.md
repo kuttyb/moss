@@ -10,7 +10,7 @@ Moss is a statically checked, native systems programming language designed to fe
 
 Moss combines Python-like syntax and type inference with native compilation, ownership-aware values, and static checking.
 
-For concurrency, Moss uses an actor-like model: a **domain** owns private mutable state and communicates through synchronous, by-value messages. The programmer writes that simple isolation model; the compiler lowers it to efficient shared-memory execution with compiler-derived fine-grained locks, deadlock-safe lock ordering, and zero-copy borrowing where it can preserve the same value semantics.
+For concurrency, Moss uses an actor-like model: a **domain** owns private mutable state and communicates through synchronous messages. A message lends its arguments as read-only borrows for the call; the sender keeps its values. The compiler lowers this model to shared-memory execution with compiler-derived fine-grained locks and deadlock-safe lock ordering.
 
 So Moss source stays small:
 
@@ -534,8 +534,9 @@ payload such as `String` is only borrowed inside that arm. If an arm needs to
 transfer ownership of such a payload, write `match consume job:` instead;
 that consumes the entire `job` on every path. An owned function result or fresh
 enum construction can also be consumed. An interior place such as
-`envelope.job` cannot be partially moved. A READ payload can still feed a
-calculation or cross a `message`/`reply` value boundary. The READ borrow lasts
+`envelope.job` cannot be partially moved. A READ payload can feed a calculation or be forwarded through a synchronous
+`message`. Replying with an incoming payload requires `copy(...)` when an
+independent non-primitive value is needed. The READ borrow lasts
 through the whole match. No `move` or `ref` annotation is written in the pattern.
 
 Use `old = replace(phase, Phase.Idle)` to install an equal-typed fallback in
@@ -720,77 +721,23 @@ More pipeline combinators can be added over time without changing this basic mod
 
 ---
 
-## 7. Ownership: The Main Difference a Python Programmer Will Notice
+## 7. Ownership: explicit copies and field moves
 
-Python programmers are accustomed to assignments creating another reference to the same object:
+Moss moves a whole non-primitive local on assignment (`b = a`). When two
+independent values are needed, write `copy(a)`. `Moss::Copy` is compiler-derived:
+it includes primitives, `String`, `Vector`, `Map`, `Queue`, `option`, and
+records/enums made entirely from copyable contents. Files, ranges, domain handles, the
+executor, branch/scope handles, and values containing one are `NonCopy`.
 
-```python
-b = a
-```
+Non-primitive element reads, Map value reads, payload replies, and domain-state
+replies do not copy silently; use `copy(...)`. A non-primitive field can leave
+only with `take(field)` for Vector/Map/option or `copy(field)` for a copyable
+field. Reading and mutating through a field remain in place. `match consume`
+consumes an owned enum and binds its selected payload.
 
-Moss does not silently create general aliases this way.
-
-For simple values:
-
-```moss
-fn main():
-  a = 10
-  b = a
-
-  echo a
-  echo b
-```
-
-both values remain usable.
-
-For an owned object:
-
-```moss
-type Job:
-  name: String
-
-fn main():
-  a = Job(name: "compile")
-  b = a
-
-  echo b.name
-```
-
-the assignment can transfer ownership from `a` to `b`.
-
-Using `a` afterward is then an error:
-
-```moss
-echo a.name
-```
-
-The useful beginner rule is:
-
-> Moss does not silently deep-copy large values, and it does not silently create unrestricted aliases to them.
-
-The compiler keeps track of who owns a value and reports mistakes before the program runs.
-
-Ownership is tracked per variable, not per field. Moving one non-Copy field out
-of a value consumes the whole variable:
-
-```moss
-type Pair:
-  a: Vector[Int]
-  b: Vector[Int]
-
-fn swap(p: Pair) -> Pair:
-  return Pair(a: p.b, b: p.a)   # rejected: moving p.b consumes p
-```
-
-Clone the field you still need before the first move. Mutating a field in
-place works both through a parameter (`fn add(p: Pair, x: Int): p.a.push(x)`)
-and on a local variable's field (`p.a.push(x)` where `p` is a local). A member
-call on a collection whose element type is still unknown (`var v = []` followed
-by `v.push(1)`) is still rejected with `local member calls are not implemented`;
-start from a literal with elements or a typed constructor such as
-`Vector[Int]()`.
-
-You do not write Rust-style lifetime or borrow annotations in Moss source.
+The compiler derives access effects, so Moss source has no explicit borrow
+annotations. The complete rules, compiler-tested examples, and diagnostics live
+in [OWNERSHIP.md](OWNERSHIP.md).
 
 ---
 
@@ -914,7 +861,7 @@ private mutable state
         +
 synchronous messages
         +
-by-value message semantics
+read-only borrowed message arguments
 ```
 
 The important rule is that the domain owns its state. Other code interacts with that state only through the domain's handlers.
@@ -948,7 +895,11 @@ domain Counter:
 
 `value` belongs to `Counter`. A caller cannot simply reach in and mutate it.
 
-The message model is also intentionally simple: payloads cross the domain boundary **by value**. The receiver sees an immutable value snapshot. It can read that payload or forward it, but it cannot mutate or consume the incoming message value.
+The message model is also intentionally simple: a synchronous message lends its
+arguments as read-only borrows for the duration of the call. The sender keeps
+each value and no copy is made. The receiver may read or forward a payload, but
+cannot edit or consume it. Replying with a received payload or domain state
+requires `copy(...)`.
 
 So at the Moss language level, you can think of domains as synchronous actors with value messages.
 
@@ -960,24 +911,25 @@ Because Moss knows the complete domain topology and the state each handler reads
 
 ```text
 Moss source:
-  private state + by-value messages
+  private state + synchronous read-only message borrows
 
 Compiler lowering:
   shared memory
   fine-grained compiler-generated locks
   compiler-controlled lock ordering
-  borrowed / zero-copy payload passing where safe
+  borrowed payload passing
 ```
 
 You never write the locks yourself.
 
 The compiler determines which pieces of state need protection, generates the fine-grained synchronization, and acquires locks in a compiler-controlled order so application code cannot introduce lock-order deadlocks.
 
-And where a synchronous by-value message can be represented safely as a temporary read-only borrow, the backend can avoid physically copying the payload while preserving the same Moss value semantics.
+Message sends use a read-only borrow in both the Moss rule and the generated
+execution; they do not copy the argument.
 
 For the programmer, the model stays:
 
-> **Private state. Synchronous messages. Values cross the boundary, not shared mutable aliases.**
+> **Private state. Synchronous messages. The handler borrows the payload for the call; the sender retains it.**
 
 Create a domain instance and send it a message:
 
@@ -1072,17 +1024,17 @@ allocation. To check a helper before using it as an initializer, run
 separate `may_panic`, variant-precise `raise_set`, `may_diverge`, and
 `unresolved` facts the checker uses.
 
-### Messages have value semantics
+### Message lends and executor gives
 
-At the language level, a payload sent to another domain is an immutable value snapshot.
+A `message` borrows each argument read-only for the synchronous call. The
+sender keeps the value, and the handler cannot edit or consume the payload.
+Forwarding it through another message borrows it again. Replying with an
+incoming payload or domain state needs `reply copy(value)`.
 
-The receiving handler may read it or forward it, but it may not mutate or consume an incoming message payload.
-
-A received `Int`, `Float`, or `Bool` can be assigned into domain state directly. To keep a received `String`, record, or collection, store a new value built from it, for example one returned by an ordinary helper.
-
-The production compiler may implement safe synchronous messages more efficiently under the hood, including shared memory and borrowed reads, without changing the source-level value model.
-
-As a Moss programmer, you write the message semantics, not locks.
+`executor.invoke` gives its arguments to queued work by moving them. If the
+caller needs a value afterward, pass `copy(value)` at the invoke site. Moss
+programmers write neither lock nor borrow syntax; the compiler checks these
+ownership rules. See [OWNERSHIP.md](OWNERSHIP.md).
 
 ---
 

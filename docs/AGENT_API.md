@@ -81,9 +81,9 @@ identifiers are never placed in `semantic_identity`. The bootstrap
 moss check src/main.moss --json
 ```
 
-Successful checks return a diagnostics array, including warnings such as
-`MESSAGE_PAYLOAD_COPY_LARGE` when the selected boundary physically materializes a
-payload. Compile failures return stable category codes such as
+Successful checks return a diagnostics array. Synchronous message arguments are
+read-only borrows, so the compiler does not issue payload copy-cost warnings for
+message sends. Compile failures return stable category codes such as
 `OWNERSHIP_USE_AFTER_CONSUME`, `RECURSION_CYCLE`, and
 `TYPE_INFERENCE_FAILED`. Phase 22.1 also gives established domain and functional
 rules specific IDs such as `DOMAIN_SELF_MESSAGE`,
@@ -94,6 +94,12 @@ rules specific IDs such as `DOMAIN_SELF_MESSAGE`,
 `QUERY_TARGET_NOT_FOUND` retain their existing stable IDs while gaining structured
 causes and guidance. Human diagnostics use the same facts and remain the default for
 `moss --check source.moss` and `moss check source.moss`.
+
+Ownership failures also use `IMPLICIT_COPY`, `IMPLICIT_FIELD_MOVE`, and
+`COPY_REQUIRES_MOSS_COPY`; invalid
+`take(...)` targets use `TAKE_REQUIRES_FIELD_PATH`,
+`TAKE_PATH_CONTAINS_INDEX`, or `TAKE_UNSUPPORTED_FIELD_TYPE`. A declaration that
+uses a reserved builtin name is reported as `RESERVED_NAME`.
 
 `moss agent bootstrap --json` advertises the compiler-owned vocabulary in
 `diagnostic_contract.guidance_kinds`. Clients should treat these values as stable
@@ -204,7 +210,8 @@ exists. Phase 6A does not run a new statement-effect analysis to answer a query.
 `calls` reports direct and transitive statically resolved targets retained by checking.
 Direct records include a durable call-site ID, callee ID, source, concrete argument
 types, selected specialization, and boundary. Checked message edges are retained as
-`synchronous_message_by_value` with their receiver binding; ordinary calls remain
+`synchronous_message_by_value` with their receiver binding (a compatibility schema
+label; source semantics are a read-only borrow for the call); ordinary calls remain
 `ordinary_call`. Each direct record also carries `target_source`, the callee
 declaration provenance. Its existing `source_file` and `line` fields remain the call
 site provenance.

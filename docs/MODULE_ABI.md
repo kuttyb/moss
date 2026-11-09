@@ -48,10 +48,12 @@ For concrete exports it records:
 Exported domain handlers also retain the message-payload contract: every
 incoming payload parameter has READ-only capability. It may be inspected or
 forwarded through another explicit message, but cannot be mutated, consumed,
-reassigned, or stored by move. A reply is a new semantic value boundary, so
-replying the incoming value by value is legal regardless of whether its
-concrete type is `Copy`. This contract
-is preserved when a module is specialized and by both execution engines.
+reassigned, or stored by move. A reply that returns an incoming payload or
+domain state requires explicit `copy(...)` when an independent non-primitive
+value is needed. The checked handler body carries that operation through
+source-free specialization; message forwarding itself remains a read-only
+borrow with no copy. This contract is preserved when a module is specialized
+and by both execution engines.
 
 Exported domains may also carry structural `route name: Domain` declarations
 from `domainroutes(...)`. These describe route edges for final application

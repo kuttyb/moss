@@ -12,6 +12,7 @@ provider artifact. The exact tag-only variants are:
 | `std.FileError` | `NotFound`, `PermissionDenied`, `NotRegularFile`, `InUse`, `Full`, `IO` |
 | `std.ParseError` | `Invalid`, `Overflow` |
 | `std.ConversionError` | `NonFinite`, `Overflow` |
+| `std.CollectionError` | `Empty`, `MissingKey`, `InvalidIndex` |
 
 `FileIO` operations, `parse_int`, `parse_float`, and `to_int` always raise
 these canonical types. An imported `provider.ParseError`, for example, is a
@@ -44,3 +45,24 @@ CONSUME parameters transfer an owned converted value, and WRITE parameters
 copy the final provider value back to the caller before either normal return
 or typed-raise propagation. This preserves the caller's observable mutation
 through recovery.
+
+`Vector.remove(index)` and `Vector.swap_remove(index)` raise
+`CollectionError.InvalidIndex` for an invalid index. `Map.remove(key)` raises
+`CollectionError.MissingKey` when the key is absent. The operations return the
+removed value on success. Empty `pop()`, absent strict Map indexing, and
+out-of-range Vector indexing panic; they do not raise `CollectionError`.
+
+## Ownership diagnostics
+
+These are compile-time diagnostic codes, not variants of the standard error
+enums:
+
+| Code | Meaning |
+| --- | --- |
+| `IMPLICIT_COPY` | A non-primitive value would be copied without `copy(...)`. |
+| `COPY_REQUIRES_MOSS_COPY` | The argument to `copy(...)` is not a `Moss::Copy` type. |
+| `IMPLICIT_FIELD_MOVE` | A non-primitive field value leaves its field without an allowed `take(...)` or `copy(...)`. |
+| `TAKE_REQUIRES_FIELD_PATH` | `take(...)` does not name an assignable field-only path. |
+| `TAKE_PATH_CONTAINS_INDEX` | The `take(...)` path contains an index. |
+| `TAKE_UNSUPPORTED_FIELD_TYPE` | The target field is not a Vector, Map, or option. |
+| `RESERVED_NAME` | A declaration uses a reserved builtin name such as `copy` or `take`. |

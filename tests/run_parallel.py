@@ -77,6 +77,7 @@ def _kill_process_tree(proc: subprocess.Popen[str]) -> None:
 
 # All individual standalone Python regressions from tests/run.sh
 TOOLING_TESTS: list[tuple] = [
+    ("check_doc_examples", [sys.executable, "tests/tooling/check_doc_examples.py", "{compiler}", "{out}/doc_examples"]),
     ("check_run_parallel_timeout", [sys.executable, "tests/tooling/check_run_parallel_timeout.py"]),
     ("check_make_incremental_dependencies", [sys.executable, "tests/tooling/check_make_incremental_dependencies.py"]),
     ("check_retired_syntax", [sys.executable, "tests/tooling/check_retired_syntax.py", "--self-test"]),

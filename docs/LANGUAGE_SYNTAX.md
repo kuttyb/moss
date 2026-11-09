@@ -156,10 +156,10 @@ be resolvable inside that package alone; consumers cannot fill an omitted field,
 so exported library types annotate their fields. Moss v0.1 therefore has no
 generic user-defined types.
 
-Ownership is tracked per binding, not per field. Moving a non-Copy field out of
-a value consumes the whole binding, so building a new value from two vector
-fields of the same source fails with `OWNERSHIP_USE_AFTER_CONSUME` after the first
-move; clone the fields that must survive. A mutating method called as a
+Whole-local assignment moves a non-primitive value; a later use fails with
+`OWNERSHIP_USE_AFTER_CONSUME`. A field cannot be moved implicitly: use
+`take(field)` for Vector/Map/option or `copy(field)` for a `Moss::Copy` field.
+The complete rules are in [OWNERSHIP.md](OWNERSHIP.md). A mutating method called as a
 statement on a field of a local binding (`h.data.push(x)` where `h` is a local)
 is currently rejected with `local member calls are not implemented`; the same
 call through a parameter (`fn add(h: Heap, x: Int): h.data.push(x)`) or inside
@@ -239,9 +239,10 @@ accepts a statically known enum expression, including `match envelope.result:`.
 It READ-borrows the enum for the match, following ordinary Moss access rules
 for the expression and its containing storage. Nontrivial payload bindings are
 temporary READ views: they cannot be mutated, consumed, or moved into ordinary
-owned local or storage contexts. They may be read to compute an independent
-result, and may cross `message` and `reply` semantic value boundaries. Trivial
-scalar fields follow ordinary copy rules. The READ borrow lasts for the whole
+owned local or storage contexts. They may be read to compute a result or forwarded through a synchronous
+`message`. Replying with an incoming payload requires `copy(...)` when an
+independent non-primitive value is needed. Trivial scalar fields follow ordinary
+copy rules. The READ borrow lasts for the whole
 match statement; the original enum remains usable afterward.
 
 `match consume result` accepts an owned enum binding or owned enum rvalue,
@@ -429,8 +430,8 @@ Parentheses may be used to override this order.
 The current built-in collection surface is intentionally small:
 
 ```text
-Vector:  push(item), pop(), vec[i], vec[i] = item
-Map:     map[key], map[key] = value, get(key, default), keys(), values(), delete(key, fallback, found)
+Vector:  push(item), pop(), remove(index), swap_remove(index), vec[i], vec[i] = item
+Map:     map[key], map[key] = value, get(key, default), keys(), values(), delete(key, fallback, found), remove(key)
 Queue:   push(item), pop()
 ```
 
@@ -442,6 +443,27 @@ order. Cardinality is available through the `count` pipeline terminal.
 otherwise it returns the eagerly evaluated fallback and sets `found` to false.
 The fallback is transferred by value; a nontrivial binding is consumed on either
 path.
+
+`Vector.remove(index)` and `Vector.swap_remove(index)` return and move out the
+removed element. `Map.remove(key)` returns and moves out the removed value.
+They raise `CollectionError.InvalidIndex` or `CollectionError.MissingKey` on
+failure. Empty `pop()`, a missing strict `map[key]`, and an out-of-range
+`vec[index]` panic. See [CollectionError](MOSS_STANDARD_ERRORS.md#compiler-defined-standard-errors).
+
+### Explicit ownership builtins
+
+`copy(value)` has one argument and returns an independent value of the same
+type. It is valid for primitives, `String`, `Vector`, `Map`, `Queue`, `option`, and
+records/enums built entirely from `Moss::Copy` values. Copying a `NonCopy`
+value is a `COPY_REQUIRES_MOSS_COPY` error. Copying is never implicit for a
+non-primitive element, Map value, incoming payload, or domain-state value.
+
+`take(field_path)` has one argument and accepts only a field-only path to a
+Vector, Map, or option field. It moves the value out and leaves an empty
+Vector, empty Map, or `None`. A field must otherwise be read in place or leave
+through `copy(...)`; an implicit field move is `IMPLICIT_FIELD_MOVE`. `copy`
+and `take` are reserved names and a conflicting declaration is `RESERVED_NAME`.
+See [Ownership](OWNERSHIP.md).
 
 ### Functional pipelines
 
@@ -522,12 +544,12 @@ dynamically escaping callable values are not part of this source surface.
 Pipeline values are compiler structure, not lazy runtime iterators. A transformation
 pipeline whose result is still a collection cannot cross `message` or `reply`
 directly; bind its materialized result first. A terminal already produces a concrete
-scalar and may cross an explicit domain copy boundary normally. All ordinary ownership
-and alias checks also apply inside callbacks. A consuming callback is rejected when
-current collection semantics cannot provide ownership without an implicit copy.
-For the same reason, mapping `_` or a non-Copy projection such as `_.payload` out of a
-READ-only source is rejected rather than cloned implicitly. Capture mutation is rejected
-even when the WRITE/CONSUME requirement is propagated through an ordinary helper call.
+scalar. All ordinary ownership and alias checks also apply inside callbacks. A
+consuming callback is rejected when current collection semantics cannot provide
+owned elements; use `copy(...)` where an independent `Moss::Copy` value is intended.
+Mapping `_` or a non-Copy projection such as `_.payload` out of a READ-only source
+is rejected rather than copied implicitly. Capture mutation is rejected even when
+the WRITE/CONSUME requirement is propagated through an ordinary helper call.
 
 ### Integer arithmetic
 
@@ -571,10 +593,11 @@ send and same-domain handler chaining are also errors; reusable handler logic be
 an ordinary statically resolved helper. Domains own mutable state, handlers run to
 completion without re-entrancy, and ownership boundaries are checked statically.
 
-Message arguments and replies remain semantic by-value boundaries. Incoming payload
-bindings are immutable snapshots: they may be read or forwarded, and the original
-incoming value may be replied by value, but it may not be written, consumed, rebound,
-or moved into state. This applies to primitive and nontrivial values alike.
+Message arguments are synchronous read-only borrows: they make no copy, and the
+sender keeps its value. A handler may read or forward a payload, but may not edit
+or consume it. Replying with a payload or domain state requires `copy(...)`.
+`executor.invoke` moves each argument into queued work; use `copy(x)` to keep a
+value at the caller. See [Ownership](OWNERSHIP.md).
 
 Domains are constructed directly in the initial composition prefix of `main`:
 
@@ -958,38 +981,15 @@ checkpoint and design records. Parser limitations are not new Moss semantics.
 
 ### Message payloads
 
-Every incoming handler argument is an immutable value-copy snapshot. A handler
-may read fields, call READ-only helpers, and forward the value through another
-explicit `message` boundary. It may not mutate or consume the incoming value,
-move it into domain state, or reassign the incoming binding. A reply is a new
-semantic value boundary, so replying with the incoming value by value is legal.
-This restriction applies to every ordinary payload type, including primitive
-`Copy` values. Assigning a primitive payload such as an `Int` into state copies it
-and is only a READ of the payload. A nontrivial payload, such as a `String`, a record,
-or a collection, cannot be stored directly; store a new value built from it, for example
-one returned by a helper. Domain handles are not payload values and cannot cross either
-boundary. Derived replies remain ordinary newly computed data:
+A message lends its arguments to the receiving handler as read-only borrows for
+the duration of the synchronous call. The sender keeps the value, and no copy
+is emitted. Handlers may read or forward the payload but may not edit or
+consume it. Replying with an incoming payload or domain state requires
+`reply copy(value)`. `executor.invoke` has different ownership: its argument
+moves into queued work, so use `copy(x)` if the caller must retain `x`.
 
-```moss
-domain Processor:
-  fn Size(payload: Record) -> Int:
-    reply payload.size()
-```
-
-The restriction is checked through the normal ownership/effect analysis,
-including calls to helpers and methods. A forwarding `message` is a new copy
-boundary and therefore does not consume the original payload. `Copy` is only a
-backend/property distinction: primitive values may continue to be passed by
-value, but it does not weaken payload immutability.
-
-`message` and `reply` remain **semantic** by-value boundaries. The production backend
-materializes an owned reply and materializes an owned message payload at exported/native
-or other ownership boundaries. For an internal synchronous `_shared` message, it may
-instead lend a stable immutable Rust value or static state view for the duration of the
-complete nested call. That temporary borrow is observationally equivalent to the Moss
-snapshot: the receiver is READ-only, it cannot escape, and retained class guards keep
-all reachable state leaves stable until the call returns. Ordinary protected READs use
-the same view machinery; no Rust reference can escape through a `message` or `reply`.
+See [Ownership](OWNERSHIP.md) for the copy, field-move, matching, and collection
+rules.
 
 ### Typing
 

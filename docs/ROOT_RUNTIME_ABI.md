@@ -92,11 +92,12 @@ Worker identity may also be checked defensively, but Root identity is the semant
 ### 3. RootDescriptor representation
 
 `RootDescriptor` is the internal submission representation for one statically
-resolved concrete domain instance, handler, and evaluated argument snapshot.
-It is produced for `executor.invoke(...)`, top-level `message`, and generated
-host ingress. It is not a Moss value, first-class handler reference, or
-dynamically dispatched target. Use checked Moss semantic identity for the
-target, not a generated Rust symbol. Queued descriptors obey
+resolved concrete domain instance and handler, plus its arguments. For
+`executor.invoke(...)`, arguments are moved into the queued Root. A top-level
+`message` instead lends read-only arguments for the synchronous call. The
+descriptor is not a Moss value, first-class handler reference, or dynamically
+dispatched target. Use checked Moss semantic identity for the target, not a
+generated Rust symbol. Queued descriptors obey
 `queue_capacity`. The phase spec fixes these represented facts, not the Rust
 field layout, byte ABI, generic order, or error encoding. All three ingress
 paths must share one representation.
@@ -384,7 +385,7 @@ uses these features links against their crates.
 The checker records `ExecutorStartPlan` (ordered configuration calls) and,
 for every `executor.invoke(...)`, a `RootSubmissionPlan` (target binding,
 checked domain and handler semantic identities, backend handler selector,
-formal argument types, argument snapshot expressions, one-way). Codegen
+formal argument types, checked argument expressions, one-way). Codegen
 consumes only these plans:
 
 ```rust
@@ -396,10 +397,10 @@ let __cfg0_checked: usize = <usize as std::convert::TryFrom<i64>>::try_from(__cf
 let mut executor = MossExecutor::new().threads(__cfg0_checked)/* ... */.start();
 {
     let __domain = worker.clone();
-    let __arg0 = /* owned value-boundary snapshot, evaluated at invoke */;
+    let __arg0 = /* argument moved into queued work, evaluated at invoke */;
     executor.enqueue_root(MossRootDescriptor::with_target(
         next_root_id(), "handler:Worker.Process@N",
-        move || { let _ = __domain.Process_shared(/* lend __arg0 */); }));
+        move || { let _ = __domain.Process_shared(__arg0); }));
 }
 executor.join();
 ```
@@ -419,16 +420,19 @@ and loop bodies. It lowers to a synchronous Root:
 ```rust
 let before = {
     let __moss_root_domain_N = worker.clone();
-    let __moss_root_arg_N = /* owned snapshot, evaluated once */;
-    runtime_invoke(move || __moss_root_domain_N.Get_shared(/* lend __moss_root_arg_N */))
+    let __moss_root_arg_N = /* read-only borrow, evaluated once */;
+    runtime_invoke_scoped(move || __moss_root_domain_N.Get_shared(__moss_root_arg_N))
 };
 ```
 
 This holds in `INLINE` (before `start()`), `ACTIVE`, and again after
 `join()`. A nested `message` inside a Root (handler or helper body) is never
 marked. It stays a direct synchronous call within its caller's Root.
-`runtime_invoke` must therefore accept `F: FnOnce() -> R + Send + 'static`.
-It returns the reply.
+`runtime_invoke_scoped` blocks until the Root completes, so borrowed message
+arguments cannot escape the call. It returns the reply. Ordinary host ingress
+continues to use `runtime_invoke` with its `'static` work closure. A handler
+that replies with its incoming payload or domain state must explicitly use
+`copy(...)`.
 
 The compiler emits `runtime_invoke` for every checked main-root message,
 including programs that do not construct an Executor. Executable root crates
@@ -509,7 +513,7 @@ observes a closed FileIO fails closed.
 ### Fast Debug
 
 `executor.invoke` runs as a deterministic sequential schedule of deferred
-roots (snapshot at invoke, run at join). A top-level `message` runs synchronously as
+roots (arguments move at invoke, work runs at join). A top-level `message` runs synchronously as
 its own Root. Fast Debug FileIO execution is intentionally unsupported in
 Phase 20; native FileIO is the supported execution backend, and the interpreter
 raises a precise diagnostic instead of implementing a second POSIX runtime.

@@ -1,55 +1,51 @@
-# Moss Dev Cheat Sheet
+# Moss ownership cheat sheet
 
-Oct 28, 2026 · @Bank kus
+- `copy(x)` makes an independent copy of a `Moss::Copy` value (primitives, String, Vector, Map, Queue, option, and records/enums of those); it is reserved, and `NonCopy` values cannot be copied (`COPY_REQUIRES_MOSS_COPY`).
+- A non-primitive element, Map value, payload, or domain-state value cannot be copied implicitly; write `copy(...)` (`IMPLICIT_COPY`).
+- A non-primitive field leaves only with `take(field)` for Vector/Map/option or `copy(field)`; otherwise `IMPLICIT_FIELD_MOVE`.
+- Whole-local moves, rebinding, join/loop rules, and in-place reads (`for`, `match`, READ-only calls) are unchanged; `match consume` consumes an owned enum.
+- `message` lends read-only arguments and the sender keeps them; `executor.invoke` moves arguments into queued work, so use `copy(x)` to retain one.
+- Replies of incoming payloads or domain state require `reply copy(value)`.
+- `Vector.remove`, `Vector.swap_remove`, and `Map.remove` return moved values and raise `CollectionError`; empty `pop`, missing `m[k]`, and out-of-range `v[i]` panic.
+- `take` accepts only a field-only path to a Vector/Map/option field; Queue is unsupported.
+- `copy` and `take` are reserved names. Borrowing a field through assignment (`b = s.f`) is not supported.
 
-For fast iteration use `moss check` and the interpreter, which never run rustc. Anything that emits Rust for a package goes through Margo.
+See [OWNERSHIP.md](OWNERSHIP.md) for the complete rules, examples, and diagnostics.
 
-## ECT loop (no rustc)
+`match consume` takes an owned enum and binds the selected payload:
 
-Run `margo build` once so every dependency has a fresh `.mossi`. After that, iterate with these.
+<!-- moss-test: pass output="ready" -->
+```moss
+enum Status:
+  Ready(value: String)
+  Waiting
 
-| Goal | Command | What it checks | Dependencies |
-| --- | --- | --- | --- |
-| Check one file | `moss check <file>` | Only what the file transitively reaches | Reads dependency `.mossi` only. Missing or stale: error, run `margo build` |
-| Run without a native build | `moss run --interp <file>` (add `--trace`) | `moss check` on the entry's reach, then interprets in memory | Dependency bodies run from `.mossi` Section 2. Never rechecks dependency packages |
-| Debug a package | `margo debug` (add `--trace`) | Same as above, from the package root | Same as above |
-| Interpreted tests | `margo test --interp [filter]` (add `--trace`) | The tests' reach | Same as above. No `--release` |
-| Re-run only affected tests | `moss test --affected` | Tests the edit can reach, chosen conservatively | Single project |
+fn main():
+  status = Status.Ready(value: "ready")
+  match consume status:
+    case Ready(value):
+      echo value
+    case Waiting:
+      echo "waiting"
+```
 
-When a dependency changes, run `margo build` again. It rebuilds only packages whose fingerprint changed.
+It cannot consume an enum directly from a field (the field is an interior
+place):
 
-## Native unit tests
+<!-- moss-test: fail code=MATCH_CONSUME_INTERIOR_PLACE -->
+```moss
+enum Status:
+  Ready(value: String)
+  Waiting
 
-Use `margo test`. It builds the package graph through Cargo and runs the tests natively.
+type Holder:
+  status: Status
 
-| Goal | Command | Notes |
-| --- | --- | --- |
-| All tests, debug profile | `margo test` | Package rules. Dependency tests run only when that package is the root |
-| Filtered tests | `margo test <filter>` |  |
-| Tests on the release profile | `margo test --release` |  |
-| Cap parallel jobs | `margo test -j N` | Default is the core count |
-| Machine-readable output | add `--json` |  |
-
-`margo test` runs the package's tests fully native. Test-file helpers are scoped
-to their declaring file, and shared test helpers belong in an explicitly
-imported module under `tests/`. The same rules apply to `margo test --interp`.
-
-## Release builds
-
-| Goal | Command | Notes |
-| --- | --- | --- |
-| Build the package graph, release | `margo build --release` | One Cargo workspace build for the whole graph. Unchanged packages are skipped |
-| Build and run, release | `margo run --release` | Runs the root package's executable |
-| Benchmarks | `margo bench [filter]` |  |
-| Whole-package check, no native build | `margo build --check` | Fingerprint skipping applies |
-| Cap parallel jobs | add `-j N` | One cap covers both the `moss` passes and Cargo |
-| Start clean | `margo clean` |  |
-
-Generated crates build with `-D warnings`, so a rustc upgrade can fail a build with no Moss change.
-
-## Rules that hold everywhere
-
-- **`.mossi` is the boundary.** Once a dependency's `.mossi` is present and fresh, nothing reads that package's source. Rebuilding dependencies is Margo's job only.
-- **Package builds go through Margo.** `moss build` and `moss build --check` on a package fail with `MOSS_PACKAGE_BUILD_REQUIRES_MARGO`. Use `margo build` or `margo build --check`.
-- **Reach rules are for ECT only.** `moss check` and the interpreter check just what the entry reaches. Anything that emits Rust follows package rules.
-- **`moss check` never looks at rlibs.** A swapped provider rlib is caught by `margo build`, not by check.
+fn main():
+  var holder = Holder(status: Status.Ready(value: "ready"))
+  match consume holder.status:
+    case Ready(value):
+      echo value
+    case Waiting:
+      echo "waiting"
+```

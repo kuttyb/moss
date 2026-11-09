@@ -418,8 +418,8 @@ def main() -> int:
         fail("moss-language no longer explains that domain fn is a handler")
     for marker in (
         "`canonical_docs.practical_language_guide`",
-        "`Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`",
-        "`Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup",
+        "`Vector`: `vec.push(item)`, `vec.pop()`, `vec.remove(index)`, `vec.swap_remove(index)`, indexed `vec[i]`, and `vec[i] = item`",
+        "`Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, defaulted lookup `map.get(key, default)`, and `map.remove(key)`",
         "`Queue`: `queue.push(item)` and `queue.pop()`",
         "A test block is not a separate domain\ncomposition root",
         "state initializer must be side-effect-free",

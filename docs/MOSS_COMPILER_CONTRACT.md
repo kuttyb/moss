@@ -7,6 +7,10 @@ Terms:
 - **Consumers:** every stage after the checker: Fast Debug, the native emitter, the functional optimizer.
 - **Executing and lowering are not deciding.** Computing a + b, or choosing Rust syntax for a checked decision, is allowed. Choosing which + or which function is a decision.
 
+For user-code values, generated Rust `.clone()` calls must correspond to an
+explicit Moss `copy(...)` operation. Domain-handle shares are the sole
+exception. Emitters and Fast Debug must not add copies to satisfy ownership.
+
 Phase 27 closed at `phase27-5-5-m1`. Its final suite, coverage, counter and
 performance measurements are recorded in
 [the Phase 27.5.5 report](phase27/27_5_5_REPORT.md) and

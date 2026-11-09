@@ -35,7 +35,7 @@ name.
 Phase 10.6B.1 closes the routing universe: a handle is only a composition binding,
 route binding, or `message` receiver. Historical examples that passed handles
 to handlers/helpers or returned them through replies are superseded by declared
-`domainroutes`. Ordinary data payload and reply-by-value semantics are unchanged.
+`domainroutes`. Message arguments are read-only borrows; replying with an incoming payload or domain state requires explicit `copy(...)` when an independent value is needed.
 Each graph instance refers explicitly to its concrete specialization record and
 checked source domain declaration. Phase 10.6C derives a graph-relative
 `SynchronizationPlan` from these exact specialization contexts.
@@ -93,8 +93,10 @@ The checked compiler now has one active domain-invocation concept: a
 an expression. `reply` establishes that value and terminates the handler;
 value-returning handlers must reply on every normal path. Source-level
 `await` is retired and produces a migration diagnostic. Incoming payloads are
-immutable READ snapshots: they may be read, forwarded through another
-`message`, or replied by value, but cannot be written, rebound, or consumed.
+read-only borrows for the synchronous call: they may be read or forwarded, but
+cannot be written or consumed. The sender keeps its value and no copy is made;
+replying with a payload or domain state requires explicit `copy(...)` when an
+independent value is needed.
 Self-send and same-domain handler chaining are rejected; shared logic belongs
 in ordinary helpers.
 

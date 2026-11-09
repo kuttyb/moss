@@ -18,7 +18,7 @@ Inside a root, Moss does not change:
 - compiler-derived READ/WRITE/CONSUME effects remain authoritative;
 - Moss locks remain compiler-generated and globally ordered;
 - domain topology remains statically closed;
-- payloads still cross root/domain boundaries by value;
+- `message` lends its payload read-only for the synchronous call; `executor.invoke` moves arguments into queued work;
 - no user code handles futures, task objects, mailboxes, or worker threads.
 
 The central principle is:
@@ -233,7 +233,7 @@ concrete domain instance
 +
 statically known handler
 +
-evaluated argument snapshot
+evaluated argument values, moved into the queued Root
 ```
 
 and lowers it to an internal root descriptor and enqueue operation.
@@ -248,7 +248,7 @@ executor.invoke(worker.Process(item))
 Root {
   domain  = worker
   handler = Worker.Process
-  args    = snapshot(item)
+  args    = move(item)
 }
 
                 ↓ runtime
@@ -276,7 +276,11 @@ Moss therefore gains explicit root concurrency without gaining first-class tasks
 
 ### 4.2 Arguments
 
-Arguments are evaluated when `invoke` executes and cross into the future root by Moss's ordinary semantic value-boundary rule.
+Arguments are evaluated when `invoke` executes and moved into the queued Root.
+The caller cannot use a moved value afterward; pass `copy(value)` when it must
+retain an independent copy. For synchronous `message`, the handler instead
+borrows its arguments read-only for the call, makes no copy, and leaves the
+sender's values available.
 
 The future root cannot retain an alias into mutable storage in `main`.
 
@@ -1652,7 +1656,7 @@ Borrowing gives helpers and compiler branches the access they need without chang
 
 Phase 20 establishes the following contract:
 
-> **Moss supports synchronous blocking FileIO for Solo regular files and one optional Rust-backed Executor for root-level concurrency. `executor.invoke(concreteDomain.Handler(args...))` is compiler-recognized and lowers to internal root submission; arguments cross by value and invoked handlers return no value in Phase 20. All concurrent Moss roots share the active executor's bounded admission mechanism, while compiler-generated branches remain children of exactly one root and use root-scoped helping. Host `runtime_invoke` enters through the same root-admission mechanism and synchronously returns the handler's reply; it introduces no second Moss execution population. FileIO has pinned ownership: it may be root-local or domain state, may be synchronously borrowed, and may never be copied, moved, or transferred across a root/domain boundary. Domain-field FileIO operations use ordinary Moss READ/WRITE locking; root-local FileIO needs no Moss lock. The runtime rejects a second live FileIO for the same `(device,inode)`. Blocking compensation is finite, a waking lock holder never waits for an executor slot, and eligible chunk pipelines may parallelize reads/maps only while preserving ordered sequential fold semantics.**
+> **Moss supports synchronous blocking FileIO for Solo regular files and one optional Rust-backed Executor for root-level concurrency. `executor.invoke(concreteDomain.Handler(args...))` is compiler-recognized and lowers to internal root submission; arguments move into queued work and invoked handlers return no value in Phase 20. A synchronous `message` lends its arguments read-only for the call, makes no copy, and leaves the sender's value available. Replying with an incoming payload or domain state requires `copy(...)`. All concurrent Moss roots share the active executor's bounded admission mechanism, while compiler-generated branches remain children of exactly one root and use root-scoped helping. Host `runtime_invoke` enters through the same root-admission mechanism and synchronously returns the handler's reply; it introduces no second Moss execution population. FileIO has pinned ownership: it may be root-local or domain state, may be synchronously borrowed, and may never be copied, moved, or transferred across a root/domain boundary. Domain-field FileIO operations use ordinary Moss READ/WRITE locking; root-local FileIO needs no Moss lock. The runtime rejects a second live FileIO for the same `(device,inode)`. Blocking compensation is finite, a waking lock holder never waits for an executor slot, and eligible chunk pipelines may parallelize reads/maps only while preserving ordered sequential fold semantics.**
 
 The execution model has three entry points and one substrate:
 

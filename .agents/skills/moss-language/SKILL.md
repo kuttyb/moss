@@ -121,9 +121,10 @@ and match expressions are unsupported.
 
 Pattern payload names must exactly match declared field names in declaration
 order; positional renaming is rejected. Tag-only cases use bare `Tag` in
-declarations and patterns. A READ borrow lasts for the complete match. READ
-payload views may feed computations and cross `message`/`reply` value
-boundaries, but cannot be moved to ordinary owned storage. Use
+declarations and patterns. A READ borrow lasts for the complete match. READ payload views may feed
+computations and be forwarded through a `message`; a reply that duplicates an
+incoming payload must use `copy(...)`. They cannot be moved to ordinary owned
+storage. Use
 `replace(place, replacement)` to install an equal-typed value in writable
 storage and obtain the old whole value as owned. A consumed `var` can be
 reinitialized by whole-value assignment before any later read, including at
@@ -197,8 +198,9 @@ Facts the Phase 24 SDK swarm repeatedly rediscovered:
 - An omitted field type is inferred once per program, and an exported package
   type must be resolvable inside its package. There are no generic user types
   yet, so library types annotate their fields.
-- Ownership is per binding: moving one non-Copy field consumes the whole value.
-  A mutating call on a local's field as a statement (`h.data.push(x)` with `h`
+- Whole-local assignment moves a non-primitive value; a non-primitive field
+  cannot leave implicitly. Use `take(field)` for Vector/Map/option or
+  `copy(field)` for a `Moss::Copy` field. A mutating call on a local's field as a statement (`h.data.push(x)` with `h`
   a local `var`) works in every engine. A member call on a receiver whose
   element type is still open (`var v = []` then `v.push(1)`, ledger #12) is
   still rejected with "local member calls are not implemented"; that is tracked
@@ -257,9 +259,11 @@ views, and bare `Map` is not itself a `for` source.
 
 ### Collection operations reference
 
-- `Vector`: `vec.push(item)`, `vec.pop()`, indexed `vec[i]`, and `vec[i] = item`. Cardinality is `vec |> count` or manual tracking. Operations like `.len()`, `.size()`, `.remove()`, or `.clear()` do not exist.
-- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, and defaulted lookup `map.get(key, default)`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. `map.delete(key, fallback, found)` removes and returns a present owned value, writes `true` to the mutable Bool `found`, or returns the eager fallback and writes `false` when absent.
-- `Queue`: `queue.push(item)` and `queue.pop()`.
+- `Vector`: `vec.push(item)`, `vec.pop()`, `vec.remove(index)`, `vec.swap_remove(index)`, indexed `vec[i]`, and `vec[i] = item`. Removal returns the moved element and raises `CollectionError.InvalidIndex`; empty `pop()` panics.
+- `Map`: strict indexing `map[key]`, indexed assignment `map[key] = value`, defaulted lookup `map.get(key, default)`, and `map.remove(key)`, which returns the moved value or raises `CollectionError.MissingKey`. `map.keys()` and `map.values()` return eager owned `Vector` snapshots. `map.delete(key, fallback, found)` removes and returns a present owned value, writes `true` to the mutable Bool `found`, or returns the eager fallback and writes `false` when absent.
+- `Queue`: `queue.push(item)` and `queue.pop()`. Queue is not a `take` target.
+
+`copy` and `take` are reserved names. See [`docs/OWNERSHIP.md`](../../../docs/OWNERSHIP.md) for their types and field-path rules.
 
 For full examples, see `docs/GENTLE_INTRODUCTION_TO_MOSS.md`.
 
@@ -364,11 +368,10 @@ with a value result must `reply` on every normal path. `reply expr` establishes 
 new semantic value boundary and terminates that handler immediately. A no-value
 handler may complete normally.
 
-Incoming handler arguments are immutable value snapshots. A handler may read an
-incoming payload, pass it to a READ-only helper, use it to compute data, forward it
-through another `message`, or reply with it by value. It may not write, consume,
-rebind, or move the payload into state. This is a Moss semantic rule for every
-payload type; whether a backend representation is cheap to copy does not relax it.
+Incoming handler arguments are borrowed read-only for the synchronous message
+call. No copy is made and the sender keeps its value. A handler may read or
+forward a payload but may not edit or consume it. Replying with an incoming
+payload or domain state requires `copy(...)`.
 
 There is no self-send and no same-domain handler chaining. Put shared handler
 implementation in an ordinary helper with normal lexical/module scope. The helper
@@ -447,10 +450,15 @@ the same storage, the allowed combinations are `READ + READ` only. `READ + WRITE
 rejected. Do not work around these diagnostics with invented copies or annotations;
 restructure storage, calls, or intent explicitly.
 
-Moss does not make arbitrary implicit deep copies. Cross-domain `message` arguments
-and `reply` results are explicit semantic value boundaries. Internally protected
-domain reads are compiler-managed borrows, not hidden snapshots, and such borrows
-cannot escape through a message or reply.
+Moss never copies a non-primitive value implicitly. `copy(value)` makes an
+independent `Moss::Copy` value; `Moss::Copy` covers primitives, `String`,
+`Vector`, `Map`, `Queue`, `option`, and records/enums made entirely from those. Files,
+ranges, domain handles, the executor, branch/scope handles, and aggregates
+containing one are `NonCopy`. A message lends arguments read-only and keeps the
+sender's value; `executor.invoke` moves arguments into queued work. Replies of
+payloads or domain state require `copy(...)`. A field leaves only through
+`take(...)` for Vector/Map/option or `copy(...)`; reads in place are unchanged.
+The complete rules and tested examples are in [`docs/OWNERSHIP.md`](../../../docs/OWNERSHIP.md).
 
 ## Traits, specialization, and calls
 

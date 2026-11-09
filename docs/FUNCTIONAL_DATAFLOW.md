@@ -120,8 +120,9 @@ hidden behind one or more ordinary helper calls is treated exactly like direct c
 mutation.
 
 A pipeline is internal compiler structure until it becomes a materialized Moss
-collection or terminal result. A transformation pipeline cannot directly cross a
-`message` or `reply` copy boundary; materialize it in a local binding first.
+collection or terminal result. A transformation pipeline cannot directly cross a `message` argument boundary;
+materialize it in a local binding first. A reply of incoming payload or domain
+state that needs an independent value must explicitly use `copy(...)`.
 A terminal is already a concrete scalar and may cross an explicit domain boundary
 normally. The boundary never transports a lazy pipeline object.
 

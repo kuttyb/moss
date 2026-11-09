@@ -1,6 +1,6 @@
 # Moss v0.1
 
-Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Phase 15.15 adds closed enums, exhaustive matching, and the narrow `replace(place, replacement)` state transition operation. Start with the [v0.1 guide](docs/V0_1.md), [language syntax](docs/LANGUAGE_SYNTAX.md), and [ledger seed project](examples/projects/ledger/README.md).
+Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Phase 15.15 adds closed enums, exhaustive matching, and the narrow `replace(place, replacement)` state transition operation. Start with the [v0.1 guide](docs/V0_1.md), [language syntax](docs/LANGUAGE_SYNTAX.md), [ownership rules](docs/OWNERSHIP.md), and [ledger seed project](examples/projects/ledger/README.md).
 
 Domain routing is statically closed: declare dependencies with `domainroutes`,
 bind them in the initial `main` composition prefix, and invoke them with
@@ -338,8 +338,8 @@ Additional examples:
 - `examples/counter.moss` demonstrates synchronous calls and protected state updates.
 - `examples/shared_memory.moss` shows synchronous Moss calls through plan-driven handler entry.
 - `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, and synchronous message expressions.
-- `examples/object_pipeline.moss` computes an object value inside a domain and sends a primitive snapshot through a declared route.
-- `examples/message_payload_reply.moss` shows legal by-value replies of immutable record and primitive payloads.
+- `examples/object_pipeline.moss` computes an object value inside a domain and sends a primitive argument through a declared route.
+- `examples/message_payload_reply.moss` shows explicit copies when replying with an immutable record payload.
 - `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
 
 The intentional programs under `examples/errors` showcase current Moss diagnostics rather
@@ -363,13 +363,10 @@ To inspect the ownership failure:
 ./moss --check examples/use_after_transfer.moss
 ```
 
-Moss reports the later use and the line where ownership transferred:
-
-```text
-moss:12: error: value 'original' was transferred to 'destination' at line 10. Create an explicit deep copy if both values must remain independently usable.
-```
-
-This is a Moss source rule: assigning a nontrivial uniquely owned local transfers it, and Moss never inserts a hidden deep copy in ordinary local code. The approved `deepCopy()` operation is not implemented yet; see [language syntax](docs/LANGUAGE_SYNTAX.md) for the current contract and [v0.1 limitations](docs/V0_1.md#intentional-boundaries-and-known-friction) for deferred work.
+The later use is rejected with `OWNERSHIP_USE_AFTER_CONSUME`. Whole-local
+assignment still moves; use `copy(original)` before the move when both values
+must remain independently usable. See the single source of truth for these
+rules in [OWNERSHIP.md](docs/OWNERSHIP.md).
 
 ## Implemented language slice
 
@@ -463,9 +460,9 @@ logic in an ordinary helper function.
 
 `reply expr` evaluates `expr` and terminates the handler immediately, like a handler
 return. A value-returning handler must reply on every normal path; a no-value handler
-may complete normally. Incoming payloads are immutable snapshots: handlers may read or
-forward them and may reply with the incoming value by value, but may not mutate,
-consume, reassign, or move them into state. `Copy` does not weaken this rule.
+may complete normally. A synchronous message lends its arguments as read-only
+borrows; the sender keeps its values, and a handler must use `copy(...)` to reply
+with a payload.
 
 `spawn` is retired. Construct domains directly in the initial `main` composition prefix;
 the compiler rejects construction in later execution, control flow, helpers, or handlers.
@@ -513,7 +510,14 @@ Moss v0.1 reached its usable-language milestone in Phase 10. Phase 15 dogfooding
 
 Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
 
-Messages and replies are explicit **semantic** value boundaries: an object, collection, string, state value, or projection may cross a domain boundary, and the sender keeps its independent value. Incoming handler payloads are immutable snapshots regardless of concrete type: handlers may read, forward, or reply with them by value, but may not mutate, consume, reassign, or move them into state. Replies and exported/native boundaries materialize owned values. For an internal synchronous message, the production backend may lend a stable immutable Rust value or protected static view instead of cloning; the borrow cannot escape and remains observationally identical to a snapshot. Ordinary state READs borrow stored values. Primitive `Copy` values remain efficient by value, but `Copy` does not weaken payload immutability. Large statically sized payloads warn only when the selected boundary actually materializes them. Direct assignment of a non-primitive local still transfers ownership; explicit `deepCopy()` for local duplication remains future work.
+`message` lends read-only arguments for the synchronous call, makes no copy, and
+leaves the sender's value available afterward. `executor.invoke` moves its
+arguments into queued work; use `copy(x)` if the caller must keep `x`. Replies
+of incoming payloads and domain state require `copy(...)`. A non-primitive
+value is never copied implicitly, and a non-primitive field leaves only through
+`take(...)` where supported or `copy(...)`. Whole-local moves, rebinding,
+control-flow joins and loops, and reads in place retain their existing rules.
+See [OWNERSHIP.md](docs/OWNERSHIP.md).
 
 ## Fast Debug execution
 

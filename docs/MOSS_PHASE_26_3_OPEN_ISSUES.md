@@ -1,5 +1,7 @@
 # Moss: Phase 27 (Language Stabilization) — the ownership invariant and open issues
 
+> Historical Phase 26/27 planning record. Its ownership descriptions and open S3 work items predate the implementation now on `main`; current rules are maintained in [OWNERSHIP.md](OWNERSHIP.md). Read quoted or dated S3 decisions below as historical context, not current language behavior.
+
 Status: Oct 28 2026, round 4. **The ownership model is frozen** (round 3; both peer reviewers GO). Round 4 records Phase 27 ownership of this work and the serial D3 order. This file keeps its Phase 26.3 name until renamed in git; it is the Phase 27 ownership doc. Companion to `MOSS_PHASE_26_2_DECISIONS.md` and `MOSS_LAZY_EXPRESSION_TREE.md`.
 
 **Phase 27 scope:** implement the frozen model below; update the spec, the other language docs, the examples, the Gentle Introduction and the SDK libraries (written under copy-snapshot semantics, some will be rejected rather than silently changed); move Moss from v0.1 to v0.9. The language version is a language contract (spec, docs, `moss --version`) and is kept separate from the ABI and `.mossi` format versions, which have their own compatibility rules. A language change may *cause* an ABI format change (per-parameter inferred effects in `.mossi`, M1); a documentation change never does. The Graph DSL is Phase 28.

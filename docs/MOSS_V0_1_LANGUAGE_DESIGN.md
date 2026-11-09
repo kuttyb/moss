@@ -26,7 +26,7 @@ Moss is a compiled language designed to feel closer to Julia than to a tradition
   - [6. Static composition and immutable routing](#6-static-composition-and-immutable-routing)
   - [7. Synchronous message and terminating reply](#7-synchronous-message-and-terminating-reply)
   - [8. Programmer-visible consistency and ordering](#8-programmer-visible-consistency-and-ordering)
-  - [9. By-value domain boundaries](#9-by-value-domain-boundaries)
+  - [9. Message borrows and owned replies](#9-message-borrows-and-owned-replies)
   - [10. FileIO and blocking external effects](#10-fileio-and-blocking-external-effects)
   - [11. Executor, Roots, and compiler Branches](#11-executor-roots-and-compiler-branches)
   - [12. Ordered chunk pipelines](#12-ordered-chunk-pipelines)
@@ -156,8 +156,9 @@ Moss READ semantics may be used, including a field of an aggregate; its source
 storage remains borrowed for the match, without an enum-specific copy. A
 nontrivial payload binding is a temporary READ
 view, subject to the whole-match READ borrow. It may feed independent
-computations or cross a `message`/`reply` semantic value boundary, but cannot
-be consumed, mutated, or moved into ordinary owned storage. Copy scalars retain
+computations or be forwarded through a synchronous `message`, but cannot be
+consumed, mutated, or moved into ordinary owned storage. Replying with the
+incoming payload requires `copy(...)` when an independent value is needed. Copy scalars retain
 their ordinary rules. The source enum remains live at the join. In contrast,
 `match consume value` accepts an owned binding or owned enum rvalue and consumes
 the whole enum before branch selection. It does not partially move enum fields
@@ -223,7 +224,7 @@ domain Account:
     reply config_value
 ```
 
-The programmer did not write a lock. The compiler will eventually discover that `config_value` is immutable after publication, while the other fields participate in different synchronization classes. (`rename` stores a value built by the helper `display_label` because an incoming `String` payload is an immutable snapshot that cannot itself be moved into state; see Section 9.)
+The programmer did not write a lock. The compiler will eventually discover that `config_value` is immutable after publication, while the other fields participate in different synchronization classes. (`rename` stores a value built by the helper `display_label` because an incoming `String` payload is a read-only borrow and cannot be moved into state; an independent stored value needs `copy(...)`, as in [OWNERSHIP.md](OWNERSHIP.md).)
 
 ### 6 Static composition and immutable routing
 
@@ -276,7 +277,7 @@ submission operation, not an asynchronous spelling of `message`.
 
 `reply` is terminating. Its expression is evaluated before handler completion; an independent semantic result is established; the handler terminates; then the caller resumes. The implementation must retain any synchronization required to preserve the whole-execution serializability guarantee of Section 8, and any guard that physically backs a borrowed lowering, through reply materialization. In the current lowering, every touched guard remains held until the independent reply result has been established and the handler completes. A guard backing a borrowed payload remains held for the complete dynamic extent of that nested message. Phase 15.3 may cancel a guard only when it is proven untouched on the realized path. No statement after a taken reply executes.
 
-Incoming message payloads are immutable snapshots. Handlers may read them, forward them through another message (creating a new value boundary), or reply with them (again creating a new value boundary), but may not mutate or consume the original incoming snapshot.
+Incoming message payloads are read-only borrows for the synchronous call. Handlers may read or forward them, but may not mutate or consume them; the sender keeps its value and no copy is made. Replying with the payload or domain state requires an explicit `copy(...)` when an independent value is needed. See [OWNERSHIP.md](OWNERSHIP.md).
 
 ### 8 Programmer-visible consistency and ordering
 
@@ -291,29 +292,27 @@ The v0.1 backend is deliberately more conservative than this semantic contract. 
 Synchronous calls also impose ordinary source order along a call chain: if handler A calls B and waits for its reply, B completes before A continues. Across independent domains, however, there is no single global order of all observable actions. Two independently executing handlers may produce effects that downstream observers see in different orders unless a same-domain conflict or an explicit synchronous dependency orders the relevant executions. Moss therefore does not promise graph-wide sequential consistency or a multi-domain transaction. Whole-execution serializability between conflicting same-domain executions does not prevent unrelated third-party handlers in descendant domains from running where their own synchronization permits.
 
 This distinction between semantic conflict and conservative implementation footprint is part of the language model, not merely a non-claim hidden in the proof section.
-### 9 By-value domain boundaries
+### 9 Message borrows and owned replies
 
-Message arguments and reply results are **semantic by-value boundaries**. The programmer can rely on value independence across a domain boundary: a callee cannot retain a mutable alias into the caller's state, mutate the caller's payload through an alias, or consume the caller's incoming snapshot.
+A synchronous `message` lends each argument read-only for the call. The callee cannot retain the borrow, mutate the caller's value, or consume the incoming payload; the sender keeps the value. A reply produces an owned result, and duplicating a payload or domain-state value for that result requires explicit `copy(...)`. The complete current ownership rules are in [OWNERSHIP.md](OWNERSHIP.md).
 
-By-value semantics do **not** require a physical copy on every synchronous message.
-
-Because `message` is synchronous and incoming payloads are immutable and non-consuming, the shared-memory backend may lower an eligible inter-domain payload to an immutable Rust borrow such as `&T`, or to a typed borrowed view for decomposed state. The borrow exists only for the dynamic extent of the synchronous message call and cannot escape into Moss-visible state.
+Synchronous message arguments are read-only borrows, and no send-time copy is emitted. The borrow exists only for the dynamic extent of the call and cannot escape into Moss-visible state. Native lowering uses an immutable Rust reference such as `&T`, or a typed borrowed view for decomposed domain state.
 
 Conceptually:
 
 ```text
 Moss semantics:
-    caller value --by-value message boundary--> immutable callee snapshot
+    caller value --read-only borrow for the call--> handler
 
 Possible Rust lowering:
     caller storage --temporary &T / borrowed view--> callee
 ```
 
-The two are observationally equivalent under the Moss rules: the receiver cannot mutate or consume the payload, cannot retain the borrow after the call, and the sender resumes only after the callee returns.
+The borrow is the Moss rule: the receiver cannot mutate or consume the payload, cannot retain the borrow after the call, and the sender resumes only after the callee returns.
 
-This optimization also applies transitively to forwarding when the same payload is passed through a chain of synchronous messages and the compiler can prove the borrow remains valid. If those conditions are not available, the backend conservatively materializes an owned value instead.
+The same read-only borrow can be forwarded through nested synchronous messages while each call is active. Message forwarding does not create a copy.
 
-Small `Copy` values may simply be passed by value. Foreign/native boundaries and other cases where the compiler cannot prove safe borrow lifetime or representation also materialize an owned value.
+Replies return owned values. When a reply needs an independent copy of incoming payload or domain state, source code must use `copy(...)`.
 
 Replies are different: the caller uses the result after the callee has returned, so reply results remain owned semantic values rather than borrowed results.
 
@@ -918,7 +917,7 @@ Theorem 27.1, as extended by Phase 21 Theorem A2, covers completed handler execu
   application memory.
 - Eligible chunk reads/maps may execute concurrently while retaining ordered
   commit and the source's original left-to-right fold.
-- Message/reply boundaries are semantically by value and do not expose cross-domain mutable aliases; eligible synchronous message payloads may be implemented with non-escaping immutable Rust borrows, while replies remain owned values. A guard backing a borrowed protected payload remains held for the complete synchronous call.
+- Synchronous message arguments are read-only borrows that do not expose cross-domain mutable aliases; replies are owned values, and duplicating incoming payload or domain state for a reply requires explicit `copy(...)`.
 - A panic aborts the process; a typed raise releases the handler's guards at completion and may expose partial mutations. Neither typed raises nor Root failure trailers imply rollback or state-validity guarantees.
 
 #### Non-claims
@@ -1016,7 +1015,7 @@ One correction removed hidden deep copies of protected READ state. Protected rea
 
 The same principle now applies to eligible synchronous inter-domain message payloads.
 
-At the Moss level, a message still establishes a by-value immutable snapshot. At the Rust lowering level, however, the compiler may represent that snapshot with a temporary immutable borrow when all required conditions are statically known:
+At the Moss level, a synchronous message lends an immutable borrow. Native lowering may represent that borrow with a temporary Rust reference when all required conditions are statically known:
 
 - the message call is synchronous;
 - the receiver only has immutable, non-consuming access to the incoming payload;
@@ -1025,17 +1024,17 @@ At the Moss level, a message still establishes a by-value immutable snapshot. At
 - the borrow cannot escape, be stored, or become a Moss-visible alias; and
 - the target is an internal lowering where the compiler controls both sides of the call.
 
-For an ordinary owned value, this can lower to an `&T`. For protected or decomposed domain state, the compiler can reuse the typed borrowed-view machinery already used for protected READs. Small Rust `Copy` values may continue to pass directly by value.
+Message arguments lower as borrowed values; no send-time copy is made. Replies are owned, and payload or domain-state duplication is explicit through `copy(...)`.
 
 Nested forwarding can remain zero-copy as well. If domain A sends a payload to B and B synchronously forwards that incoming payload to C, the backend may propagate the same immutable borrow through the nested call chain as long as its lifetime remains statically contained.
 
-The optimization is deliberately conservative. If the compiler cannot prove the borrow representation safe—for example at a foreign/native boundary, for an unstable temporary, or where an owned representation is otherwise required—it materializes an owned value.
+The message call keeps the borrowed argument valid for its complete synchronous duration. Compiler-generated message paths do not materialize a send-time copy.
 
 Replies are not borrowed across the handler boundary. A caller must be able to use a reply after the callee has completed and released its guards, so reply lowering produces an owned semantic result.
 
 The language-level distinction is therefore:
 
-> ordinary READ => borrow where possible; synchronous message => by-value semantics, borrow physically where safe; reply => owned value.
+> ordinary READ => borrow; synchronous message => read-only borrow for the call; reply => owned value, with explicit `copy(...)` for payload or domain-state duplication.
 
 This optimization introduces no Moss reference syntax, no user-visible lifetimes, and no cross-domain mutable aliases. Retaining a guard that backs a borrowed protected payload is a lowering invariant even if a future synchronization optimizer otherwise permits earlier release of unrelated guards. Safe Rust remains responsible for validating the generated physical borrow relationships.
 
@@ -1211,7 +1210,7 @@ The next test is not another architecture phase. It is whether Moss is pleasant 
 | Domain initialization | Declaration defaults and constructor arguments must be side-effect-free: no message, domain access, I/O, possible failure, possible divergence, or unresolved work |
 | Message | Synchronous, blocking, expression-valued |
 | Reply | Terminating, by-value semantic result |
-| Payloads | Incoming snapshots are semantically by value and immutable; eligible synchronous message payloads may lower to non-escaping Rust borrows/views; a guard backing protected borrowed storage remains held for the complete call; replies remain owned values |
+| Payloads | Message arguments are read-only borrows for the call, with no copy; senders keep their values; replies are owned and payload/state duplication requires explicit `copy(...)` |
 | Consistency | Completed executions on one domain, including typed raise exits under Phase 21 Theorem A2, admit one conflict-serialization order for domain-owned state; a dynamically conflicting pair (same actually accessed semantic location, at least one write/consume) is whole-execution serializable consistently with that order, meaning its observed behavior is equivalent to one whole execution preceding the other; nonconflicting executions may overlap; no global SC across independent domains |
 | External effects | Nested messages, reply materialization, and $O(h)$ participate in the observational whole-execution serializability of dynamically conflicting same-domain handlers according to the same domain conflict-serialization order; nonconflicting/independent executions have no global total order |
 | Synchronization | Compiler-derived finite analysis leaves, static may-footprints, and classes; semantic locations define conflict, while v0.1 may conservatively map many semantic locations (for example aggregate keys) to one analysis leaf |
