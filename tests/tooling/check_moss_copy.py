@@ -190,8 +190,12 @@ for kind, variable in (("drop", "MOSS_TEST_DROP_FACT"),
             result = subprocess.run(
                 [str(compiler), "run", "--interp", str(hook_source)], cwd=repo,
                 capture_output=True, text=True, timeout=120, env=env)
-        assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
-            result.stdout + result.stderr), (kind, engine, result.stdout,
-                                               result.stderr)
-print("PASS copy builtin target drop/perturb fails closed in both engines")
+        if engine == "native":
+            assert result.returncode != 0 and "MOSS_INTERNAL_INVARIANT" in (
+                result.stdout + result.stderr), (kind, engine, result.stdout,
+                                                   result.stderr)
+        else:
+            assert result.returncode == 0 and result.stdout.strip() == "5", (
+                kind, engine, result.stdout, result.stderr)
+print("PASS Native copy target drop/perturb fails closed; Fast Debug uses the reserved builtin")
 print("PASS all 13 directed Moss::Copy tests")
