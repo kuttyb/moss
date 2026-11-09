@@ -57,7 +57,7 @@ The AST's expression strings remain useful source data, diagnostic text, and rew
 
 ## Static decision boundaries
 
-The checker decides type and overload selection, member/method targets, generic specialization, pipeline typing and eligibility facts, flow joins, pattern resolution, effects/ownership, and lock requirements. Those answers live in the structures above. In the emitter, `generated_expr_type` is a checked-fact access point; Rust borrow forms, result wrappers, runtime container types, and syntax are lowering choices. Fast Debug chooses a runtime operation only after reading the checker-selected target/operator. The optimizer may conservatively skip an optimization when its checked proof is unavailable.
+The checker decides type and overload selection, member/method targets, pipeline typing and eligibility facts, flow joins, pattern resolution, effects/ownership, and lock requirements. It records generic specialization facts, but some backends still choose specializations themselves; that remains debt. `copy` and `take` decisions are checker-owned and carried as `Copy` and `Take` expression kinds in checked-body IR. `IMPLICIT_COPY` and `IMPLICIT_FIELD_MOVE` are checker diagnostics. Message sends lend through `runtime_invoke_scoped`; `executor.invoke` moves its argument. Generated `.clone()` calls correspond to source `copy(...)`, except for domain-handle shares. In the emitter, `generated_expr_type` is a checked-fact access point; Rust borrow forms, result wrappers, runtime container types, and syntax are lowering choices. Fast Debug chooses a runtime operation only after reading the checker-selected target/operator. The optimizer may conservatively skip an optimization when its checked proof is unavailable.
 
 Do not “help” a consumer by recomputing a missing type from operand/runtime values, resolving a member from receiver type, selecting a specialization from consumer-derived argument types, joining branch environments, or parsing a pattern spelling. Extend the checker’s recorded answer and its typed accessor instead. The known ownership fact-hook gaps are linked below; do not enlarge them without updating the contract and required tests.
 
@@ -70,11 +70,11 @@ These are the current shortfalls. Each link names the matching entry in the cont
 | --- | --- | --- | --- |
 | Driver | 2 | Some post-parse rewrites still edit expression text and rebuild retained trees. The rewrite passes predate the tree representation and only refresh handles after changing their text. | Unscheduled — [D-DRIVER-TREE](MOSS_COMPILER_CONTRACT.md#d-driver-tree). |
 | Checker | 1, 3 | Recursive checking still reparses expression fragments and consults text-keyed caches. The consumer-scoped migration retained these internal passes; no later checker-tree conversion phase is assigned. Lock-requirement perturb/drop coverage is also still pending because that decision class has not been added to the fact-hook matrix. | Unscheduled — [D-CHECKER-TEXT](MOSS_COMPILER_CONTRACT.md#d-checker-text), [D-LOCK-TEST](MOSS_COMPILER_CONTRACT.md#d-lock-test). |
-| Fast Debug | 4, 6 | Some ownership perturbations still leave runtime copy/move/borrow behavior unchanged. The recorded test-build debt remains because Phase 27 migrated other fact classes first. | Planned, Phase 28 — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
-| Native emitter | 4, 7, 9 | Some ownership perturbations still leave lowering unchanged; the nested-mutation baseline source also reaches Rust that rustc rejects. | Planned, Phase 28 for ownership — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts); unscheduled for the baseline source — [D-BASELINE-SUITE](MOSS_COMPILER_CONTRACT.md#d-baseline-suite), [D-ACCEPTED-RUST](MOSS_COMPILER_CONTRACT.md#d-accepted-rust). |
-| Optimizer | 4, 6 | Some ownership perturbations still leave optimized execution unchanged. The checked type and pipeline paths are migrated, while this ownership gap remains recorded debt. | Planned, Phase 28 — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
-| `.mossi` | 4, 6 | Imported provider paths do not yet propagate and consume all ownership-related facts. | Planned, Phase 28 — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
-| Packages | 4, 7, 9 | Package builds exercise the incomplete imported ownership path; one conformance job also has a Cargo jobserver failure. | Planned, Phase 28 for ownership — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts); unscheduled for the suite failure — [D-BASELINE-SUITE](MOSS_COMPILER_CONTRACT.md#d-baseline-suite). |
+| Fast Debug | 4, 6 | `check_moss_copy`, `check_moss_take`, `check_moss_explicit_copy`, `check_moss_field_moves`, and `check_phase151_borrowed_payloads` exercise checker ownership decisions in Fast Debug. The fact-hook perturb/drop gate still records ownership cases whose runtime behavior does not follow altered facts; other operations and lambda/pipeline captures also remain unverified debt. | Post-Graph DSL — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
+| Native emitter | 4, 7, 9 | The same directed gates exercise native diagnostics and lowering, while the fact-hook gate still records ownership perturb/drop cases that do not affect native or optimized output. Domain-handle shares remain the `.clone()` exception; the nested-mutation baseline source also reaches Rust that rustc rejects. | Post-Graph DSL for ownership — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts); unscheduled for the baseline source — [D-BASELINE-SUITE](MOSS_COMPILER_CONTRACT.md#d-baseline-suite), [D-ACCEPTED-RUST](MOSS_COMPILER_CONTRACT.md#d-accepted-rust). |
+| Optimizer | 4, 6 | The fact-hook gate probes perturb/drop behavior and retains ownership cases that optimized execution does not follow. This does not establish coverage for every operation or lambda/pipeline capture. | Post-Graph DSL — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
+| `.mossi` | 4, 6 | `check_moss_field_moves` verifies source-free generic provider bodies using `copy(item.value)` and `take(s.items)` against source-visible Native/Fast Debug results. Imported-package argument ownership remains debt; this probe does not close it. | Post-Graph DSL — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts). |
+| Packages | 4, 7, 9 | Source-free `copy`/`take` body transport is exercised by the field-move gate. Imported-package argument ownership is still unverified and remains debt; one conformance job also has a Cargo jobserver failure. | Post-Graph DSL for ownership — [D-OWNERSHIP-FACTS](MOSS_COMPILER_CONTRACT.md#d-ownership-facts); unscheduled for the suite failure — [D-BASELINE-SUITE](MOSS_COMPILER_CONTRACT.md#d-baseline-suite). |
 | Cross-engine validation | 7 | Trace-event parity is not compared, and a seeded program generator is not registered. | Unscheduled — [D-TRACE-PARITY](MOSS_COMPILER_CONTRACT.md#d-trace-parity); planned, after Phase 28 — [D-PROGRAM-GENERATOR](MOSS_COMPILER_CONTRACT.md#d-program-generator). |
 | Native compilation gate | 9 | Checker-accepted programs can still produce Rust rejected by rustc; the ratcheting allowlist and current failures document the cases. | Unscheduled — [D-ACCEPTED-RUST](MOSS_COMPILER_CONTRACT.md#d-accepted-rust). |
 <!-- architecture-gaps:end -->
@@ -85,15 +85,15 @@ These are the current shortfalls. Each link names the matching entry in the cont
 
 Phase 27 added retained expression nodes and checked fact/plan handoffs for the migrated decisions. Fast Debug, the emitter, and optimizer navigate those trees and read checker answers; perturb/drop tests and the runtime counter ratchet are registered. The residual work is listed above rather than treated as completed.
 
-### Planned, Phase 28 — ownership debt
+### Post-Graph DSL — ownership debt
 
-Phase 28 owns the ownership and parameter-effect debt listed in the contract. This guide does not specify ownership decisions or language rules for that phase.
+The remaining ownership and parameter-effect debt is tracked in the contract for post-Graph DSL work. It includes backend specialization choices, operations the checker leaves undecided, domain-handle shares, imported-package argument ownership, and lambda/pipeline captures. This guide does not specify new ownership decisions or language rules for that work.
 
 ### Other recorded work
 
 - The checker/driver tree-first rewrite was planned in Phase 27’s lazy expression-tree design. Phase 27 is closed; the remaining checker string passes and driver text rewrites are currently **unscheduled**.
 - **Planned, after Phase 28:** the seeded program generator is recorded validation work.
-- **Planned, Phase 28:** the Graph DSL is recorded as a tree-first consumer after S3.
+- **Next: Graph DSL, a tree-first consumer after S3.**
 
 ## Contract gates in this architecture
 
