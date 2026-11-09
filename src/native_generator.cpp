@@ -6580,7 +6580,7 @@ class Generator {
                 index < message_argument_plans->size()
             ? message_argument_plans->at(index) : 0;
         if (domain->second->exported && !exported_domain_bridge_body_)
-          rendered << message_arg(argument, handler->params[index].type,
+          rendered << shared_message_arg(argument, handler->params[index].type,
                                   d, locals, types, plan);
         else
           rendered << shared_message_arg(argument,
@@ -7121,10 +7121,10 @@ class Generator {
         for (size_t index = 0; index < arguments.size(); ++index) {
           if (index) call << ", ";
           call << (checked_node
-              ? message_arg(checked_message_arguments.at(index),
+              ? shared_message_arg(checked_message_arguments.at(index),
                     target_handler->params.at(index).type, d, locals, types,
                     message_argument_plans ? message_argument_plans->at(index) : 0)
-              : message_arg(arguments[index],
+              : shared_message_arg(arguments[index],
                     target_handler->params.at(index).type, d, locals, types,
                     message_argument_plans ? message_argument_plans->at(index) : 0));
         }
@@ -8531,28 +8531,30 @@ class Generator {
   string message_arg(const string& e, const string& type, const Domain* d,
                      const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
-                     size_t functional_pipeline_id = 0) const {
+                     size_t functional_pipeline_id = 0,
+                     bool checker_proved_consume = false) const {
     string r = nominal_domain_handle_argument(e, type, d, locals, types, functional_pipeline_id);
     string t = trim(type);
     if (is_object_view(e, d, locals, types)) return "(" + r + ").__moss_value()";
     if (copy_type(t) || t == "_") return r;
-    // Messages are the explicit Moss semantic copy boundary.  A payload is
-    // detached from the sender even when the source binding remains available;
-    // the generated clone is an implementation of that boundary, never an
-    // implicit copy for an ordinary local call.
+    if (checker_proved_consume) return r;
+    // This owned-argument path serves replies and other explicit owned
+    // boundaries. Message sends use shared_message_arg and lend their payload
+    // for the duration of the synchronous call.
     return "(" + r + ").clone()";
   }
 
   string message_arg(const EmitterExpr& expression, const string& type,
                      const Domain* d, const std::set<string>& locals,
                      const std::unordered_map<string,string>* types = nullptr,
-                     size_t functional_pipeline_id = 0) const {
+                     size_t functional_pipeline_id = 0,
+                     bool checker_proved_consume = false) const {
     string rendered = nominal_domain_handle_argument(
         expression, type, d, locals, types, functional_pipeline_id);
     if (is_object_view(expression, d, locals, types))
       return "(" + rendered + ").__moss_value()";
-    return copy_type(type) || type == "_" ? rendered
-                                           : "(" + rendered + ").clone()";
+    return copy_type(type) || type == "_" || checker_proved_consume
+        ? rendered : "(" + rendered + ").clone()";
   }
 
   string shared_message_arg(const string& e, const string& type,
@@ -9236,7 +9238,7 @@ class Generator {
         o << "    pub fn __moss_message_" << handler.name << "(&self";
         string arguments;
         for (const auto& parameter : handler.params) {
-          o << ", " << parameter.name << ": " << rust_type(parameter.type);
+          o << ", " << shared_message_parameter(parameter);
           if (!arguments.empty()) arguments += ", ";
           arguments += parameter.name;
         }
@@ -9277,7 +9279,7 @@ class Generator {
       out << "    pub fn __moss_message_" << handler.name << "(&self";
       for (size_t index = 0; index < handler.params.size(); ++index) {
         const auto& parameter = handler.params[index];
-        out << ", " << parameter.name << ": " << rust_type(parameter.type);
+        out << ", " << shared_message_parameter(parameter);
         locals.insert(parameter.name);
         types[parameter.name] = parameter.type;
       }
@@ -9304,8 +9306,7 @@ class Generator {
         for (size_t index = 0; index < handler.params.size(); ++index) {
           if (index) call << ", ";
           const auto& parameter = handler.params[index];
-          if (copy_type(parameter.type)) call << parameter.name;
-          else call << "&(" << parameter.name << ")";
+          call << parameter.name;
         }
         call << ")";
         if (!handler.observable_effects.raise_set.empty())

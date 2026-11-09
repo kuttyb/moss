@@ -1594,6 +1594,29 @@ fn main() {
 """))
 
 
+T.append(RustTest("53-scoped-borrow-lifetime", "runtime_invoke_scoped borrows payloads and drops its closure before returning", r"""
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+struct DropFlag(Arc<AtomicBool>);
+impl Drop for DropFlag {
+    fn drop(&mut self) { self.0.store(true, Ordering::SeqCst); }
+}
+fn main() {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let payload = String::from("borrowed");
+    let flag = DropFlag(Arc::clone(&dropped));
+    let payload_ref = &payload;
+    let result = runtime_invoke_scoped(move || {
+        let _owned_capture = flag;
+        payload_ref.len()
+    });
+    assert_eq!(result, 8);
+    assert!(dropped.load(Ordering::SeqCst), "scoped closure outlived synchronous ingress");
+    assert_eq!(payload, "borrowed");
+    println!("ok");
+}
+"""))
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # Static, cross-crate, and build-pipeline tests
 # ════════════════════════════════════════════════════════════════════════════

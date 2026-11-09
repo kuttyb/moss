@@ -862,6 +862,7 @@ struct RootSubmissionPlan {
   string handler_name;
   vector<string> argument_expressions;
   vector<string> argument_types;
+  vector<Effect> argument_accesses;
   // Always true in Phase 20: executor.invoke never admits a value-returning
   // handler (docs/MOSS_PHASE_20_FILE_IO_AND_EXECUTORS.md sec. 4.3).
   bool one_way = true;

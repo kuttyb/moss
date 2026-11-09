@@ -22502,13 +22502,11 @@ class Checker {
 
   bool message_payload_materializes(const string& receiver,
                                     const OwnershipEnv& env) const {
-    auto type = env.types.find(receiver);
-    if (type == env.types.end()) return true;
-    auto domain = domains_.find(canonical_type_name(type->second));
-    // This mirrors the generator's explicit exported/native bridge decision.
-    // A missing domain is conservatively an ownership boundary; checked Moss
-    // messages normally reach the non-exported synchronous `_shared` path.
-    return domain == domains_.end() || domain->second->exported;
+    (void)receiver;
+    (void)env;
+    // Every Moss message is a synchronous READ borrow, including an exported
+    // bridge and Root ingress. No message payload is materialized at send.
+    return false;
   }
 
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
@@ -23832,6 +23830,31 @@ class Checker {
           else
             check_ownership_expression(s.line, s.a + "(" + join_arguments(s.args) + ")",
                                        env, Effect::Read);
+          if (s.root_submission_plan_id != 0) {
+            const auto plan_index = s.root_submission_plan_id - 1;
+            if (plan_index >= p_.root_submission_plans.size())
+              err(s.line,
+                  "executor.invoke checked argument plan is unavailable",
+                  "MOSS_INTERNAL_INVARIANT");
+            const auto& plan = p_.root_submission_plans.at(plan_index);
+            if (plan.argument_expressions.size() !=
+                plan.argument_accesses.size())
+              err(s.line,
+                  "executor.invoke checked argument access plan is incomplete",
+                  "MOSS_INTERNAL_INVARIANT");
+            for (size_t argument_index = 0;
+                 argument_index < plan.argument_expressions.size();
+                 ++argument_index) {
+              if (plan.argument_accesses[argument_index] == Effect::Consume)
+                check_ownership_expression(
+                    s.line, plan.argument_expressions[argument_index], env,
+                    Effect::Consume);
+              else
+                check_ownership_expression(
+                    s.line, plan.argument_expressions[argument_index], env,
+                    Effect::Read);
+            }
+          }
           record_direct_raise();
           // A fresh inferred Queue/Vector learns its element type at push.
           // Keep the ownership walk in sync with the type-environment walk so

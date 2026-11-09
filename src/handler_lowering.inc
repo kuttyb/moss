@@ -506,11 +506,11 @@
     o << "impl " << d.name << "Ref {\n"
       << "    fn " << h.name << "_root(&self";
     for (const auto& parameter : h.params)
-      o << ", " << parameter.name << ": " << rust_type(parameter.type);
+      o << ", " << shared_message_parameter(parameter);
     o << ") -> " << rust_type(h.reply_type.value_or("unit")) << " {\n"
       << "        let __moss_attempt = self." << h.name << "_shared(";
     for (const auto& parameter : h.params)
-      o << shared_message_forward_argument(parameter, true) << ", ";
+      o << parameter.name << ", ";
     o << ");\n"
       << "        match __moss_attempt {\n"
       << "            Ok(__moss_normal) => ";
@@ -543,7 +543,7 @@
         o << "                    " << tag++ << " => " << callable
           << "(&mut state, __moss_error.into_frame()";
         for (const auto& parameter : h.params)
-          o << ", " << shared_message_forward_argument(parameter, true);
+          o << ", " << parameter.name;
         o << "),\n";
       }
       o << "                    _ => std::process::abort(),\n"
@@ -598,7 +598,7 @@
             << record.callable_symbol << "(&mut state, __MossRaised::"
             << variant << "(" << inner << ").into()";
           for (const auto& parameter : h.params)
-            o << ", " << shared_message_forward_argument(parameter, true);
+            o << ", " << parameter.name;
           o << ")\n                    },\n";
           continue;
         }
@@ -1013,8 +1013,7 @@
         bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
         for (const auto& p : h.params)
-          o << ", " << (shared ? shared_message_parameter(p)
-                                 : p.name + ": " + rust_type(p.type));
+          o << ", " << shared_message_parameter(p);
         o << ") -> " << (prefix.empty() ? handler_internal_return_type(h)
                                          : handler_message_return_type(h))
           << ";\n";
@@ -1158,8 +1157,7 @@
         bool shared = prefix.empty();
         o << "    fn " << prefix << h.name << (prefix.empty() ? "_shared" : "") << "(&self";
         for (const auto& p : h.params) {
-          string parameter = shared ? shared_message_parameter(p)
-                                    : p.name + ": " + rust_type(p.type);
+          string parameter = shared_message_parameter(p);
           if (external_module && !standard_error_variants(
                   canonical_type_name(p.type)).empty()) {
             const string local = canonical_type_name(p.type);

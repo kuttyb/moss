@@ -188,6 +188,8 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
           "EXECUTOR_INVOKE_ARGUMENT_TYPE_MISMATCH");
     plan.argument_expressions.push_back(argument);
     plan.argument_types.push_back(canonical_type_name(formal_type));
+    plan.argument_accesses.push_back(
+        transfer_type(formal_type) ? Effect::Consume : Effect::Read);
   }
 
   p_.root_submission_plans.push_back(std::move(plan));

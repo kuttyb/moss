@@ -90,6 +90,10 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
                       " -- RootSubmissionPlan; independent one-way Root, "
                       "caller continues after submission");
   o << pad << "{\n";
+  if (plan.argument_expressions.size() != plan.argument_types.size() ||
+      plan.argument_expressions.size() != plan.argument_accesses.size())
+    throw std::runtime_error(
+        "MOSS_INTERNAL_INVARIANT checked executor argument access plan is incomplete");
   string domain_temp = "__moss_invoke_domain_" + std::to_string(executor_invoke_temp_++);
   o << pad << "    let " << domain_temp << " = " << plan.target_domain_binding << ".clone();\n";
   vector<string> argument_locals;
@@ -100,7 +104,8 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
     string temp = "__moss_invoke_arg_" + std::to_string(executor_invoke_temp_++);
     o << pad << "    let " << temp << " = "
       << message_arg(checked_arguments[index], plan.argument_types[index],
-                     nullptr, locals, &types, 0)
+                     nullptr, locals, &types, 0,
+                     plan.argument_accesses[index] == Effect::Consume)
       << ";\n";
     argument_locals.push_back(temp);
   }
@@ -127,11 +132,8 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
     << (root_handles_failure ? "_root(" : "_shared(");
   for (size_t index = 0; index < argument_locals.size(); ++index) {
     if (index) o << ", ";
-    if (root_handles_failure)
-      o << argument_locals[index];
-    else
-      o << shared_message_forward_argument(
-          Param{argument_locals[index], plan.argument_types[index], false}, true);
+    o << shared_message_forward_argument(
+        Param{argument_locals[index], plan.argument_types[index], false}, true);
   }
   o << ");\n" << pad << "    }));\n" << pad << "}\n";
 }
@@ -204,15 +206,13 @@ bool gen_executor_statement(std::ostringstream& o, const Stmt& s, int spaces,
 // synchronous ingress, which uses inline admission before start() and after
 // join(), and executor admission while ACTIVE:
 //
-//   { let __d = target.clone(); let __a0 = <owned snapshot>; ...
-//     runtime_invoke(move || __d.Handler_shared(<lend __a0>)[.unwrap reply]) }
+//   { let __d = target.clone(); let __a0 = &(payload); ...
+//     runtime_invoke_scoped(move || __d.Handler_shared(__a0)[.unwrap reply]) }
 //
-// The target and every argument are evaluated exactly once at the message
-// statement, snapshotted by value with the ordinary message-boundary
-// lowering, and moved into a `Send + 'static` thunk; the caller waits for
-// that Root and receives its reply. Nested messages (inside handlers,
-// functions, methods) keep the direct synchronous lowering.
-//
+// Message arguments are checked READ borrows. The synchronous scoped ingress
+// lends them to the admitted Root without cloning or letting a borrow escape
+// in the reply. Nested messages keep the direct synchronous lowering.
+
 string root_ingress_message(const string& receiver, const string& handler,
                             const vector<string>& arguments,
                             const Domain& target_domain, const Handler& target_handler,
@@ -226,14 +226,15 @@ string root_ingress_message(const string& receiver, const string& handler,
   for (size_t index = 0; index < arguments.size(); ++index) {
     string temp = "__moss_root_arg_" + std::to_string(executor_invoke_temp_++);
     rendered << "let " << temp << " = "
-             << message_arg(arguments[index], target_handler.params.at(index).type, d,
-                            locals, types,
+             << shared_message_arg(arguments[index],
+                            target_handler.params.at(index).type, d, locals,
+                            types,
                             message_argument_plans ? message_argument_plans->at(index) : 0)
              << "; ";
     argument_locals.push_back(temp);
   }
   std::ostringstream invocation;
-  invocation << "runtime_invoke(move || ";
+  invocation << "runtime_invoke_scoped(move || ";
   const bool root_handles_failure = !target_handler.failure_arms.empty();
   const bool raises = !target_handler.observable_effects.raise_set.empty() &&
       !root_handles_failure;
@@ -254,9 +255,7 @@ string root_ingress_message(const string& receiver, const string& handler,
     invocation << domain_temp << "." << handler << "_shared(";
     for (size_t index = 0; index < argument_locals.size(); ++index)
       invocation << (index ? ", " : "")
-               << shared_message_forward_argument(
-                      Param{argument_locals[index], target_handler.params.at(index).type, false},
-                      true);
+               << argument_locals[index];
     invocation << ")";
     if (target_handler.reply_type) {
       if (raises)
@@ -292,13 +291,13 @@ string root_ingress_message(const EmitterExpr& receiver,
             index < message_argument_plans->size()
         ? message_argument_plans->at(index) : 0;
     rendered << "let " << temp << " = "
-             << message_arg(arguments[index],
+             << shared_message_arg(arguments[index],
                             target_handler.params.at(index).type,
                             d, locals, types, plan) << "; ";
     argument_locals.push_back(temp);
   }
   std::ostringstream invocation;
-  invocation << "runtime_invoke(move || ";
+  invocation << "runtime_invoke_scoped(move || ";
   const bool root_handles_failure = !target_handler.failure_arms.empty();
   const bool raises = !target_handler.observable_effects.raise_set.empty() &&
       !root_handles_failure;
@@ -319,9 +318,7 @@ string root_ingress_message(const EmitterExpr& receiver,
     invocation << domain_temp << "." << handler << "_shared(";
     for (size_t index = 0; index < argument_locals.size(); ++index)
       invocation << (index ? ", " : "")
-          << shared_message_forward_argument(
-                 Param{argument_locals[index],
-                       target_handler.params.at(index).type, false}, true);
+          << argument_locals[index];
     invocation << ")";
     if (target_handler.reply_type) {
       if (raises)

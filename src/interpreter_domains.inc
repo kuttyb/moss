@@ -299,7 +299,7 @@
     call.target = target;
     call.line = line;
     for (const auto& argument : arguments)
-      call.arguments.push_back(independent(evaluate_expression_source(argument, caller, line, output)));
+      call.arguments.push_back(evaluate_expression_source(argument, caller, line, output));
     return call;
   }
 
@@ -323,8 +323,8 @@
     call.target = target;
     call.line = line;
     for (const auto argument : message_node.arguments)
-      call.arguments.push_back(independent(evaluate_tree_node(
-          tree, argument, caller, line, output)));
+      call.arguments.push_back(evaluate_tree_node(
+          tree, argument, caller, line, output));
     return call;
   }
 
@@ -359,17 +359,31 @@
     call.instance = &instance;
     call.target = target;
     call.line = line;
-    for (const auto argument : invocation.arguments)
-      call.arguments.push_back(independent(evaluate_tree_node(
-          tree, argument, caller, line, output)));
+    if (plan.argument_accesses.size() != invocation.arguments.size())
+      throw RuntimeError(line,
+          "MOSS_INTERNAL_INVARIANT executor.invoke argument access plan is incomplete");
+    for (std::size_t index = 0; index < invocation.arguments.size(); ++index) {
+      const auto argument = invocation.arguments[index];
+      Value value = evaluate_tree_node(tree, argument, caller, line, output);
+      if (plan.argument_accesses[index] == Effect::Consume) {
+        const auto root = est::unparenthesized(*tree.arena, argument);
+        if (const auto* identifier = std::get_if<est::Identifier>(
+                &tree.arena->at(root)); identifier &&
+            caller.locals.count(identifier->name)) {
+          caller.locals.erase(identifier->name);
+          caller.consumed.insert(identifier->name);
+        }
+      }
+      call.arguments.push_back(std::move(value));
+    }
     return call;
   }
 
   // Phase 20: a top-level `message` from `main` (checker bit
   // message_root_ingress) is an independent synchronous Root. Fast Debug's
-  // sequential schedule already gives it Root semantics: arguments are
-  // snapshotted (prepare_handler_call) and the Root runs to completion before
-  // the caller continues. Nested messages inside it are ordinary nested calls.
+  // sequential schedule already gives it Root semantics: message arguments
+  // are read borrows and the Root runs to completion before the caller
+  // continues. Nested messages inside it are ordinary nested calls.
   Value message(const std::string& invocation, Frame& caller, int line, std::ostream& output) {
     return run_handler_call(prepare_handler_call(invocation, caller, line, output), caller, output);
   }

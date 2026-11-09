@@ -1131,6 +1131,33 @@ where
     guard.take().expect("reply missing after Root completed")
 }
 
+/// Synchronous ingress for a Root message with borrowed payloads. The caller
+/// blocks until the admitted work has invoked and dropped its scoped closure.
+/// `F: Send` preserves the `Sync` requirement for any captured `&T`, and the
+/// `'static` result prevents a borrowed payload from escaping in the reply.
+pub fn runtime_invoke_scoped<'scope, F, R>(work: F) -> R
+where
+    F: FnOnce() -> R + Send + 'scope,
+    R: Send + 'static,
+{
+    let scoped: std::boxed::Box<dyn FnOnce() -> R + Send + 'scope> =
+        std::boxed::Box::new(work);
+    // SAFETY: runtime_invoke blocks until its admitted work has completed.
+    // The wrapper consumes `erased()` before sending the reply, so the scoped
+    // closure and all borrowed captures are dropped before this function can
+    // return. The runtime aborts if Moss work panics, preventing unwind past
+    // a live borrow.
+    let erased: std::boxed::Box<dyn FnOnce() -> R + Send + 'static> = unsafe {
+        std::mem::transmute(scoped)
+    };
+    let (reply_tx, reply_rx) = std::sync::mpsc::sync_channel(1);
+    runtime_invoke(move || {
+        let result = erased();
+        reply_tx.send(result).unwrap_or_else(|_| std::process::abort());
+    });
+    reply_rx.recv().unwrap_or_else(|_| std::process::abort())
+}
+
 // ─── Branch join scope ────────────────────────────────────────────────────
 struct MossBranchPending {
     items: std::collections::VecDeque<(u64, MossWork)>,

@@ -8,4 +8,4 @@ export domain Boundary:
 fn main():
   boundary = Boundary()
   data = Payload(text: "ok")
-  echo message boundary.Receive(data)
+  echo message boundary.Receive(data), data.text

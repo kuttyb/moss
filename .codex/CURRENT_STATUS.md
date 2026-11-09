@@ -18113,48 +18113,27 @@ future optimizer-isolated proof and must remain explicit in final review.
   in `docs/phase27/27_5_5_REPORT.md`.
 - No unfinished Phase 27.5.5 work remains.
 
-## 2026-11-08 Moss::Copy task checkpoint
 
-- Isolated worktree `tmp/moss-copy` is on branch `moss-copy`, created from
-  `origin/main` at `9b840e8a`; the original checkout and its unrelated work are
-  untouched.
-- Baseline `make check` and `make check-shadow` were 161/165, with the four
-  known failures recorded in `docs/MOSS_COMPILER_CONTRACT.md`. Candidate
-  `make check` completed 162/166; its four failures are the same baseline
-  failures. Candidate Shadow is still running; no final result yet.
-- The `check_moss_copy` job passed all 13 directed tests, including both
-  engines and checked call-target perturb/drop. Corpus snapshot covers all
-  1,828 tracked tests/examples: 1,123 emitted and 705 failed, same as baseline.
-  Per-source status and emitted Rust hashes are unchanged except the expected
-  local rename in `examples/message_payload_reply.moss`.
-- The compiler contract measured checker cache lookups at 16,465,599 and now
-  records the four current baseline failure names for 166 jobs. No other
-  compiler contract status/debt values changed.
-- Next: Agent 2 reviews the frozen diff and independently reruns
-  `check_moss_copy`. Resolve any Agent 2 blocking feedback before reporting. No
-  push or merge is authorized or planned.
+# Main message ownership checkpoint (2026-11-08)
 
-## 2026-11-08 Moss::Copy task final checkpoint
-
-- Branch `moss-copy` is isolated at `origin/main` base `9b840e8a`; no merge or
-  push was made for this task. The separate message ownership change was pushed
-  to `main` as `41093060` and its status checkpoint as `a71fe9b9`.
-- `check_moss_copy` passes all 13 directed rows in Native and Fast Debug,
-  including checked-target perturb/drop, NonCopy rejection, reserved local and
-  top-level function names, and arity errors. The corpus emission comparison
-  covers all 1,828 tracked sources: 1,123 emitted / 705 failed on both sides,
-  no status changes, and only `examples/message_payload_reply.moss` has an
-  emitted Rust hash change (its approved local rename). The renamed helper
-  probe remains a baseline emission failure on both sides.
-- Final Default and Shadow suites each completed 162/166. Their four failing
-  job names exactly match the recorded baseline failures; no candidate-only
-  failing jobs. The compiler contract now records 55,160 checker reparses,
-  16,465,599 cache lookups, and the suite counts/failures.
-- Agent 2 independently reran the directed gate, checked the diff and scope,
-  and returned GO. Moss-visible NonCopy runtime types identified: `FileIO`,
-  `Range`, `RangeBatch`, `executor`, and statically named domain handles.
-  Runtime-only capability structs include `MossFileIOReadBorrow`,
-  `MossChunks`, `MossExecutor`, `MossExecutorHandle`, `MossRootDescriptor`,
-  `MossBranchPending`, `MossBranchScopeState`, and `MossBranchScope`.
-- `git diff --check` and compiler contract registration validation pass. No
-  unfinished Moss::Copy acceptance work remains; committed locally as a task checkpoint; not pushed or merged.
+- Work is isolated in `tmp/main-message-ownership` on local `main` at
+  `9b840e8a`; the root checkout and its C4 changes remain untouched. The
+  implementation changes synchronous message payloads to read borrows in the
+  checker, native generator, exported handler ABI, and Fast Debug.
+  `executor.invoke` records nonprimitive arguments as Consume, moves them in
+  native output, and marks them consumed in Fast Debug. Root native ingress uses
+  a scoped synchronous runtime entry with one documented lifetime erasure.
+- Validation completed: `make --jobs="$(nproc)" moss-dev`;
+  `check_phase151_borrowed_payloads.py` (native/Fast Debug sender retention,
+  no message clone cost, executor move/use-after-consume, incoming payload write
+  rejection); `check_phase20c_executor.py --probe
+  53-scoped-borrow-lifetime`; `check_phase21_root_expression_ingress.py`;
+  `check_phase21_handler_failure_native.py`; Python byte compilation and
+  `git diff --check`. All passed.
+- A first focused invocation of `check_phase21_shared_abi.py` used the compiler
+  path where the script expected its output directory and failed with
+  `FileExistsError`; this was a command-argument mistake, not a code failure. It
+  has not been rerun. Full default/shadow suites were not run.
+- Committed locally on `main` as `604679f0` (`Make message sends read
+  borrows`). It is one commit ahead of `origin/main`; no push was made. No
+  Phase 28 branch was merged or pushed.
