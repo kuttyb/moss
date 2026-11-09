@@ -18294,3 +18294,13 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Corpus on a matched 2,257-program source set: baseline and candidate each accept 1,447. There are 7 diagnostic-signature differences and no accept/reject status changes.
 - Default: candidate 167/170, baseline 166/169. Shadow: candidate 167/170, baseline 166/169. Both have only the same three baseline failures: `check_phase25_conformance` (nested Cargo jobserver descriptor), `check_phase27_accepts_rustc` and `shard_swarm_cases` (`swarm_035_nested_mutating_calls.moss`, Rust E0499). No candidate-only failing names.
 - `git diff --check` passes. Agent 2 review is in progress for commit 0f6cc437. No push or main update has happened.
+
+## Package baseline origin check (2026-11-09)
+
+- Rebuilt the compiler at `41093060^` (`9b840e8a`) and ran `./margo test` in
+  `packages/linalg` and `packages/sparse`. Both already fail before Phase 28:
+  `linalg/tests/linalg_test.moss:231` and
+  `sparse/tests/sparse_test.moss:136`, each with `TYPE_MISMATCH` for binding
+  `ignored`.
+- These are pre-existing package failures, not Phase 28 regressions. Package
+  sources were left unchanged; no data_utils-style migration was applied.
