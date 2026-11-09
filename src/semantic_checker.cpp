@@ -740,6 +740,7 @@ class Checker {
     const auto imported_signatures = imported_function_signatures();
     {
       CompilerStageTimer timer("type_inference");
+      specialized_return_cache_enabled_ = true;
       CompilerTraceRecorder::instance().increment_counter("inference_rounds", 1);
       CompilerTraceRecorder::instance().increment_counter("inference_work_units",
           p_.functions.size() + p_.objects.size() + p_.domains.size());
@@ -851,13 +852,13 @@ class Checker {
         imported_signatures, "type inference");
     {
       CompilerStageTimer timer("effects");
+      concrete_parameter_effect_cache_enabled_ = true;
       invalidate_concrete_effect_cache();
       concrete_effect_cache_enabled_ = true;
       infer_effects();
       infer_observable_effects();
       invalidate_concrete_effect_cache();
       concrete_effect_cache_enabled_ = true;
-      concrete_parameter_effect_cache_enabled_ = true;
       validate_imported_h3_summary_closure(p_);
       for (auto& function : p_.functions)
         if (!compiled_interface_file(function.source_file) &&
@@ -895,11 +896,8 @@ class Checker {
     }
     {
       CompilerStageTimer timer("specialization_checking");
-      // Declaration and effect inference have settled by this point. Earlier
-      // walks can still refine inferred parameter declarations, so the return
-      // cache is deliberately unavailable until the specialization pass.
-      specialized_return_cache_.clear();
-      specialized_return_cache_enabled_ = true;
+      // Signature and effect fixed points have settled. The return cache has
+      // been kept coherent by invalidation at each changing inference round.
       check_method_ownership();
       for (const auto& f : p_.functions) check_function(f);
       refresh_open_nominal_constructor_results_from_checked_types();
@@ -975,7 +973,6 @@ class Checker {
           }
       }
       concrete_effect_cache_enabled_ = false;
-      concrete_parameter_effect_cache_enabled_ = false;
       specialization_effect_function_evaluations_ =
           concrete_effect_evaluations_ - evaluations_before;
       specialization_effect_cache_hits_ =
@@ -12914,17 +12911,12 @@ class Checker {
       if (profile_concrete_effect_work_) ++specialized_return_cache_hits_;
       return cached->second;
     }
-    if (profile_concrete_effect_work_) ++specialized_return_cache_misses_;
-    if (profile_concrete_effect_work_)
-      specialized_return_evaluation_keys_.insert(key);
+    if (profile_concrete_effect_work_ &&
+        specialized_return_evaluation_keys_.insert(key).second)
+      ++specialized_return_cache_misses_;
     auto result = specialized_function_return_type_uncached(
         function, parameter_types);
-    if (result) {
-      auto parsed = moss::Type::parse_canonical(canonical_type_name(*result));
-      if (parsed && (*parsed)->is_closed() &&
-          !contains_internal_placeholder(canonical_type_name(*result)))
-        specialized_return_cache_.emplace(std::move(key), *result);
-    }
+    if (result) specialized_return_cache_.emplace(std::move(key), *result);
     return result;
   }
 
@@ -16420,6 +16412,12 @@ class Checker {
       inference_signature_wave_counts_.emplace_back(
           scheduled_functions.size(), changed_functions.size());
 
+      // Return types can depend on any inferred parameter in this round.
+      // A cached open or concrete result is reusable only across unchanged
+      // signature waves.
+      if (!changed_functions.empty() || shared_signature_changed)
+        specialized_return_cache_.clear();
+
       std::set<size_t> next_functions;
       if (legacy_signature_inference_ || signature_dependency_graph_changed_ ||
           shared_signature_changed) {
@@ -16578,10 +16576,7 @@ class Checker {
       return specialization->parameter_effects;
     }
     const bool cacheable = concrete_parameter_effect_cache_enabled_ && !recheck &&
-        !specialization &&
-        std::all_of(types.begin(), types.end(), [&](const string& type) {
-          return !unresolved_semantic_type(type);
-        });
+        !specialization;
     string cache_key;
     if (cacheable) {
       cache_key = function.semantic_callable_id.empty()
@@ -16601,8 +16596,8 @@ class Checker {
         return cached->second.effects;
       }
       if (profile_concrete_effect_work_) {
-        ++concrete_parameter_effect_cache_misses_;
-        concrete_parameter_effect_evaluation_keys_.insert(cache_key);
+        if (concrete_parameter_effect_evaluation_keys_.insert(cache_key).second)
+          ++concrete_parameter_effect_cache_misses_;
       }
     }
     auto cache_result = [&](const vector<Effect>& effects,
@@ -20304,6 +20299,9 @@ class Checker {
   }
 
   void infer_effects() {
+    // This pass resets the summaries that concrete parameter-effect entries
+    // depend on; begin its fixed point with an empty cache.
+    concrete_parameter_effect_cache_.clear();
     for (auto& function : p_.functions)
       if (std::filesystem::path(function.source_file).extension() != ".mossi")
         function.parameter_effects.assign(function.params.size(), Effect::Read);
@@ -20393,6 +20391,7 @@ class Checker {
           }
         }
       }
+      if (changed) concrete_parameter_effect_cache_.clear();
       if (!changed) break;
     }
   }
@@ -22081,7 +22080,6 @@ class Checker {
         if (!same_observable_effects(inferred, function.observable_effects)) {
           function.observable_effects = inferred;
           changed = true;
-          invalidate_concrete_effect_cache();
         }
       }
       for (auto& object : p_.objects) {
@@ -22107,7 +22105,6 @@ class Checker {
           if (!same_observable_effects(inferred, method.observable_effects)) {
             method.observable_effects = inferred;
             changed = true;
-            invalidate_concrete_effect_cache();
           }
         }
       }
@@ -22137,10 +22134,10 @@ class Checker {
                                        handler.observable_effects)) {
             handler.observable_effects = inferred;
             changed = true;
-            invalidate_concrete_effect_cache();
           }
         }
       }
+      if (changed) invalidate_concrete_effect_cache();
       if (!changed) break;
       ++observable_effect_fixed_point_changed_rounds_;
     }
