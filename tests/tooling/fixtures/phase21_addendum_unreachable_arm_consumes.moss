@@ -2,7 +2,7 @@ enum Failure:
   A
   B
 
-fn take(value: String) -> String:
+fn consume_str(value: String) -> String:
   return value
 
 fn only_a():
@@ -10,7 +10,7 @@ fn only_a():
   try:
     raise Failure.A
   recover Failure.B:
-    ignored = take(data)
+    ignored = consume_str(data)
   recover Failure.A:
     pass
   echo data

@@ -2342,6 +2342,35 @@ class FastInterpreter {
       if (callee.find('.') == std::string::npos) {
         if (callee == "copy")
           return independent(evaluate_call_argument(0));
+        if (callee == "take") {
+          if (args.size() != 1 || !call_argument_nodes ||
+              call_argument_nodes->size() != 1)
+            throw RuntimeError(line, "take expects one field place argument");
+          auto place = locate_tree_node(*tree, call_argument_nodes->front(),
+                                        frame, line, output);
+          if (!place.value)
+            throw RuntimeError(line, "take requires an assignable field place");
+          Value previous = std::move(*place.value);
+          if (previous.kind == Value::Kind::Vector) {
+            *place.value = Value::vector_value({}, previous.element_type);
+          } else if (previous.kind == Value::Kind::Map) {
+            *place.value = Value::map_value();
+          } else if (previous.kind == Value::Kind::Struct && previous.object &&
+                     previous.object->type == "option") {
+            Value none = Value::struct_value("option");
+            none.object->case_name = "None";
+            *place.value = std::move(none);
+          } else {
+            throw RuntimeError(
+                line, "internal error: take target is not Vector, Map, or Option");
+          }
+          if (place.domain)
+            state_event("state_write", frame, line, place, summary(previous),
+                        summary(*place.value));
+          else
+            emit("LocalWrite", frame, line, args[0]);
+          return previous;
+        }
         if (callee == "replace" && args.size() == 2) {
           Value replacement = evaluate_call_argument(1);
           const auto* replacement_identifier =

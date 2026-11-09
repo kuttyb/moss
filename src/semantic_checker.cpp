@@ -11217,6 +11217,98 @@ class Checker {
     return callee == "copy";
   }
 
+  bool is_take_builtin(const string& callee) const {
+    return callee == "take";
+  }
+
+  void check_take_call(int line, const vector<string>& arguments,
+                       const std::unordered_map<string, string>& env) {
+    if (arguments.size() != 1)
+      err(line, "take expects exactly one argument",
+          "BUILTIN_ARITY_MISMATCH");
+    const string raw_arg = trim(arguments.front());
+    const string stripped =
+        tree_strip_expression_parens(tree_normalize_pipeline(raw_arg));
+    string index_base, index_expr;
+    if (tree_parse_index(stripped, index_base, index_expr))
+      err(line, "cannot take from an element or Map value '" + raw_arg +
+          "'; take requires a field-only path without '[...]'",
+          "TAKE_REQUIRES_FIELD_PATH");
+    if (tree_simple_identifier(stripped))
+      err(line, "cannot take from local '" + stripped +
+          "'; take requires a field path such as s.f",
+          "TAKE_REQUIRES_FIELD_PATH");
+    string member_base, member_field;
+    if (!tree_parse_member_access(stripped, member_base, member_field)) {
+      string call_callee, recv_expr, method_name;
+      vector<string> call_args;
+      if (tree_parse_simple_call(stripped, call_callee, call_args) ||
+          tree_parse_member_call(stripped, recv_expr, method_name, call_args) ||
+          tree_parse_message(stripped, recv_expr, method_name, call_args))
+        err(line, "cannot take from call result '" + raw_arg +
+            "'; take requires a field path such as s.f",
+            "TAKE_REQUIRES_FIELD_PATH");
+      err(line, "take requires a field path such as s.f, found '" + raw_arg + "'",
+          "TAKE_REQUIRES_FIELD_PATH");
+    }
+    string root = tree_strip_expression_parens(
+        tree_normalize_pipeline(trim(member_base)));
+    string next_base, next_field;
+    while (tree_parse_member_access(root, next_base, next_field))
+      root = tree_strip_expression_parens(
+          tree_normalize_pipeline(trim(next_base)));
+    if (tree_parse_index(root, index_base, index_expr) ||
+        stripped.find('[') != string::npos)
+      err(line, "cannot take from path '" + raw_arg +
+          "' containing an index '[...]'; take requires a field-only path",
+          "TAKE_PATH_CONTAINS_INDEX");
+    if (!tree_simple_identifier(root)) {
+      string call_callee, recv_expr, method_name;
+      vector<string> call_args;
+      if (tree_parse_simple_call(root, call_callee, call_args) ||
+          tree_parse_member_call(root, recv_expr, method_name, call_args) ||
+          tree_parse_message(root, recv_expr, method_name, call_args))
+        err(line, "cannot take from field of call result '" + raw_arg +
+            "'; take requires a field-only storage path",
+            "TAKE_REQUIRES_FIELD_PATH");
+      err(line, "take requires a field-only storage path, found '" + raw_arg + "'",
+          "TAKE_REQUIRES_FIELD_PATH");
+    }
+    auto place = storage_location(stripped, env);
+    if (!place || place->path.empty())
+      err(line, "take requires an assignable field path, found '" + raw_arg + "'",
+          "TAKE_REQUIRES_FIELD_PATH");
+    for (const auto& segment : place->path)
+      if (segment == "[]")
+        err(line, "cannot take from path '" + raw_arg +
+            "' containing an index '[...]'; take requires a field-only path",
+            "TAKE_PATH_CONTAINS_INDEX");
+    const string arg_role =
+        current_body_types_ &&
+                !current_body_types_->active_expression_occurrences.empty() &&
+                current_body_types_->expression_occurrences.at(
+                    current_body_types_->active_expression_occurrences.back())
+                        .root_slot == "call-invocation"
+            ? "call-argument:0" : "argument:0";
+    check_expression(line, arguments.front(), env, {}, arg_role);
+    auto type = inferred_expr_term(arguments.front(), env);
+    if (current_body_types_ && type)
+      type = current_body_types_->solver.resolve(type);
+    if (!type || !type->is_closed())
+      err(line, "take argument has no resolved Moss type",
+          "MOSS_INTERNAL_INVARIANT");
+    const bool allowed_field_type =
+        type->kind == moss::TypeKind::Builtin &&
+        (type->name == "vector" || type->name == "map" ||
+         type->name == "option");
+    if (!allowed_field_type) {
+      const string field_type = canonical_type_name(type->to_canonical_string());
+      err(line, "take requires a Vector, Map, or Option field, found '" +
+          field_type + "'",
+          "TAKE_UNSUPPORTED_FIELD_TYPE");
+    }
+  }
+
   void check_copy_call(int line, const vector<string>& arguments,
                        const std::unordered_map<string, string>& env) {
     if (arguments.size() != 1)
@@ -11924,6 +12016,9 @@ class Checker {
     if (is_copy_builtin(callee) && args.size() == 1)
       return BuiltinCallSemantics{
           inferred_expr_type(args.front(), env).value_or("_"), false};
+    if (is_take_builtin(callee) && args.size() == 1)
+      return BuiltinCallSemantics{
+          inferred_expr_type(args.front(), env).value_or("_"), false};
     if (objects_.count(callee)) {
       const ObjectType* obj = objects_.at(callee);
       bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
@@ -12135,8 +12230,9 @@ class Checker {
     {
       string callee;
       vector<string> arguments;
-      if (tree_parse_simple_call(original, callee, arguments) && callee == "replace" &&
-          arguments.size() == 2)
+      if (tree_parse_simple_call(original, callee, arguments) &&
+          ((callee == "replace" && arguments.size() == 2) ||
+           (is_take_builtin(callee) && arguments.size() == 1)))
         return inferred_expr(arguments[0], env);
     }
     {
@@ -18560,6 +18656,12 @@ class Checker {
                                   receiver_effect, receiver_fields, Effect::Write);
         return;
       }
+      if (tree_parse_simple_call(value, callee, arguments) &&
+          is_take_builtin(callee) && arguments.size() == 1) {
+        analyze_effect_expression(arguments[0], env, params, parameter_effects,
+                                  receiver_effect, receiver_fields, Effect::Write);
+        return;
+      }
       if (tree_parse_simple_call(value, callee, arguments) && callee == "replace" &&
           arguments.size() == 2) {
         analyze_effect_expression(arguments[0], env, params, parameter_effects,
@@ -21311,6 +21413,12 @@ class Checker {
         // check_sort_call rejects any key with observable effects.
         return effects;
       }
+      if (is_take_builtin(callee) && arguments_call.size() == 1) {
+        auto place = storage_location(arguments_call[0], env);
+        if (place && domain_fields.count(place->root)) effects.domain_write = true;
+        else effects.local_mutation = true;
+        return effects;
+      }
       if (callee == "replace" && arguments_call.size() == 2) {
         auto place = storage_location(arguments_call[0], env);
         if (place && domain_fields.count(place->root)) effects.domain_write = true;
@@ -21564,7 +21672,8 @@ class Checker {
         string replace_callee;
         vector<string> replace_arguments;
         if (tree_parse_simple_call(expression, replace_callee, replace_arguments) &&
-            replace_callee == "replace" && !replace_arguments.empty() &&
+            (replace_callee == "replace" || is_take_builtin(replace_callee)) &&
+            !replace_arguments.empty() &&
             tree_root_identifier(replace_arguments.front()) == range_binding)
           return std::nullopt;
       }
@@ -23087,6 +23196,10 @@ class Checker {
         retain_semantic_use(resolved_callee->second, "binding_use", line);
       if (callee == "sort" && !functions_.count(callee) &&
           (call_arguments.size() == 1 || call_arguments.size() == 2)) {
+        check_ownership_expression(line, call_arguments[0], env, Effect::Write);
+        return;
+      }
+      if (is_take_builtin(callee) && call_arguments.size() == 1) {
         check_ownership_expression(line, call_arguments[0], env, Effect::Write);
         return;
       }
@@ -24925,6 +25038,10 @@ class Checker {
                            const Method** resolved_method = nullptr) {
     if (name == "sort" && !functions_.count(name)) {
       check_sort_call(line, args, env);
+      return;
+    }
+    if (is_take_builtin(name)) {
+      check_take_call(line, args, env);
       return;
     }
     if (name == "range") {
@@ -27763,7 +27880,7 @@ class Checker {
     vector<string> root_arguments;
     const bool root_copy =
         tree_parse_simple_call(original, root_callee, root_arguments) &&
-        is_copy_builtin(root_callee);
+        (is_copy_builtin(root_callee) || is_take_builtin(root_callee));
     if (!root_copy)
       if (auto type = inferred_expr_type(original, env))
         if (contains_domain_handle(*type))
@@ -28788,6 +28905,11 @@ class Checker {
       if (is_copy_builtin(callee)) {
         retain_active_expression_target("builtin:copy-v1");
         check_copy_call(line, args, env);
+        return;
+      }
+      if (is_take_builtin(callee)) {
+        retain_active_expression_target("builtin:take-v1");
+        check_take_call(line, args, env);
         return;
       }
       if (current_body_types_) {

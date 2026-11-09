@@ -5453,6 +5453,20 @@ class Generator {
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked copy builtin target is missing or perturbed");
         }
+        if (callee->name == "take") {
+          const auto* facts = checked_expression_facts(expression);
+          const string checked_target = facts ? facts->resolved_target : string();
+          if (checked_target == "builtin:take-v1") {
+            if (call->arguments.size() != 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked take call has invalid arity");
+            return "std::mem::take(&mut " +
+                write_call_place(expression.child(call->arguments.front()),
+                                 d, locals, types) + ")";
+          }
+          throw std::runtime_error(
+              "MOSS_INTERNAL_INVARIANT checked take builtin target is missing or perturbed");
+        }
         auto object = objects_.find(callee->name);
         if (object != objects_.end() && !call->arguments.empty()) {
           std::unordered_map<string, EmitterExpr> values;

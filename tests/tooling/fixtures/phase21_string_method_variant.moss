@@ -2,14 +2,14 @@ enum Failure:
   Bad
   Other
 
-fn take(data: String) -> String:
+fn consume_str(data: String) -> String:
   return data
 
 fn main():
   var item = "seven"
   try:
     if true:
-      let discarded = take(item)
+      let discarded = consume_str(item)
       raise Failure.Bad
     else:
       raise Failure.Other

@@ -11,11 +11,11 @@ domain A__helper:
   fn Run() -> int:
     reply 1
 
-fn take(worker: A):
+fn accept(worker: A):
   echo 1
 
 fn main():
   helper = A()
   message helper.Set(10)
   other = A__helper()
-  take(other)
+  accept(other)

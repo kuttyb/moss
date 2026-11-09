@@ -133,7 +133,7 @@ if grep -F 'fn Ping_shared(&self, worker: Worker__' \
 fi
 run_case domain_name_collision_routes \
   tests/domain_name_collision_routes.moss "$(printf '1\n2')"
-grep -F 'fn take(value: i64)' \
+grep -F 'fn accept(value: i64)' \
   "$test_build/domain_name_collision_routes.rs" >/dev/null ||
   fail 'ordinary helper must receive the message result, not a handle'
 grep -E 'fn Send\(&self, (mut )?value: i64\)' \

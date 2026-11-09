@@ -169,5 +169,5 @@ The checker validates every source citation below by path and symbol. Citations 
 | `tests/tooling/fixtures/phase27_5_4_runtime_baseline.json` | `counts`, `workload` |
 | `docs/MOSS_COMPILER_CONTRACT.md` | `Declared debt`, `D-CHECKER-TEXT`, `D-DRIVER-TREE`, `D-OWNERSHIP-FACTS`, `D-LOCK-TEST`, `D-TRACE-PARITY`, `D-PROGRAM-GENERATOR`, `D-BASELINE-SUITE`, `D-ACCEPTED-RUST` |
 | `docs/phase27/27_5_5_REPORT.md` | `Type facts and consumer fallbacks`, `Paired performance` |
-| `tests/swarm_035_nested_mutating_calls.moss` | `Box2`, `take`, `put` |
+| `tests/swarm_035_nested_mutating_calls.moss` | `Box2`, `take_item`, `put` |
 <!-- architecture-citations:end -->

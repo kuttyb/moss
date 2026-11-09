@@ -26,13 +26,13 @@ with tempfile.TemporaryDirectory(dir=ROOT/'tmp') as directory:
 ''')
     result=run('run','--interp',path)
     assert result.returncode==0,result
-    path.write_text('''fn take(m: Map[String, String], fallback: String, found: Bool) -> String:
+    path.write_text('''fn take_entry(m: Map[String, String], fallback: String, found: Bool) -> String:
   return m.delete("x", fallback, found)
 fn main():
   values = Map()
   values["x"] = "old"
   var found = false
-  result = take(values, "new", found)
+  result = take_entry(values, "new", found)
   assertEqual(result, "old")
   assert(found)
 ''')

@@ -116,7 +116,8 @@ ObservableEffects chunk_mapper_invocation_effects(
       string callee;
       vector<string> arguments;
       if (tree_parse_simple_call(expression, callee, arguments) &&
-          callee == "replace" && !arguments.empty() &&
+          (callee == "replace" || is_take_builtin(callee)) &&
+          !arguments.empty() &&
           tree_root_identifier(arguments.front()) == parameter)
         return map_node.effects;
     }

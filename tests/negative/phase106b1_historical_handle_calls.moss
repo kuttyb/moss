@@ -20,7 +20,7 @@ type Holder:
   fn Send(worker: A):
     echo 2
 
-fn take(worker: A):
+fn accept(worker: A):
   echo 1
 
 fn main():
@@ -34,5 +34,5 @@ fn main():
   message a2.Set(20)
   message a3.Set(30)
   message receiver.Send(helper)
-  take(a2)
+  accept(a2)
   holder.Send(a3)

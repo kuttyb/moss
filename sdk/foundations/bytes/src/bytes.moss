@@ -29,11 +29,11 @@ export fn slice_bytes(values: Vector[Int], start: Int, length: Int) -> Vector[In
   if start < 0 or start >= n or length <= 0:
     return result
   remaining = n - start
-  take = length
-  if take > remaining:
-    take = remaining
+  slice_len = length
+  if slice_len > remaining:
+    slice_len = remaining
   var i = 0
-  while i < take:
+  while i < slice_len:
     byte = values[start + i]
     assert(is_byte(byte))
     result.push(byte)

@@ -81,9 +81,9 @@
     "stdout": "7\n",
     "negative": false,
     "fileio": false,
-    "target": "take",
+    "target": "pop_one",
     "effects": {
-      "fn:take<queue[int]>": [
+      "fn:pop_one<queue[int]>": [
         "WRITE"
       ]
     }
@@ -217,11 +217,11 @@
   },
   "vector_pop": {
     "stdout": "2\n1\n",
-    "target": "take",
+    "target": "pop_one",
     "negative": false,
     "fileio": false,
     "effects": {
-      "fn:take<vector[int]>": [
+      "fn:pop_one<vector[int]>": [
         "WRITE"
       ]
     }

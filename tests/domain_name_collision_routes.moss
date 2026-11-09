@@ -20,7 +20,7 @@ type Holder:
   fn Send(value: Int):
     echo 2
 
-fn take(value: Int):
+fn accept(value: Int):
   echo 1
 
 fn main():
@@ -34,5 +34,5 @@ fn main():
   message a2.Set(20)
   message a3.Set(30)
   message receiver.Send()
-  take(message a2.Run())
+  accept(message a2.Run())
   holder.Send(message a3.Run())

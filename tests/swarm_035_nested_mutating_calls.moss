@@ -1,7 +1,7 @@
 type Box2:
   values: Vector[Int]
 
-  fn take() -> Int:
+  fn take_item() -> Int:
     return values.pop()
 
   fn put(x: Int):
@@ -9,10 +9,10 @@ type Box2:
     return
 
   fn cycle():
-    put(take())
+    put(take_item())
 
 fn main():
   var b = Box2(values = [1, 2])
   b.cycle()
-  b.put(b.take())
+  b.put(b.take_item())
   echo b.values[0]

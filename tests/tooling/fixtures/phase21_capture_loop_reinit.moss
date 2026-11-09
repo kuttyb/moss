@@ -1,6 +1,6 @@
 enum Failure:
   Bad
-fn take(data: String) -> Int:
+fn consume_str(data: String) -> Int:
   moved = data
   return moved.length()
 domain Worker:
@@ -8,7 +8,7 @@ domain Worker:
     var item = "before"
     var i = 0
     while i < 1:
-      used = take(item)
+      used = consume_str(item)
       item = "after"
       i = i + used
     raise Failure.Bad

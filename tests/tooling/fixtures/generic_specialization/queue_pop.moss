@@ -1,7 +1,7 @@
-fn take(q):
+fn pop_one(q):
   return q.pop()
 
 fn main():
   q = Queue()
   q.push(7)
-  echo take(q)
+  echo pop_one(q)

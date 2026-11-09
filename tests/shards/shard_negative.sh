@@ -150,7 +150,7 @@ reject_case functional_reduce_mismatch \
 reject_case functional_reduce_initial_reuse \
   "value 'initial' was transferred"
 reject_case functional_consume_element \
-  "functional callable 'take' requires CONSUME access to an element"
+  "functional callable 'consume_token' requires CONSUME access to an element"
 reject_case functional_mutable_capture \
   "callback 'captured.push(_)' for map writes captured binding 'captured'"
 reject_case functional_mutating_bound_method \
