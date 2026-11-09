@@ -894,6 +894,11 @@ class Checker {
     }
     {
       CompilerStageTimer timer("specialization_checking");
+      // Declaration and effect inference have settled by this point. Earlier
+      // walks can still refine inferred parameter declarations, so the return
+      // cache is deliberately unavailable until the specialization pass.
+      specialized_return_cache_.clear();
+      specialized_return_cache_enabled_ = true;
       check_method_ownership();
       for (const auto& f : p_.functions) check_function(f);
       refresh_open_nominal_constructor_results_from_checked_types();
@@ -2083,6 +2088,8 @@ class Checker {
                   << parse_cache_failed_member_insertions_ << '\n';
         std::cerr << "MOSS_PROFILE|concrete_effect_evaluations|"
                   << concrete_effect_evaluations_ << '\n';
+        std::cerr << "MOSS_PROFILE|specialized_return_evaluations|"
+                  << specialized_return_evaluation_keys_.size() << '\n';
         std::cerr << "MOSS_PROFILE|observable_effects_function_evaluations|"
                   << observable_effects_function_evaluations_ << '\n';
         std::cerr << "MOSS_PROFILE|specialization_effect_function_evaluations|"
@@ -2208,6 +2215,9 @@ class Checker {
   vector<std::tuple<size_t, size_t, size_t>>
       inference_signature_invocation_wave_ranges_;
   mutable uint64_t concrete_effect_evaluations_ = 0;
+  mutable std::unordered_map<string, string> specialized_return_cache_;
+  mutable std::set<string> specialized_return_evaluation_keys_;
+  bool specialized_return_cache_enabled_ = false;
   mutable uint64_t concrete_effect_computations_ = 0;
   mutable uint64_t concrete_effect_cache_hits_ = 0;
   mutable uint64_t concrete_effect_cache_enabled_calls_ = 0;
@@ -12863,6 +12873,35 @@ class Checker {
 
   std::optional<string> specialized_function_return_type(
       const Function& function, const vector<string>& parameter_types) const {
+    if (!specialized_return_cache_enabled_) {
+      return specialized_function_return_type_uncached(function, parameter_types);
+    }
+    string key = function.semantic_callable_id.empty()
+        ? function.name : function.semantic_callable_id;
+    key += "(";
+    for (const auto& type : parameter_types) {
+      const string canonical = canonical_type_name(type);
+      key += std::to_string(canonical.size()) + ":" + canonical;
+    }
+    key += ")";
+    if (auto cached = specialized_return_cache_.find(key);
+        cached != specialized_return_cache_.end())
+      return cached->second;
+    if (profile_concrete_effect_work_)
+      specialized_return_evaluation_keys_.insert(key);
+    auto result = specialized_function_return_type_uncached(
+        function, parameter_types);
+    if (result) {
+      auto parsed = moss::Type::parse_canonical(canonical_type_name(*result));
+      if (parsed && (*parsed)->is_closed() &&
+          !contains_internal_placeholder(canonical_type_name(*result)))
+        specialized_return_cache_.emplace(std::move(key), *result);
+    }
+    return result;
+  }
+
+  std::optional<string> specialized_function_return_type_uncached(
+      const Function& function, const vector<string>& parameter_types) const {
     string result = function.return_type ? canonical_type_name(*function.return_type) : "";
     auto parsed_result = result.empty() ? std::nullopt : moss::Type::parse_canonical(result);
     bool requires_concrete_result = result.empty() || contains_internal_placeholder(result) ||
@@ -12948,9 +12987,11 @@ class Checker {
           if (auto actual = inferred_expr_type(args[index], env)) {
             auto& parameter = function->second->params[index];
             if (parameter.type.empty() && !function->second->generic &&
-                !function->second->static_dispatch)
+                !function->second->static_dispatch) {
               parameter.set_type(*actual);
-            else if (!function->second->generic && !function->second->static_dispatch &&
+              if (specialized_return_cache_enabled_)
+                specialized_return_cache_.clear();
+            } else if (!function->second->generic && !function->second->static_dispatch &&
                      !traits_.count(parameter.type) &&
                      !contains_internal_placeholder(*actual) &&
                      !is_type_compatible(parameter.type, *actual))
@@ -14923,6 +14964,8 @@ class Checker {
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
                     parameter.set_type(*actual);
+                    if (specialized_return_cache_enabled_)
+                      specialized_return_cache_.clear();
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   } else if (!parameter.inferred && !same_type(parameter.type, *actual))
                     err(statement.line, "argument " + std::to_string(index + 1) +
@@ -14957,6 +15000,8 @@ class Checker {
                   bool untyped_parameter = parameter.type.empty();
                   if (untyped_parameter || inferred_container) {
                     parameter.set_type(*actual);
+                    if (specialized_return_cache_enabled_)
+                      specialized_return_cache_.clear();
                     parameter.inferred = parameter.inferred || untyped_parameter;
                   }
                 }
@@ -14971,9 +15016,11 @@ class Checker {
                 if (!actual) continue;
                 auto& parameter = function->second->params[i];
                 if (parameter.type.empty() && !function->second->generic &&
-                    !function->second->static_dispatch)
+                    !function->second->static_dispatch) {
                   parameter.set_type(*actual);
-                else if (!function->second->generic &&
+                  if (specialized_return_cache_enabled_)
+                    specialized_return_cache_.clear();
+                } else if (!function->second->generic &&
                          !function->second->static_dispatch &&
                          !traits_.count(parameter.type) &&
                          !contains_internal_placeholder(*actual) &&
@@ -21049,6 +21096,8 @@ class Checker {
   void invalidate_concrete_effect_cache() {
     ++concrete_effect_cache_epoch_;
     concrete_effect_cache_.clear();
+    if (specialized_return_cache_enabled_)
+      specialized_return_cache_.clear();
   }
 
   void phase21_validate_failure_arms(const Domain& domain, Handler& handler) {
