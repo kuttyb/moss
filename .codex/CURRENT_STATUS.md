@@ -18112,3 +18112,28 @@ future optimizer-isolated proof and must remain explicit in final review.
   documented C1 failures; all other phase acceptance gates passed as recorded
   in `docs/phase27/27_5_5_REPORT.md`.
 - No unfinished Phase 27.5.5 work remains.
+
+
+# Main message ownership checkpoint (2026-11-08)
+
+- Work is isolated in `tmp/main-message-ownership` on local `main` at
+  `9b840e8a`; the root checkout and its C4 changes remain untouched. The
+  implementation changes synchronous message payloads to read borrows in the
+  checker, native generator, exported handler ABI, and Fast Debug.
+  `executor.invoke` records nonprimitive arguments as Consume, moves them in
+  native output, and marks them consumed in Fast Debug. Root native ingress uses
+  a scoped synchronous runtime entry with one documented lifetime erasure.
+- Validation completed: `make --jobs="$(nproc)" moss-dev`;
+  `check_phase151_borrowed_payloads.py` (native/Fast Debug sender retention,
+  no message clone cost, executor move/use-after-consume, incoming payload write
+  rejection); `check_phase20c_executor.py --probe
+  53-scoped-borrow-lifetime`; `check_phase21_root_expression_ingress.py`;
+  `check_phase21_handler_failure_native.py`; Python byte compilation and
+  `git diff --check`. All passed.
+- A first focused invocation of `check_phase21_shared_abi.py` used the compiler
+  path where the script expected its output directory and failed with
+  `FileExistsError`; this was a command-argument mistake, not a code failure. It
+  has not been rerun. Full default/shadow suites were not run.
+- Committed locally on `main` as `604679f0` (`Make message sends read
+  borrows`). It is one commit ahead of `origin/main`; no push was made. No
+  Phase 28 branch was merged or pushed.
