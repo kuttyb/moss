@@ -5433,6 +5433,20 @@ class Generator {
                                                    call->callee);
       if (const auto* callee = std::get_if<est::Identifier>(
               &expression.arena->at(callee_id))) {
+        if (callee->name == "copy") {
+          const auto* facts = checked_expression_facts(expression);
+          const string checked_target = facts ? facts->resolved_target : string();
+          if (checked_target == "builtin:copy-v1") {
+            if (call->arguments.size() != 1)
+              throw std::runtime_error(
+                  "MOSS_INTERNAL_INVARIANT checked copy call has invalid arity");
+            return "(" + expr(expression.child(call->arguments.front()),
+                               d, locals, types) + ").clone()";
+          }
+          if (checked_target != "builtin:copy-v1")
+            throw std::runtime_error(
+                "MOSS_INTERNAL_INVARIANT checked copy builtin target is missing or perturbed");
+        }
         auto object = objects_.find(callee->name);
         if (object != objects_.end() && !call->arguments.empty()) {
           std::unordered_map<string, EmitterExpr> values;
@@ -5488,6 +5502,8 @@ class Generator {
           auto builtin_arg = [&](size_t index) {
             return expr(builtin_arguments.at(index), d, locals, types);
           };
+          if (callee->name == "copy" && builtin_arguments.size() == 1)
+            return "(" + builtin_arg(0) + ").clone()";
           if (callee->name == "sqrt" && builtin_arguments.size() == 1)
             return "{ let __moss_sqrt_value: f64 = " + builtin_arg(0) +
                 "; __moss_sqrt_value.sqrt() }";

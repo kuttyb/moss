@@ -79,6 +79,8 @@ class Parser {
         else if (starts_with(declaration, "trait ")) p.traits.push_back(parse_trait(exported));
         else if (starts_with(declaration, "fn ")) {
           auto function = parse_function(exported);
+          if (function.name == "copy" && !p.explicit_module)
+            fail(L, "'copy' is a reserved builtin name");
           if (function.name == "main") {
             if (p.main) fail(L, "duplicate main function");
             if (function.expression_body)
@@ -187,6 +189,9 @@ class Parser {
         p.set_type(canonical_type_name(trim(part.substr(c + 1))));
       }
       if (p.name.empty() || !identifier(p.name)) throw CompileError(L.no, "invalid parameter: " + part);
+      if (p.name == "copy")
+        throw CompileError(L.no, "'copy' is a reserved builtin name",
+                           "RESERVED_NAME");
       ps.push_back(std::move(p));
     }
     return ps;
@@ -655,6 +660,7 @@ class Parser {
       s.kind = Stmt::Kind::Recover;
       s.a = trim(L.text.substr(std::string("recover").size(),
                                L.text.size() - std::string("recover").size() - 1));
+      if (s.a == "copy") fail(L, "'copy' is a reserved builtin name");
       return s;
     }
     if (L.text == "raise") {
@@ -714,6 +720,7 @@ class Parser {
               fail(L, "ownership modifiers are not allowed in enum patterns; use 'match value:' to READ-borrow or 'match consume value:' to consume the whole enum");
             fail(L, "enum patterns support only plain field bindings; wildcard and nested patterns are unsupported");
           }
+          if (binding == "copy") fail(L, "'copy' is a reserved builtin name");
           s.args.push_back(binding);
         }
       }
@@ -738,6 +745,7 @@ class Parser {
       s.a = trim(rest.substr(0, in));
       s.b = trim(rest.substr(in + 4));
       if (!plain_identifier(s.a)) fail(L, "for loop binding must be an identifier");
+      if (s.a == "copy") fail(L, "'copy' is a reserved builtin name");
       if (s.b.empty()) fail(L, "for loop source may not be empty");
       s.kind = Stmt::Kind::For;
       return s;
@@ -757,6 +765,7 @@ class Parser {
       if (eq == string::npos) fail(L, is_var ? "local var requires an initializer" : "let requires an initializer");
       s.a = trim(rest.substr(0, eq));
       s.b = trim(rest.substr(eq + 1));
+      if (s.a == "copy") fail(L, "'copy' is a reserved builtin name");
       if (s.a.find(':') != string::npos) {
         throw CompileError(L.no,
             "local type annotations are not supported in this form; use inferred local syntax such as 'var values = Vector[Int]()'",
@@ -784,6 +793,7 @@ class Parser {
       s.a = trim(L.text.substr(0, assignment));
       s.b = trim(L.text.substr(assignment + 1));
       if (s.a.empty() || s.b.empty()) fail(L, "assignment requires a target and an expression");
+      if (s.a == "copy") fail(L, "'copy' is a reserved builtin name");
       if (starts_with(s.b, "await ")) {
         fail(L, "await is retired: message is synchronous; use '" + s.a +
              " = message receiver.Handler(...)'");

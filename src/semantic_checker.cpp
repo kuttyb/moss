@@ -11114,6 +11114,134 @@ class Checker {
     return copy_type_name(canonical_type_name(type));
   }
 
+  struct MossCopyFailure {
+    string type;
+    string path;
+  };
+
+  std::optional<MossCopyFailure> moss_copy_failure(
+      const moss::TypeRef& source_type, std::set<string>& active) const {
+    if (!source_type) return MossCopyFailure{"<unknown>", "unresolved type"};
+    const auto type = source_type;
+    const string display = canonical_type_name(type->to_canonical_string());
+    if (!active.insert(display).second)
+      return MossCopyFailure{display, "recursive value layout"};
+    struct ActiveTypeScope {
+      std::set<string>& active;
+      string type;
+      ~ActiveTypeScope() { active.erase(type); }
+    } scope{active, display};
+
+    if (type->kind == moss::TypeKind::Unit) return std::nullopt;
+    if (type->kind == moss::TypeKind::Primitive) {
+      if (type->name == "int" || type->name == "float" ||
+          type->name == "bool" || type->name == "char" ||
+          type->name == "string")
+        return std::nullopt;
+      return MossCopyFailure{display, {}};
+    }
+    if (type->kind == moss::TypeKind::Builtin) {
+      if (type->name != "vector" && type->name != "map" &&
+          type->name != "queue" && type->name != "option")
+        return MossCopyFailure{display, {}};
+      for (size_t index = 0; index < type->type_args.size(); ++index) {
+        if (auto failure = moss_copy_failure(type->type_args[index], active)) {
+          const string slot = type->name == "map"
+              ? (index == 0 ? "key" : "value") : "element";
+          failure->path = slot + ": " + failure->type +
+              (failure->path.empty() ? string{} : " (" + failure->path + ")");
+          failure->type = display;
+          return failure;
+        }
+      }
+      return std::nullopt;
+    }
+    if (type->kind == moss::TypeKind::NominalInstance) {
+      const auto object = objects_.find(type->name);
+      if (object == objects_.end()) return MossCopyFailure{display, {}};
+      vector<moss::TypeRef> field_types;
+      try {
+        field_types = type->resolved_fields();
+      } catch (...) {
+        return MossCopyFailure{display, "unresolved field types"};
+      }
+      for (size_t index = 0;
+           index < object->second->fields.size() && index < field_types.size();
+           ++index) {
+        if (auto failure = moss_copy_failure(field_types[index], active)) {
+          const string field_type = canonical_type_name(
+              field_types[index]->to_canonical_string());
+          failure->path = "field '" + object->second->fields[index].name +
+              "': " + field_type +
+              (failure->path.empty() ? string{} : " (" + failure->path + ")");
+          failure->type = display;
+          return failure;
+        }
+      }
+      if (field_types.size() != object->second->fields.size())
+        return MossCopyFailure{display, "unresolved field types"};
+      return std::nullopt;
+    }
+    if (type->kind == moss::TypeKind::Enum) {
+      const auto enumeration = enums_.find(type->name);
+      if (enumeration == enums_.end()) return MossCopyFailure{display, {}};
+      for (const auto& item : enumeration->second->cases) {
+        for (const auto& field : item.fields) {
+          const auto parsed = moss::Type::parse_canonical(field.type);
+          if (!parsed) return MossCopyFailure{display, {}};
+          if (auto failure = moss_copy_failure(*parsed, active)) {
+            const string field_type = canonical_type_name(
+                (*parsed)->to_canonical_string());
+            failure->path = "case '" + item.name + "' field '" + field.name +
+                "': " + field_type +
+                (failure->path.empty() ? string{} : " (" + failure->path + ")");
+            failure->type = display;
+            return failure;
+          }
+        }
+      }
+      return std::nullopt;
+    }
+    // Domain handles, FileIO/ranges, Executor and compiler/runtime scoped
+    // capabilities are not ordinary values that Moss::Copy can duplicate.
+    return MossCopyFailure{display, {}};
+  }
+
+  bool is_copy_builtin(const string& callee) const {
+    // The unqualified spelling is reserved for the builtin. Module APIs named
+    // `copy` remain callable through their qualified module path.
+    return callee == "copy";
+  }
+
+  void check_copy_call(int line, const vector<string>& arguments,
+                       const std::unordered_map<string, string>& env) {
+    if (arguments.size() != 1)
+      err(line, "copy expects exactly one argument",
+          "BUILTIN_ARITY_MISMATCH");
+    const auto argument_type = inferred_expr_type(arguments.front(), env);
+    const auto identifier = checker_identifier_name(arguments.front());
+    const bool checked_domain_identifier = argument_type &&
+        contains_domain_handle(*argument_type) && identifier &&
+        env.count(string(*identifier));
+    if (!checked_domain_identifier)
+      check_expression(line, arguments.front(), env, {}, "copy-argument");
+    auto type = inferred_expr_term(arguments.front(), env);
+    if (current_body_types_ && type)
+      type = current_body_types_->solver.resolve(type);
+    if (!type || !type->is_closed())
+      err(line, "copy argument has no resolved Moss type",
+          "MOSS_INTERNAL_INVARIANT");
+    std::set<string> active;
+    if (auto failure = moss_copy_failure(type, active)) {
+      const string argument_type = canonical_type_name(
+          type->to_canonical_string());
+      string message = "copy argument type '" + argument_type +
+          "' is not Moss::Copy";
+      if (!failure->path.empty()) message += " (" + failure->path + ")";
+      err(line, message, "COPY_REQUIRES_MOSS_COPY");
+    }
+  }
+
   bool transfer_type(const string& type) const {
     return !copy_type(type) && !domains_.count(canonical_type_name(type));
   }
@@ -11789,6 +11917,9 @@ class Checker {
   std::optional<BuiltinCallSemantics> builtin_call_semantics(
       const string& callee, const vector<string>& args,
       const TypeEnv& env) const {
+    if (is_copy_builtin(callee) && args.size() == 1)
+      return BuiltinCallSemantics{
+          inferred_expr_type(args.front(), env).value_or("_"), false};
     if (objects_.count(callee)) {
       const ObjectType* obj = objects_.at(callee);
       bool has_generic_field = std::any_of(obj->fields.begin(), obj->fields.end(),
@@ -27593,8 +27724,14 @@ class Checker {
         }
       }
     }
-    if (auto type = inferred_expr_type(original, env))
-      if (contains_domain_handle(*type))
+    string root_callee;
+    vector<string> root_arguments;
+    const bool root_copy =
+        tree_parse_simple_call(original, root_callee, root_arguments) &&
+        is_copy_builtin(root_callee);
+    if (!root_copy)
+      if (auto type = inferred_expr_type(original, env))
+        if (contains_domain_handle(*type))
         err(line, "domain handles cannot be used as ordinary values or payloads; "
             "use only static domainroutes bindings and message targets");
     // Parentheses, literals and unary forms must not hide a routing capability
@@ -28612,6 +28749,11 @@ class Checker {
             current_body_types_->active_expression_occurrences.back());
         occurrence.operation_id = "call:Vector";
         occurrence.semantic_target_id = "builtin:vector-constructor-v1";
+      }
+      if (is_copy_builtin(callee)) {
+        retain_active_expression_target("builtin:copy-v1");
+        check_copy_call(line, args, env);
+        return;
       }
       if (current_body_types_) {
         vector<moss::TypeRef> argument_terms;
