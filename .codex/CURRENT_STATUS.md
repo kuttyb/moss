@@ -18130,10 +18130,9 @@ future optimizer-isolated proof and must remain explicit in final review.
   53-scoped-borrow-lifetime`; `check_phase21_root_expression_ingress.py`;
   `check_phase21_handler_failure_native.py`; Python byte compilation and
   `git diff --check`. All passed.
-- A first focused invocation of `check_phase21_shared_abi.py` used the compiler
-  path where the script expected its output directory and failed with
-  `FileExistsError`; this was a command-argument mistake, not a code failure. It
-  has not been rerun. Full default/shadow suites were not run.
-- Committed locally on `main` as `604679f0` (`Make message sends read
-  borrows`). It is one commit ahead of `origin/main`; no push was made. No
-  Phase 28 branch was merged or pushed.
+- Re-ran the focused borrowed-payload gate and `check_phase20c_executor.py
+  --probe 53-scoped-borrow-lifetime` on the exact main tip; both passed. Full
+  default/shadow suites were not run.
+- Commit `4109306044c83226e6c2adfe79d82acc540a0e86` (`Make message sends
+  read borrows`) was pushed to `origin/main`. The Phase 28 branch was not
+  merged or pushed.
