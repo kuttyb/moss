@@ -2340,42 +2340,8 @@ class FastInterpreter {
           compact_callee.size() > 8 && compact_callee.back() == ']')
         return Value::vector_value({}, compact_callee.substr(7, compact_callee.size() - 8));
       if (callee.find('.') == std::string::npos) {
-        if (callee == "copy") {
-          const auto unwrapped = tree
-              ? est::unparenthesized(*tree->arena, current_root)
-              : current_root;
-          const auto* facts = tree
-              ? tree->arena->facts(current_root, frame.functional_context)
-              : nullptr;
-          if (!facts && tree && unwrapped != current_root)
-            facts = tree->arena->facts(unwrapped, frame.functional_context);
-          if (!facts && tree && !frame.source_file.empty()) {
-            const std::string source_context = "source:" + frame.source_file +
-                ":" + std::to_string(line);
-            facts = tree->arena->facts(current_root, source_context);
-            if (!facts && unwrapped != current_root)
-              facts = tree->arena->facts(unwrapped, source_context);
-          }
-          if (!facts && tree) {
-            if (const auto* active_function = function(frame.function)) {
-              const auto context = functional_function_context(*active_function);
-              facts = tree->arena->facts(current_root, context);
-              if (!facts && unwrapped != current_root)
-                facts = tree->arena->facts(unwrapped, context);
-            }
-          }
-          const std::string checked_target =
-              facts ? facts->resolved_target : std::string();
-          if (checked_target == "builtin:copy-v1") {
-            if (args.size() != 1)
-              throw RuntimeError(line,
-                  "MOSS_INTERNAL_INVARIANT checked copy call has invalid arity");
-            return independent(evaluate_call_argument(0));
-          }
-          if (checked_target != "builtin:copy-v1")
-            throw RuntimeError(line,
-                "MOSS_INTERNAL_INVARIANT checked copy builtin target is missing or perturbed");
-        }
+        if (callee == "copy")
+          return independent(evaluate_call_argument(0));
         if (callee == "replace" && args.size() == 2) {
           Value replacement = evaluate_call_argument(1);
           const auto* replacement_identifier =
