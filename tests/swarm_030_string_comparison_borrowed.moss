@@ -10,7 +10,7 @@ fn search_key(m: Map[String, Int], target: String) -> Bool:
   var total = keys |> count
   var i = 0
   while i < total:
-    var k = keys[i]
+    var k = copy(keys[i])
     if k == target:
       return true
     if target == k:

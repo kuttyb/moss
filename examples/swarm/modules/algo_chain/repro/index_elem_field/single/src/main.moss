@@ -5,4 +5,4 @@ type Edge:
 fn main():
   edges = [Edge(src: 0, cost: 7)]
   e = 0
-  echo edges[e].cost
+  echo copy(edges[e]).cost

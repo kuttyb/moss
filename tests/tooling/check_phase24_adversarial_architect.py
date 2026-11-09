@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory(prefix="p24-adversarial-gate-") as temp_dir:
         (
             "nested_vector_index",
             'echo [[probe.make_item(7).val]][0][0]\n'
-            'echo [[[probe.make_item(99).val]][0]][0][0]\n'
+            'echo [copy([[probe.make_item(99).val]][0])][0][0]\n'
             'echo [[collections.index_of([10, 20], 20)]][0][0]\n',
             "7\n99\n1\n"
         ),

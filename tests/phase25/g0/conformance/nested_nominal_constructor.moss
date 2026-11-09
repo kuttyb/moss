@@ -3,5 +3,5 @@ type Box:
 
 fn main():
   var boxes = [Box(value: 1), Box(value: 2)]
-  echo boxes[0].value
-  echo boxes[1].value
+  echo copy(boxes[0]).value
+  echo copy(boxes[1]).value

@@ -19,7 +19,7 @@ fn choose_next(tasks: Vector[Task], selected: Vector[Int], remaining: Int) -> In
   var index = 0
   task_count = tasks |> count
   while index < task_count:
-    task = tasks[index]
+    task = copy(tasks[index])
     if selected[index] == 0:
       if task.effort <= remaining:
         if dependency_done(task, selected):
@@ -52,7 +52,7 @@ fn main():
     if next < 0:
       rounds = task_count
     else:
-      task = tasks[next]
+      task = copy(tasks[next])
       selected[next] = 1
       remaining = remaining - task.effort
       delivered_value = delivered_value + task.value

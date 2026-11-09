@@ -5,7 +5,7 @@ type Payload:
 
 domain Echo:
   fn Record(payload: Payload) -> Payload:
-    reply payload
+    reply copy(payload)
 
   fn Number(value: Int) -> Int:
     reply value

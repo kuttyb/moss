@@ -888,7 +888,7 @@ fn main():
   values: Vector[Vector[Int]] = [[]]
 
   fn Get() -> Vector[Vector[Int]]:
-    reply values
+    reply copy(values)
 
 fn main():
   reader = Reader()

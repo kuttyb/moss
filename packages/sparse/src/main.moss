@@ -41,8 +41,8 @@ fn sift_down_triplets(triplets: Vector[Triplet], start: Int, end_idx: Int):
   while (root * 2 + 1) <= end_idx:
     var child = root * 2 + 1
     if (child + 1) <= end_idx:
-      let c1 = triplets[child]
-      let c2 = triplets[child + 1]
+      let c1 = copy(triplets[child])
+      let c2 = copy(triplets[child + 1])
       var take_right = false
       if c2.row > c1.row:
         take_right = true
@@ -52,8 +52,8 @@ fn sift_down_triplets(triplets: Vector[Triplet], start: Int, end_idx: Int):
       if take_right:
         child = child + 1
 
-    let root_item = triplets[root]
-    let child_item = triplets[child]
+    let root_item = copy(triplets[root])
+    let child_item = copy(triplets[child])
     var swap_needed = false
     if child_item.row > root_item.row:
       swap_needed = true
@@ -62,8 +62,8 @@ fn sift_down_triplets(triplets: Vector[Triplet], start: Int, end_idx: Int):
         swap_needed = true
 
     if swap_needed:
-      let tmp = triplets[root]
-      triplets[root] = triplets[child]
+      let tmp = copy(triplets[root])
+      triplets[root] = copy(triplets[child])
       triplets[child] = tmp
       root = child
     else:
@@ -79,8 +79,8 @@ fn heapsort_triplets(triplets: Vector[Triplet]):
     p = p - 1
   var end_idx = count_t - 1
   while end_idx > 0:
-    let tmp = triplets[0]
-    triplets[0] = triplets[end_idx]
+    let tmp = copy(triplets[0])
+    triplets[0] = copy(triplets[end_idx])
     triplets[end_idx] = tmp
     end_idx = end_idx - 1
     sift_down_triplets(triplets, 0, end_idx)
@@ -96,7 +96,7 @@ export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> C
   let n = in_triplets |> count
   var i = 0
   while i < n:
-    let tr = in_triplets[i]
+    let tr = copy(in_triplets[i])
     if tr.row < 0 or tr.row >= rows or tr.col < 0 or tr.col >= cols:
       raise SparseError.IndexOutOfBounds
     i = i + 1
@@ -116,7 +116,7 @@ export fn from_triplets(rows: Int, cols: Int, in_triplets: Vector[Triplet]) -> C
 
   var k = 0
   while k < n:
-    let tr = in_triplets[k]
+    let tr = copy(in_triplets[k])
     while current_row < tr.row:
       if has_entry:
         col_indices.push(current_col)

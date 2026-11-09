@@ -2,7 +2,7 @@ fn erase(m, key, fallback, found):
   return m.delete(key, fallback, found)
 
 fn lookup(m, key, fallback):
-  return m.get(key, fallback)
+  return copy(m.get(key, fallback))
 
 fn main():
   m = Map()

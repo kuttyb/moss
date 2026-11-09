@@ -13,7 +13,7 @@ export fn is_miss(value: Int) -> Bool:
   return value < 0
 
 export fn cache_lookup(entries: Map[String, records.Entry], key: String) -> Int:
-  e = entries.get(key, records.make_entry(0, -1, 0))
+  e = copy(entries.get(key, records.make_entry(0, -1, 0)))
   return records.entry_value(e)
 
 export fn cache_store(entries: Map[String, records.Entry], key: String, value: Int):

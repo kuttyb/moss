@@ -12,7 +12,7 @@ domain Relay:
         echo value
       case Pair(code, value):
         echo code
-    reply value
+    reply copy(value)
 
   fn Code(value: Reply) -> Int:
     match value:

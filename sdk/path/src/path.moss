@@ -54,7 +54,7 @@ export fn components(value: String) -> Vector[String]:
   var i = 0
   while i < count:
     if raw[i] != "":
-      result.push(raw[i])
+      result.push(copy(raw[i]))
     i = i + 1
   return result
 
@@ -71,7 +71,7 @@ export fn normalize(value: String) -> String:
   raw_count = raw |> count
   var i = 0
   while i < raw_count:
-    part = raw[i]
+    part = copy(raw[i])
     if part == "" or part == ".":
       i = i + 1
     else:

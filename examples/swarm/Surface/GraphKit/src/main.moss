@@ -34,7 +34,7 @@ type Graph:
     return node_total
 
   fn label(id: Int) -> String:
-    return labels.get(id, "")
+    return copy(labels.get(id, ""))
 
   fn id_of(label: String) -> Int:
     return ids.get(label, -1)
@@ -93,7 +93,7 @@ type Graph:
       while head < (pending |> count):
         u = pending[head]
         head = head + 1
-        order.push(labels.get(u, ""))
+        order.push(copy(labels.get(u, "")))
         k = 0
         degree = out[u] |> count
         while k < degree:
@@ -126,7 +126,7 @@ type Graph:
     while head < (ready |> count):
       u = ready[head]
       head = head + 1
-      order.push(labels.get(u, ""))
+      order.push(copy(labels.get(u, "")))
       k = 0
       degree = out[u] |> count
       while k < degree:

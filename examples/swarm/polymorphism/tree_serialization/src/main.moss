@@ -55,7 +55,7 @@ type OrgNode:
     return children |> count
 
   fn child_at(i: Int) -> OrgNode:
-    return make_owned(children[i])
+    return make_owned(copy(children[i]))
 
   fn label() -> String:
     return concat("", name)
@@ -77,7 +77,7 @@ type DocNode:
     return children |> count
 
   fn child_at(i: Int) -> DocNode:
-    return make_owned(children[i])
+    return make_owned(copy(children[i]))
 
   fn label() -> String:
     return concat("", tag)
@@ -99,7 +99,7 @@ type CategoryNode:
     return children |> count
 
   fn child_at(i: Int) -> CategoryNode:
-    return make_owned(children[i])
+    return make_owned(copy(children[i]))
 
   fn label() -> String:
     return concat("", code)

@@ -153,7 +153,7 @@ import keys
 fn show(v: Vector[keys.Item]) -> String:
   var parts = Vector[String]()
   for k in range(0, v |> count):
-    parts.push(v[k].label)
+    parts.push(copy(v[k].label))
   return ",".join(parts)
 
 fn main():
@@ -363,7 +363,7 @@ fn lowered(s: String) -> String:
 fn show(v: Vector[Doc]) -> String:
   var parts = Vector[String]()
   for k in range(0, v |> count):
-    parts.push(v[k].body)
+    parts.push(copy(v[k].body))
   return ",".join(parts)
 
 fn main():
@@ -439,12 +439,12 @@ fn main():
   sort(samples, by: value_of)
   var labels = Vector[String]()
   for k in range(0, samples |> count):
-    labels.push(samples[k].label)
+    labels.push(copy(samples[k].label))
   echo ",".join(labels)
   sort(samples, by: Reverse(value_of))
   var reversed = Vector[String]()
   for k in range(0, samples |> count):
-    reversed.push(samples[k].label)
+    reversed.push(copy(samples[k].label))
   echo ",".join(reversed)
   var hashes = [a, -0.0, b, 0.0]
   sort(hashes, by: hash_of)

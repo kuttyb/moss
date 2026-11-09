@@ -4,7 +4,7 @@ type Item:
 fn first_big(items: Vector[Item], n: Int) -> Int:
   var i = 0
   while i < (items |> count):
-    if items[i].qty >= n:
+    if copy(items[i]).qty >= n:
       return i
     i = i + 1
   return 0 - 1

@@ -46,7 +46,7 @@ domain Split:
   fn Both():
     rewrite_pair(value)
   fn Read() -> Pair:
-    reply value
+    reply copy(value)
 
 domain Other:
   fn Empty():

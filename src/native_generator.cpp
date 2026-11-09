@@ -5120,7 +5120,8 @@ class Generator {
               const std::unordered_map<string,string>* types = nullptr,
               size_t functional_pipeline_id = 0,
               const vector<size_t>* message_argument_plans = nullptr,
-              std::string_view checked_target_override = {}) const {
+              std::string_view checked_target_override = {},
+              bool borrow_index_result = false) const {
     if (!expression.arena)
       throw std::runtime_error(
           "MOSS_INTERNAL_INVARIANT missing checked emitter expression arena");
@@ -5446,8 +5447,33 @@ class Generator {
             if (call->arguments.size() != 1)
               throw std::runtime_error(
                   "MOSS_INTERNAL_INVARIANT checked copy call has invalid arity");
-            return "(" + expr(expression.child(call->arguments.front()),
-                               d, locals, types) + ").clone()";
+            const auto operand = expression.child(call->arguments.front());
+            const string rendered = expr(operand, d, locals, types);
+            if (is_object_view(operand, d, locals, types))
+              return "(" + rendered + ").__moss_value()";
+            const auto operand_root = est::unparenthesized(
+                *operand.arena, operand.id);
+            if (const auto* index = std::get_if<est::Index>(
+                    &operand.arena->at(operand_root))) {
+              const auto base = operand.child(index->base);
+              if (borrowed_view_expression(base, d, locals, types))
+                return "(" + rendered + ").clone()";
+              return rendered;  // Owned-base index lowering already clones.
+            }
+            if (const auto* operand_call = std::get_if<est::Call>(
+                    &operand.arena->at(operand_root))) {
+              const auto callee_root = est::unparenthesized(
+                  *operand.arena, operand_call->callee);
+              if (const auto* member = std::get_if<est::Member>(
+                      &operand.arena->at(callee_root))) {
+                const auto receiver = operand.child(member->base);
+                auto receiver_type = generated_expr_type(receiver, types);
+                if (member->name == "get" && receiver_type &&
+                    starts_with(canonical_type_name(*receiver_type), "map["))
+                  return rendered;  // Map.get already materializes its result.
+              }
+            }
+            return "(" + rendered + ").clone()";
           }
           if (checked_target != "builtin:copy-v1")
             throw std::runtime_error(
@@ -6173,9 +6199,14 @@ class Generator {
           if (map_types->first == "string") key = "(" + key + ").as_str()";
           else key = "&( " + key + " )";
           string fallback = expr(fallback_node, d, locals, types);
-          if (!copy_type(map_types->second)) fallback = "(" + fallback + ").clone()";
-          return "(" + receiver_value + ").get(" + key + ").cloned().unwrap_or(" +
-              fallback + ")";
+          if (!copy_type(map_types->second))
+            fallback = "(" + fallback + ").clone()";
+          const string get_copy = map_types->second == "int" ||
+                  map_types->second == "float" || map_types->second == "bool" ||
+                  map_types->second == "char"
+              ? ".copied()" : ".cloned()";
+          return "(" + receiver_value + ").get(" + key + ")" + get_copy +
+              ".unwrap_or(" + fallback + ")";
         }
         if (starts_with(target, "builtin-method:map[") &&
             ends_with(target, ".delete") && member->name == "delete" &&
@@ -6839,7 +6870,7 @@ class Generator {
       string indexed = "(" + expr(base_expr, d, locals, types) + ")[" +
           rendered_index + "]";
       return borrowed_view_expression(base_expr, d, locals, types)
-          ? indexed : "(" + indexed + ").clone()";
+          || borrow_index_result ? indexed : "(" + indexed + ").clone()";
     }
     if (const auto* member = std::get_if<est::Member>(
             &expression.arena->at(root))) {
@@ -8037,17 +8068,21 @@ class Generator {
                   ").get_with(" + shared_map_hash(map_types->first, "__moss_key") +
                   ", " + borrowed + ", |a, b| " +
                   shared_map_equal(map_types->first, "a", "b") +
-                  ").cloned().unwrap_or(" +
-                  fallback + ") }";
+                  ").cloned().unwrap_or(" + fallback + ") }";
             }
             if (map_types->first == "string")
               key = "(" + key + ").as_str()";
             else
               key = "&( " + key + " )";
             string fallback = expr(member_arguments[1], d, locals, types);
+            const string get_copy = map_types->second == "int" ||
+                    map_types->second == "float" || map_types->second == "bool" ||
+                    map_types->second == "char"
+                ? ".copied()" : ".cloned()";
             if (!copy_type(map_types->second))
               fallback = "(" + fallback + ").clone()";
-            return "(" + receiver_expression + ").get(" + key + ").cloned().unwrap_or(" + fallback + ")";
+            return "(" + receiver_expression + ").get(" + key + ")" +
+                get_copy + ".unwrap_or(" + fallback + ")";
           }
           if (member_name == "keys" && member_arguments.empty()) {
             if (shared_key)
@@ -8571,6 +8606,15 @@ class Generator {
         expression, type, d, locals, types, functional_pipeline_id);
     if (is_object_view(expression, d, locals, types))
       return "(" + rendered + ").__moss_value()";
+    const auto root = est::unparenthesized(*expression.arena, expression.id);
+    if (const auto* call = std::get_if<est::Call>(
+            &expression.arena->at(root))) {
+      const auto callee = est::unparenthesized(*expression.arena, call->callee);
+      if (const auto* identifier = std::get_if<est::Identifier>(
+              &expression.arena->at(callee));
+          identifier && identifier->name == "copy")
+        return rendered;
+    }
     return copy_type(type) || type == "_" || checker_proved_consume
         ? rendered : "(" + rendered + ").clone()";
   }
@@ -10247,8 +10291,12 @@ class Generator {
           if (recovery_slot && s.b == "consume")
             o << "__moss_recovery_slot_" << s.a
               << ".take().unwrap_or_else(|| std::process::abort())";
-          else
-            o << expr(scrutinee, d, locals, &types);
+          else {
+            const bool borrow_index_result = std::holds_alternative<est::Index>(
+                scrutinee.arena->at(scrutinee_root));
+            o << expr(scrutinee, d, locals, &types, 0, nullptr, {},
+                      borrow_index_result);
+          }
           if (struct_literal) o << ")";
           o << " {\n";
           ++i;

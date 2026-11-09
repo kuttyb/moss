@@ -18184,3 +18184,74 @@ future optimizer-isolated proof and must remain explicit in final review.
   Message sends remain READ borrows; executor arguments remain CONSUME.
   Next: switch this worktree to `main`, commit the complete change once, and
   push `main` to `origin`.
+
+# Explicit-copy handover (2026-11-09)
+
+- Task branch `moss-explicit-copy` is based on `origin/main` at
+  `558b509ffdaf388c9d8eca663b3eb5435ad1e477`. The compiler rejects implicit
+  nonprimitive materialization at collection reads and reply boundaries,
+  preserves reads in place, lowers explicit copies once, borrows indexed match
+  elements, and uses `.copied()` for primitive Map.get. Source migrations cover
+  tests, examples, packages, SDK, tooling snippets, and the compiler torture
+  fixture; benchmark manifests were refreshed for the affected source hashes.
+- Directed gate `check_moss_explicit_copy` passes in Native and Fast Debug,
+  including read-in-place probes, reply index/map.get checks, and one-clone
+  lowering for a borrowed view-backed index. Sparse package build and both
+  benchmark manifest verifiers pass. Corpus source statuses are unchanged
+  after migration (1,147 successful statuses on each side, zero changes among
+  the 1,862 compared sources). Generated Rust differences are limited to
+  migrated `copy(...)` sites and the requested primitive `.cloned()` to
+  `.copied()` lowering; normalizing that lowering leaves one expected explicit
+  clone for an already migrated indexed value.
+- Full Default and Shadow suites each completed at 163/166. The only failing
+  names in both are `check_phase25_conformance`, `check_phase27_accepts_rustc`,
+  and `shard_swarm_cases`; these are baseline failures. Earlier isolated reruns
+  passed the intermittent `shard_phase5_tooling` timeout and incremental-build
+  race. Feedback validation and `git diff --check` pass.
+- Agent 2's final review is pending. Do not commit or push until it returns GO.
+  Before delivery, fetch origin; if main advanced, rebase and rerun acceptance
+  gates, then make one commit and fast-forward push only.
+
+## 2026-11-09 correction (final rebuilt suites)
+
+- Agent 2 found and the implementation fixed two generated-code issues: indexed
+  field reads now borrow the indexed record, and Map.get binds its fallback
+  eagerly by reference, then clones it only on the missing-key branch. This
+  preserves fallback evaluation and READ behavior without cloning on a hit.
+- Added `map_get_fallback_read`, which reads the fallback after lookup; both
+  engines print `5 5`. The explicit-copy gate passes all cases, and
+  `check_builtin_generic_typing.py` passes 128/128. Feedback validation and
+  `git diff --check` pass.
+- Rebuilt full suites on this final code: Default and Shadow each 165/168.
+  Both have only baseline names `check_phase25_conformance`,
+  `check_phase27_accepts_rustc`, and `shard_swarm_cases`; no new failing names.
+  The earlier 163/166 and 164/168 measurements in the preceding checkpoint
+  were superseded by this final run.
+- Agent 2's fresh final review remains pending. No commit or push has happened.
+
+## Final validation checkpoint (2026-11-09)
+
+- Rebuilt and ran the exact final candidate with `make --jobs="$(nproc)" check`
+  and `check-shadow`. Both completed 165/168. The same three known baseline
+  failures appeared in each: `check_phase25_conformance` (Cargo jobserver FD),
+  `check_phase27_accepts_rustc`, and `shard_swarm_cases` (the known
+  `swarm_035_nested_mutating_calls.moss` E0499). No candidate-only failure.
+- `check_moss_explicit_copy` passed all 24 assertions in both suite modes and
+  in a standalone corrected invocation; Native and Fast Debug outputs matched.
+  `check_builtin_generic_typing` passed 128/128, the phase20 review probes
+  passed, `git diff --check` passed, and feedback validation passed.
+- The source corpus comparison has 1,940 programs: baseline and candidate each
+  accepted 1,167, with zero status differences, new failures, or gains.
+  Generated-Rust audit covers 1,829 tests/examples programs (1,122 outputs),
+  reports zero status differences, and attributes code differences to migrated
+  copy sites or the requested Map.get lowering. The indexed-match output has
+  no `.clone()`; primitive Map.get uses `.copied()`.
+- `guard_read_only_request_loops.moss` remains unchanged. It cannot be fixed by
+  the allowed expression wrapper: its `Range` is NonCopy and copying the
+  request entry breaks the statically bounded FileIO proof. Agent 2 confirmed
+  this exception during review.
+- Agent 2's final review returned GO on the exact tree after rerunning the
+  directed gate. Its generated-Rust audit found only the permitted explicit
+  copy migrations and primitive Map.get `.copied()` lowering. Origin main
+  remains `558b509ffdaf388c9d8eca663b3eb5435ad1e477`; delivery commit/push is
+  next.

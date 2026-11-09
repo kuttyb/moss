@@ -22,11 +22,11 @@ domain Counter:
   fn Get() -> Int:
     reply value + record.score
   fn Snapshot() -> Profile:
-    reply record
+    reply copy(record)
   fn Replace():
     record = Profile(name: "changed", score: 50)
   fn Echo(payload: Profile) -> Profile:
-    reply payload
+    reply copy(payload)
 
 domain App:
   domainroutes(counter: Counter)

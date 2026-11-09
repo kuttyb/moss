@@ -57,13 +57,13 @@ export type Graph:
     return nxt[e]
 
   fn edge_cost(e: Int):
-    return edges[e].cost
+    return copy(edges[e]).cost
 
   fn edge_to(e: Int):
-    return edges[e].dst
+    return copy(edges[e]).dst
 
   fn edge_from(e: Int):
-    return edges[e].src
+    return copy(edges[e]).src
 
 # Vector[Edge]() would be mis-typed inside an explicit module
 # (see repro/vector_of_type), so build the empty vector from a seed.

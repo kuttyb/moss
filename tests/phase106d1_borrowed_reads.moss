@@ -58,7 +58,7 @@ domain Store:
     after = inspect_record(record)
     reply before + child_value + after
   fn Snapshot() -> Record:
-    reply record
+    reply copy(record)
 
 fn main():
   child = Reader()

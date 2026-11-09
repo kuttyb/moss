@@ -30,28 +30,28 @@ export fn evaluate(tree: ast.Ast, scope: env.Env) -> EvalResult:
     return EvalResult(value: values[tree.root], error: err)
 
 fn eval_node(tree: ast.Ast, scope: env.Env, values: Vector[Int], i: Int) -> errors.CalcError:
-  kind = tree.nodes[i].kind
-  pos = tree.nodes[i].pos
+  kind = copy(tree.nodes[i]).kind
+  pos = copy(tree.nodes[i]).pos
   if kind == node.kind_num():
-    values.push(tree.nodes[i].value)
+    values.push(copy(tree.nodes[i]).value)
     return errors.none()
   if kind == node.kind_var():
-    if not scope.has(tree.nodes[i].value):
+    if not scope.has(copy(tree.nodes[i]).value):
       return errors.eval_error("undefined variable", pos)
-    values.push(scope.get(tree.nodes[i].value))
+    values.push(scope.get(copy(tree.nodes[i]).value))
     return errors.none()
   if kind == node.kind_negate():
-    values.push(0 - values[tree.nodes[i].left])
+    values.push(0 - values[copy(tree.nodes[i]).left])
     return errors.none()
   if kind == node.kind_assign():
-    v = values[tree.nodes[i].left]
-    scope.set(tree.nodes[i].value, v)
+    v = values[copy(tree.nodes[i]).left]
+    scope.set(copy(tree.nodes[i]).value, v)
     values.push(v)
     return errors.none()
   # binary operator
-  op = tree.nodes[i].op
-  a = values[tree.nodes[i].left]
-  b = values[tree.nodes[i].right]
+  op = copy(tree.nodes[i]).op
+  a = values[copy(tree.nodes[i]).left]
+  b = values[copy(tree.nodes[i]).right]
   if divides(op):
     if b == 0:
       return errors.eval_error("division by zero", pos)

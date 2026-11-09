@@ -7,16 +7,16 @@ type ValueHolder:
   current: Vector[Int]
 
   fn get_owned() -> Int:
-    current = entries.get(1, Vector[Int]())
+    current = copy(entries.get(1, Vector[Int]()))
     current.push(2)
-    original = entries.get(1, Vector[Int]())
+    original = copy(entries.get(1, Vector[Int]()))
     return original |> count
 
   fn values_owned() -> Int:
     snapshot = entries.values()
-    current = snapshot[0]
+    current = copy(snapshot[0])
     current.push(3)
-    stored = entries.get(1, Vector[Int]())
+    stored = copy(entries.get(1, Vector[Int]()))
     return stored |> count
 
 type KeyHolder:

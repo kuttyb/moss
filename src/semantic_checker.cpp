@@ -11128,8 +11128,10 @@ class Checker {
     if (!source_type) return MossCopyFailure{"<unknown>", "unresolved type"};
     const auto type = source_type;
     const string display = canonical_type_name(type->to_canonical_string());
-    if (!active.insert(display).second)
-      return MossCopyFailure{display, "recursive value layout"};
+    // Type layout validation rejects by-value recursive layouts. A repeated
+    // type reached through a collection is a legal heap-indirected cycle, and
+    // Rust's derived Clone handles it recursively at runtime.
+    if (!active.insert(display).second) return std::nullopt;
     struct ActiveTypeScope {
       std::set<string>& active;
       string type;
@@ -11324,9 +11326,17 @@ class Checker {
     auto type = inferred_expr_term(arguments.front(), env);
     if (current_body_types_ && type)
       type = current_body_types_->solver.resolve(type);
-    if (!type || !type->is_closed())
+    if (!type && current_check_result_function_ &&
+        current_check_result_function_->static_dispatch &&
+        !checking_specialization_)
+      return;  // Specialization checks copyability once the result closes.
+    if (!type)
       err(line, "copy argument has no resolved Moss type",
           "MOSS_INTERNAL_INVARIANT");
+    // Generic bodies are initially checked before call-site specialization.
+    // Their copyability is verified again after the argument type closes in
+    // each specialization; do not reject a valid generic copy here.
+    if (!type->is_closed()) return;
     std::set<string> active;
     if (auto failure = moss_copy_failure(type, active)) {
       const string argument_type = canonical_type_name(
@@ -12418,6 +12428,8 @@ class Checker {
       string callee;
       vector<string> args;
       if (!tree_parse_simple_call(e, callee, args)) return std::nullopt;
+      if (is_copy_builtin(callee) && args.size() == 1)
+        return inferred_expr(args.front(), env);
       if (auto builtin = builtin_call_semantics(callee, args, env))
         return inferred_leaf(builtin->result_type);
       string target = callee;
@@ -15899,13 +15911,21 @@ class Checker {
       for (const auto& parameter : function.params) {
         if (!parameter.type.empty() && parameter.type != "vector" && parameter.type != "queue" && parameter.type != "map") continue;
         auto mark = [&](const string& expression) {
-          auto binary = tree_split_binary(trim(expression), {"+", "-", "*", "/", "%"});
+          string source_expression = trim(expression);
+          string copy_callee;
+          vector<string> copy_arguments;
+          if (tree_parse_simple_call(source_expression, copy_callee,
+                                     copy_arguments) &&
+              is_copy_builtin(copy_callee) && copy_arguments.size() == 1)
+            source_expression = trim(copy_arguments.front());
+          auto binary = tree_split_binary(source_expression,
+                                           {"+", "-", "*", "/", "%"});
           if (binary) {
             for (const auto& p : function.params) {
               if (tree_identifier_named(binary->first, p.name) && tree_identifier_named(binary->second, p.name)) {
                 function.generic = true;
                 function.static_dispatch = true;
-                string e = trim(expression);
+            string e = source_expression;
                 string op = e.find('+') != string::npos ? "+" : e.find('-') != string::npos ? "-" : e.find('*') != string::npos ? "*" : e.find('/') != string::npos ? "/" : "%";
                 function.constraints.push_back({ConstraintKind::Operator, p.name, op, p.name});
                 function.generic_results[p.name] = p.name;
@@ -15913,7 +15933,7 @@ class Checker {
             }
           }
           string base, idx;
-          if (tree_parse_index(expression, base, idx)) {
+          if (tree_parse_index(source_expression, base, idx)) {
             for (const auto& p : function.params) if (tree_identifier_named(base, p.name)) {
               function.generic = true;
               function.static_dispatch = true;
@@ -22938,6 +22958,66 @@ class Checker {
           {std::move(at_this_point), env, ownership_exceptional_source_});
   }
 
+  bool is_implicit_copy_primitive(const string& type) const {
+    const string concrete = canonical_type_name(type);
+    return concrete == "int" || concrete == "float" ||
+        concrete == "bool" || concrete == "char";
+  }
+
+  void reject_implicit_copy(int line, const string& expression,
+                            const string& type, const TypeEnv& env) {
+    const string source = trim(expression);
+    const string concrete = canonical_type_name(type);
+    auto typed = inferred_expr_term(source, env);
+    if (current_body_types_ && typed)
+      typed = current_body_types_->solver.resolve(typed);
+    std::set<string> active;
+    const bool noncopy = !typed || !typed->is_closed() ||
+        moss_copy_failure(typed, active).has_value();
+    if (noncopy) {
+      err(line, "'" + source + "' (type " + concrete +
+          ") cannot be copied; it can only be read in place", "IMPLICIT_COPY");
+      return;
+    }
+    err(line, "implicit copy of '" + source + "' (type " + concrete +
+        "); write copy(" + source + ") to make the copy explicit",
+        "IMPLICIT_COPY");
+  }
+
+  bool implicit_copy_read_source(const string& expression,
+                                 const OwnershipEnv& env,
+                                 string& type) const {
+    string base, index;
+    if (tree_parse_index(expression, base, index)) {
+      auto container_type = inferred_expr_type(base, env.types);
+      if (!container_type) return false;
+      const string container = canonical_type_name(*container_type);
+      if (container != "vector" && container != "queue" &&
+          !starts_with(container, "vector[") &&
+          !starts_with(container, "queue[") && container != "map" &&
+          !starts_with(container, "map["))
+        return false;
+      auto result_type = inferred_expr_type(expression, env.types);
+      if (!result_type) return false;
+      type = *result_type;
+      return !is_implicit_copy_primitive(type);
+    }
+
+    string receiver, method;
+    vector<string> arguments;
+    if (!tree_parse_member_call(expression, receiver, method, arguments) ||
+        method != "get" || arguments.size() != 2)
+      return false;
+    auto container_type = inferred_expr_type(receiver, env.types);
+    if (!container_type ||
+        !starts_with(canonical_type_name(*container_type), "map["))
+      return false;
+    auto result_type = inferred_expr_type(expression, env.types);
+    if (!result_type) return false;
+    type = *result_type;
+    return !is_implicit_copy_primitive(type);
+  }
+
   void check_ownership_expression_walk(int line, const string& expression,
                                        OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
@@ -22951,6 +23031,11 @@ class Checker {
       return;
     }
     auto requested_type = inferred_expr_type(value, env.types);
+    if (requested == Effect::Consume) {
+      string copied_type;
+      if (implicit_copy_read_source(value, env, copied_type))
+        reject_implicit_copy(line, value, copied_type, env.types);
+    }
     string unary_operation, unary_operand;
     if (requested == Effect::Consume && requested_type &&
         fileio_scoped_type(*requested_type))
@@ -23855,6 +23940,9 @@ class Checker {
           }
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
+          string implicit_copy_type;
+          if (implicit_copy_read_source(source, env, implicit_copy_type))
+            reject_implicit_copy(s.line, source, implicit_copy_type, env.types);
           bool transfers = storage_location(s.b, env.types) && source_type &&
               effect_requires_borrow(*source_type) &&
               !fileio_scoped_type(*source_type);
@@ -24003,6 +24091,24 @@ class Checker {
           break;
         case Stmt::Kind::Reply: {
           auto type = inferred_expr_type(s.a, env.types);
+          string indexed_copy_type;
+          if (implicit_copy_read_source(s.a, env, indexed_copy_type))
+            reject_implicit_copy(s.line, s.a, indexed_copy_type, env.types);
+          if (type && !is_implicit_copy_primitive(*type)) {
+            const auto location = storage_location(s.a, env.types);
+            bool incoming_payload = location &&
+                env.message_payloads.count(location->root) != 0;
+            bool domain_state = false;
+            if (tree_simple_identifier(s.a)) {
+              domain_state = env.state_fields.count(s.a) != 0 &&
+                  env.binding_identities.count(s.a) == 0;
+            } else if (location && location->root == "self" &&
+                       !location->path.empty()) {
+              domain_state = env.state_fields.count(location->path.front()) != 0;
+            }
+            if (incoming_payload || domain_state)
+              reject_implicit_copy(s.line, s.a, *type, env.types);
+          }
           if (type && fileio_scoped_type(*type))
             err(s.line, "FileIO and ranges cannot be replied",
                 "FILEIO_BOUNDARY_ESCAPE");

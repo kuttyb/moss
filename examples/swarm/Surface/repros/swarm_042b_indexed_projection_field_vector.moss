@@ -5,7 +5,7 @@ type Poly:
   pts: Vector[P]
 
   fn first_x() -> Float:
-    v = pts[0].x
+    v = copy(pts[0]).x
     return v
 
 fn main():

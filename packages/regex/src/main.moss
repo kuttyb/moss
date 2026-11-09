@@ -273,8 +273,8 @@ export fn compile(pattern: String) -> Regex:
       if is_atom_end(prev_k) and is_atom_start(cur_k):
         add_tok(kinds, chars_list, classes_list, negs_list, 10, "&", "", false)
     push_int(kinds, raw_kinds[r_idx])
-    push_str(chars_list, raw_chars[r_idx])
-    push_str(classes_list, raw_classes[r_idx])
+    push_str(chars_list, copy(raw_chars[r_idx]))
+    push_str(classes_list, copy(raw_classes[r_idx]))
     push_bool(negs_list, raw_negs[r_idx])
     r_idx = r_idx + 1
 
@@ -293,8 +293,8 @@ export fn compile(pattern: String) -> Regex:
   var t_idx = 0
   while t_idx < total_toks:
     let tk = kinds[t_idx]
-    let tc = chars_list[t_idx]
-    let tclass = classes_list[t_idx]
+    let tc = copy(chars_list[t_idx])
+    let tclass = copy(classes_list[t_idx])
     let tneg = negs_list[t_idx]
 
     if tk == 1 or tk == 2 or tk == 3 or tk == 4 or tk == 5:
@@ -376,8 +376,8 @@ export fn compile(pattern: String) -> Regex:
   var p_idx = 0
   while p_idx < post_len:
     let pk = post_kinds[p_idx]
-    let pc = post_chars[p_idx]
-    let pcl = post_classes[p_idx]
+    let pc = copy(post_chars[p_idx])
+    let pcl = copy(post_classes[p_idx])
     let pn = post_negs[p_idx]
 
     if pk == 1 or pk == 2 or pk == 3 or pk == 4 or pk == 5:
@@ -942,7 +942,7 @@ export fn regex_replace_all(re: Regex, replacement: String, text: String) -> Str
   var cur_pos = 0
   var s_i = 0
   while s_i < num_spans:
-    let span = spans[s_i]
+    let span = copy(spans[s_i])
     if span.start > cur_pos:
       res = res + text.slice(cur_pos, span.start - cur_pos)
     res = res + replacement
@@ -984,7 +984,7 @@ export fn regex_split(re: Regex, text: String) -> Vector[String]:
   var cur_pos = 0
   var s_i = 0
   while s_i < num_spans:
-    let span = spans[s_i]
+    let span = copy(spans[s_i])
     let part = text.slice(cur_pos, span.start - cur_pos)
     result.push(part)
     cur_pos = span.end

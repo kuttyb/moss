@@ -3,7 +3,7 @@ type Holder:
 
   fn test() -> Int:
     fallback = [1]
-    result = values.get(99, fallback)
+    result = copy(values.get(99, fallback))
     result.push(2)
     return fallback |> count
 

@@ -8,7 +8,7 @@ type OrgNode:
   children: Vector[OrgNode]
 
   fn get_child(i: Int) -> OrgNode:
-    return children[i]
+    return copy(children[i])
 
 fn count_tree(node: TreeNode) -> Int:
   return 1

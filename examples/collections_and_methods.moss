@@ -11,7 +11,7 @@ type Job:
     return effort + 100
 
 fn first(items: Vector):
-  return items[0]
+  return copy(items[0])
 
 fn main():
   # A Vector of Job values is inferred from the two constructors.

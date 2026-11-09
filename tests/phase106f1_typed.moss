@@ -24,7 +24,7 @@ domain Account:
     limit = limit + 1
   fn Immutable() -> String:
     echo currency
-    reply currency
+    reply copy(currency)
 
 fn main():
   account = Account(balance: 0, fills: 0, limit: 10, currency: "USD")

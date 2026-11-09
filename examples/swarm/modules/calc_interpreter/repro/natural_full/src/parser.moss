@@ -90,9 +90,9 @@ fn starts_with_assignment(tokens: Vector[token.Token]) -> Bool:
     return false
   ident = token.kind_ident()
   assign = token.kind_assign()
-  if tokens[0].kind != ident:
+  if copy(tokens[0]).kind != ident:
     return false
-  return tokens[1].kind == assign
+  return copy(tokens[1]).kind == assign
 
 # Should the operator on top of the stack be applied before an incoming
 # operator of the given precedence?
@@ -127,20 +127,20 @@ fn apply_top(tree: ast.Ast, st: Stacks) -> errors.CalcError:
   return errors.none()
 
 fn step(tokens: Vector[token.Token], i: Int, tree: ast.Ast, st: Stacks) -> errors.CalcError:
-  kind = tokens[i].kind
-  pos = tokens[i].pos
+  kind = copy(tokens[i]).kind
+  pos = copy(tokens[i]).pos
   if kind == token.kind_end():
     return errors.none()
   if kind == token.kind_num():
     if not st.expect_operand:
       return errors.parse_error("unexpected number", pos)
-    st.push_operand(tree.add_num(tokens[i].value, pos))
+    st.push_operand(tree.add_num(copy(tokens[i]).value, pos))
     st.expect_operand = false
     return errors.none()
   if kind == token.kind_ident():
     if not st.expect_operand:
       return errors.parse_error("unexpected name", pos)
-    st.push_operand(tree.add_var(tokens[i].value, pos))
+    st.push_operand(tree.add_var(copy(tokens[i]).value, pos))
     st.expect_operand = false
     return errors.none()
   if kind == token.kind_assign():
@@ -191,6 +191,6 @@ fn finish(tokens: Vector[token.Token], tree: ast.Ast, st: Stacks, assigning: Boo
     return errors.parse_error("malformed expression", 0)
   root = st.pop_operand()
   if assigning:
-    root = tree.add_assign(tokens[0].value, root, 0)
+    root = tree.add_assign(copy(tokens[0]).value, root, 0)
   tree.set_root(root)
   return errors.none()

@@ -4,4 +4,4 @@ type Edge:
 fn main():
   edges = [Edge(dst: 7)]
   i = 0
-  echo edges[i].dst
+  echo copy(edges[i]).dst

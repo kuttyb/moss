@@ -28,7 +28,7 @@ type Player:
 type PlayerHolder:
   players: Vector[Player]
   fn get_score(i: Int) -> Int:
-    return players[i].score
+    return copy(players[i]).score
 
 fn main():
   p = Player(name: "Alice", score: 100)

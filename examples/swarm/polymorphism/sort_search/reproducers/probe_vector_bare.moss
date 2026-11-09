@@ -1,5 +1,5 @@
 fn get_first(items: Vector):
-  return items[0]
+  return copy(items[0])
 
 fn main():
   int_list = [10, 20]

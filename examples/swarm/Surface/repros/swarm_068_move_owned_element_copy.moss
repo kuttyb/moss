@@ -3,5 +3,5 @@ fn main():
   i = ints[0]
   echo i, ints |> count
   names = ["a", "b"]
-  n = names[0]
+  n = copy(names[0])
   echo n, names |> count

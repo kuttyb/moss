@@ -1,8 +1,8 @@
 fn first(x):
-  return x[0]
+  return copy(x[0])
 
 fn typed(x: Vector[String]) -> String:
-  return x[0]
+  return copy(x[0])
 
 fn main():
   x = ["ab"]

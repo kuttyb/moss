@@ -85,7 +85,7 @@
     },
     "w7_collections_nested_k3": {
       "expected_status": "pass",
-      "sha256": "add76dc5ead7f88885bf02db1b1fae898f11bb4e59cefdab659776d65becd635"
+      "sha256": "ccdd1444f49389999be96759b5ff012262827d45220f5694fccd87c0a5af200d"
     },
     "w7_collections_nested_k4": {
       "expected_status": "pass",

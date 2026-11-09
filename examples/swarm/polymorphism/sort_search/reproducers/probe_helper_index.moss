@@ -8,4 +8,4 @@ fn get_name(p: Player) -> String:
 fn main():
   p = Player(name: "Alice", score: 100)
   players = [p]
-  echo get_name(players[0])
+  echo get_name(copy(players[0]))

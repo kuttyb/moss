@@ -260,7 +260,7 @@ export fn ResetFunctionAndRaise(error: std.ParseError) -> Int:
   raise std.ParseError.Invalid
 export domain Worker:
   fn Echo(error: std.ParseError) -> std.ParseError:
-    reply error
+    reply copy(error)
 ''')
 transport_consumer.write_text('''module app
 import provider

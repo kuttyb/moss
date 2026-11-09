@@ -44,7 +44,7 @@ domain SharedStoreDomain:
     reply history[index]
 
   fn GetLastWorker() -> String:
-    reply last_worker
+    reply copy(last_worker)
 
 domain WorkerAlphaDomain:
   alpha_ops: Int

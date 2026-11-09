@@ -508,7 +508,7 @@ export fn select_columns(table: Table, names: Vector[String]) -> Table:
   var i = 0
   name_count = names |> count
   while i < name_count:
-    name = names[i]
+    name = copy(names[i])
     var j = 0
     while j < i:
       if names[j] == name:
@@ -901,7 +901,7 @@ export fn sort_string_by_order(table: Table, name: String, categories: Vector[St
   var category = 0
   category_count = categories |> count
   while category < category_count:
-    value = categories[category]
+    value = copy(categories[category])
     if ranks.get(value, -1) >= 0:
       raise TableError.DuplicateCategory
     ranks[value] = category
@@ -953,7 +953,7 @@ export fn distinct_string(table: Table, name: String) -> Table:
   var row = 0
   while row < table.row_count:
     if column.validity[row]:
-      value = column.strings[row]
+      value = copy(column.strings[row])
       if not seen.get(value, false):
         seen[value] = true
         rows.push(row)
@@ -1117,7 +1117,7 @@ export fn group_by_string(table: Table, name: String) -> GroupIndex:
   while row < table.row_count:
     var group = 0 - 1
     if column.validity[row]:
-      value = column.strings[row]
+      value = copy(column.strings[row])
       group = groups_by_key.get(value, -1)
       if group < 0:
         group = sizes |> count

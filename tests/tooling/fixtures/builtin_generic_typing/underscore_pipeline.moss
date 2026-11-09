@@ -8,4 +8,4 @@ fn main():
   p = _Payload(value = 3)
   items = [p]
   mapped = items |> map(rebuild)
-  echo mapped[0].value
+  echo copy(mapped[0]).value

@@ -15,4 +15,4 @@ type Stock:
 fn main():
   stock = Stock(items: [Item(qty: 10), Item(qty: 20)])
   stock.take_all(3)
-  echo stock.items[0].qty, stock.items[1].qty
+  echo copy(stock.items[0]).qty, copy(stock.items[1]).qty

@@ -31,7 +31,7 @@ export fn tokenize(chars: Vector[String]) -> LexResult:
       else:
         if letters.get(chars[i], -1) >= 0:
           slot = letters.get(chars[i], 0)
-          tokens.push(token.make(token.kind_ident(), chars[i], slot, i))
+          tokens.push(token.make(token.kind_ident(), copy(chars[i]), slot, i))
           i = i + 1
         else:
           k = symbol_kind(chars[i])
@@ -39,7 +39,7 @@ export fn tokenize(chars: Vector[String]) -> LexResult:
             err = errors.lex_error("unexpected character", i)
             i = n
           else:
-            tokens.push(token.make(k, chars[i], 0, i))
+            tokens.push(token.make(k, copy(chars[i]), 0, i))
             i = i + 1
   tokens.push(token.make(token.kind_end(), "end", 0, n))
   return LexResult(tokens: tokens, error: err)

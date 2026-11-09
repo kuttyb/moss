@@ -138,14 +138,14 @@ export fn write_all(rows: Vector[Vector[String]], delimiter: String) -> String:
   num_rows = rows |> count
   var r = 0
   while r < num_rows:
-    row = rows[r]
+    row = copy(rows[r])
     num_cols = row |> count
     var c = 0
     while c < num_cols:
       if c > 0:
         sep = delim + ""
         buffer.push(sep)
-      field = row[c]
+      field = copy(row[c])
       d_copy = delim + ""
       buffer.push(fmt.escape_csv_field(field, d_copy))
       c = c + 1
@@ -161,14 +161,14 @@ export fn write_all_lf(rows: Vector[Vector[String]], delimiter: String) -> Strin
   num_rows = rows |> count
   var r = 0
   while r < num_rows:
-    row = rows[r]
+    row = copy(rows[r])
     num_cols = row |> count
     var c = 0
     while c < num_cols:
       if c > 0:
         sep = delim + ""
         buffer.push(sep)
-      field = row[c]
+      field = copy(row[c])
       d_copy = delim + ""
       buffer.push(fmt.escape_csv_field(field, d_copy))
       c = c + 1
@@ -193,14 +193,14 @@ export fn col_count(table: Vector[Vector[String]], row_idx: Int) -> Int:
   num_rows = table |> count
   if row_idx < 0 or row_idx >= num_rows:
     return 0
-  row = table[row_idx]
+  row = copy(table[row_idx])
   return row |> count
 
 export fn get_field(table: Vector[Vector[String]], row_idx: Int, col_idx: Int) -> String:
   num_rows = table |> count
   if row_idx < 0 or row_idx >= num_rows:
     return ""
-  row = table[row_idx]
+  row = copy(table[row_idx])
   num_cols = row |> count
   if col_idx < 0 or col_idx >= num_cols:
     return ""

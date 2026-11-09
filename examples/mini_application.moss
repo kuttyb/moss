@@ -76,7 +76,7 @@ fn main():
 
   # A Vector of BuildJob values is inferred from the constructors and indexing.
   builds = [BuildJob(id = 101, units = 8, urgency = 4), BuildJob(id = 102, units = 5, urgency = 2)]
-  lead = builds[0]
+  lead = copy(builds[0])
   maintenance = MaintenanceJob(id = 7, affected_services = 5, urgency = 7)
 
   # Fresh values exercise the same duck-typed function with two unrelated types.

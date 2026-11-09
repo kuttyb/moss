@@ -7,4 +7,4 @@ fn consume_vec(xs: Vector[Payload]) -> Vector[Payload]:
 fn main():
   p = Payload(value = 1)
   xs = consume_vec([p])
-  echo xs[0].value
+  echo copy(xs[0]).value

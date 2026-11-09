@@ -10,7 +10,7 @@ type Node:
     return children |> count
 
   fn child_at(i: Int) -> Node:
-    return children[i]
+    return copy(children[i])
 
 fn traverse(root: Node) -> Int:
   var q = Queue()

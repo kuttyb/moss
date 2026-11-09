@@ -5,7 +5,7 @@ domain Store:
     reply [replace(name, "new")]
 
   fn Read() -> String:
-    reply name
+    reply copy(name)
 
 fn main():
   store = Store()

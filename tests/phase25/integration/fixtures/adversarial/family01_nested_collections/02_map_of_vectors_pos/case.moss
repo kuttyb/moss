@@ -1,7 +1,7 @@
 fn main():
   var m = Map()
   m["evens"] = [2, 4, 6]
-  let v = m["evens"]
+  let v = copy(m["evens"])
   echo v[0]
   echo v[1]
   echo v[2]

@@ -1,8 +1,8 @@
 fn first(items):
-  return items[0]
+  return copy(items[0])
 
 fn at(items, key):
-  return items[key]
+  return copy(items[key])
 
 fn replace(items, key, value):
   items[key] = value
