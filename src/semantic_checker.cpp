@@ -857,6 +857,7 @@ class Checker {
       infer_observable_effects();
       invalidate_concrete_effect_cache();
       concrete_effect_cache_enabled_ = true;
+      concrete_parameter_effect_cache_enabled_ = true;
       validate_imported_h3_summary_closure(p_);
       for (auto& function : p_.functions)
         if (!compiled_interface_file(function.source_file) &&
@@ -974,6 +975,7 @@ class Checker {
           }
       }
       concrete_effect_cache_enabled_ = false;
+      concrete_parameter_effect_cache_enabled_ = false;
       specialization_effect_function_evaluations_ =
           concrete_effect_evaluations_ - evaluations_before;
       specialization_effect_cache_hits_ =
@@ -2088,8 +2090,18 @@ class Checker {
                   << parse_cache_failed_member_insertions_ << '\n';
         std::cerr << "MOSS_PROFILE|concrete_effect_evaluations|"
                   << concrete_effect_evaluations_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_effect_evaluations_uncached|"
+                  << concrete_parameter_effect_evaluation_keys_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_parameter_effect_cache_hits|"
+                  << concrete_parameter_effect_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|concrete_parameter_effect_cache_misses|"
+                  << concrete_parameter_effect_cache_misses_ << '\n';
         std::cerr << "MOSS_PROFILE|specialized_return_evaluations|"
                   << specialized_return_evaluation_keys_.size() << '\n';
+        std::cerr << "MOSS_PROFILE|specialized_return_cache_hits|"
+                  << specialized_return_cache_hits_ << '\n';
+        std::cerr << "MOSS_PROFILE|specialized_return_cache_misses|"
+                  << specialized_return_cache_misses_ << '\n';
         std::cerr << "MOSS_PROFILE|observable_effects_function_evaluations|"
                   << observable_effects_function_evaluations_ << '\n';
         std::cerr << "MOSS_PROFILE|specialization_effect_function_evaluations|"
@@ -2215,8 +2227,21 @@ class Checker {
   vector<std::tuple<size_t, size_t, size_t>>
       inference_signature_invocation_wave_ranges_;
   mutable uint64_t concrete_effect_evaluations_ = 0;
+  struct ConcreteParameterEffectCacheEntry {
+    vector<Effect> effects;
+    vector<bool> mutations;
+    bool mutations_written = false;
+  };
+  mutable std::unordered_map<string, ConcreteParameterEffectCacheEntry>
+      concrete_parameter_effect_cache_;
+  mutable std::set<string> concrete_parameter_effect_evaluation_keys_;
+  mutable uint64_t concrete_parameter_effect_cache_hits_ = 0;
+  mutable uint64_t concrete_parameter_effect_cache_misses_ = 0;
+  bool concrete_parameter_effect_cache_enabled_ = false;
   mutable std::unordered_map<string, string> specialized_return_cache_;
   mutable std::set<string> specialized_return_evaluation_keys_;
+  mutable uint64_t specialized_return_cache_hits_ = 0;
+  mutable uint64_t specialized_return_cache_misses_ = 0;
   bool specialized_return_cache_enabled_ = false;
   mutable uint64_t concrete_effect_computations_ = 0;
   mutable uint64_t concrete_effect_cache_hits_ = 0;
@@ -12885,8 +12910,11 @@ class Checker {
     }
     key += ")";
     if (auto cached = specialized_return_cache_.find(key);
-        cached != specialized_return_cache_.end())
+        cached != specialized_return_cache_.end()) {
+      if (profile_concrete_effect_work_) ++specialized_return_cache_hits_;
       return cached->second;
+    }
+    if (profile_concrete_effect_work_) ++specialized_return_cache_misses_;
     if (profile_concrete_effect_work_)
       specialized_return_evaluation_keys_.insert(key);
     auto result = specialized_function_return_type_uncached(
@@ -16543,13 +16571,55 @@ class Checker {
       spec_key = function.name + "(" + join_arguments(types) + ")";
     }
     ScopedOpTimer t_fn("concrete_function_effects", spec_key);
-    if (const auto* specialization = concrete_specialization(function, types);
-        !recheck && specialization && !specialization->parameter_effects.empty()) {
+    const auto* specialization = concrete_specialization(function, types);
+    if (!recheck && specialization &&
+        !specialization->parameter_effects.empty()) {
       if (mutations) *mutations = specialization->parameter_mutations;
       return specialization->parameter_effects;
     }
-    if (!function.static_dispatch || types.size() != function.params.size())
+    const bool cacheable = concrete_parameter_effect_cache_enabled_ && !recheck &&
+        !specialization &&
+        std::all_of(types.begin(), types.end(), [&](const string& type) {
+          return !unresolved_semantic_type(type);
+        });
+    string cache_key;
+    if (cacheable) {
+      cache_key = function.semantic_callable_id.empty()
+          ? function.name : function.semantic_callable_id;
+      cache_key += "(";
+      for (const auto& type : types) {
+        const string canonical = canonical_type_name(type);
+        cache_key += std::to_string(canonical.size()) + ":" + canonical;
+      }
+      cache_key += ")";
+      if (auto cached = concrete_parameter_effect_cache_.find(cache_key);
+          cached != concrete_parameter_effect_cache_.end()) {
+        if (profile_concrete_effect_work_)
+          ++concrete_parameter_effect_cache_hits_;
+        if (mutations && cached->second.mutations_written)
+          *mutations = cached->second.mutations;
+        return cached->second.effects;
+      }
+      if (profile_concrete_effect_work_) {
+        ++concrete_parameter_effect_cache_misses_;
+        concrete_parameter_effect_evaluation_keys_.insert(cache_key);
+      }
+    }
+    auto cache_result = [&](const vector<Effect>& effects,
+                            const vector<bool>* mutation_result,
+                            bool mutations_written) {
+      if (!cacheable) return;
+      ConcreteParameterEffectCacheEntry entry;
+      entry.effects = effects;
+      if (mutation_result) entry.mutations = *mutation_result;
+      entry.mutations_written = mutations_written;
+      concrete_parameter_effect_cache_.emplace(std::move(cache_key),
+                                                std::move(entry));
+    };
+    if (!function.static_dispatch || types.size() != function.params.size()) {
+      cache_result(function.parameter_effects, nullptr, false);
       return function.parameter_effects;
+    }
     TypeEnv env;
     vector<Param> concrete_params = function.params;
     for (size_t index = 0; index < types.size(); ++index) {
@@ -16572,7 +16642,8 @@ class Checker {
       analyze_effect_expression(*function.result_expression, env, concrete_params,
                                 effects, receiver, {}, Effect::Consume);
     parameter_mutation_capture_ = previous;
-    if (mutations) *mutations = std::move(writes);
+    if (mutations) *mutations = writes;
+    cache_result(effects, &writes, true);
     return effects;
   }
 
@@ -21096,6 +21167,7 @@ class Checker {
   void invalidate_concrete_effect_cache() {
     ++concrete_effect_cache_epoch_;
     concrete_effect_cache_.clear();
+    concrete_parameter_effect_cache_.clear();
     if (specialized_return_cache_enabled_)
       specialized_return_cache_.clear();
   }
