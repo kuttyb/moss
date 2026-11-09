@@ -18136,3 +18136,15 @@ future optimizer-isolated proof and must remain explicit in final review.
 - Commit `4109306044c83226e6c2adfe79d82acc540a0e86` (`Make message sends
   read borrows`) was pushed to `origin/main`. The Phase 28 branch was not
   merged or pushed.
+
+## Moss::Copy rebase continuation (2026-11-08)
+
+- The `moss-copy` changes are being rebased onto `origin/main` at
+  `a71fe9b97f0d43da288e89aa9ae2e9f240515a1c`. Main already includes the
+  separately authorized message read-borrow and executor-consume change.
+- Requested follow-up: Fast Debug `copy` now directly evaluates its argument
+  and returns an independent value without EST fact lookup; Native keeps its
+  single checked-target lowering path.
+- Full directed, Default, Shadow, and corpus gates must be rerun on this
+  rebased tree. Agent 2's prior GO applies to the pre-rebase diff only; fresh
+  review is pending.
