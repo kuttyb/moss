@@ -129,7 +129,7 @@ export fn by_weight(i: Item) -> Float:
   return i.weight
 
 export fn by_label(i: Item) -> String:
-  return i.label
+  return copy(i.label)
 
 export fn loose(x):
   return x
@@ -275,7 +275,7 @@ type Tag:
   rank: Int
 
   fn label() -> String:
-    return name
+    return copy(name)
 
 fn same(x):
   return x
@@ -343,7 +343,7 @@ type Doc:
   tags: Vector[String]
 
 fn title_of(d: Doc) -> String:
-  return d.title
+  return copy(d.title)
 
 fn score_of(d: Doc) -> Float:
   return d.score

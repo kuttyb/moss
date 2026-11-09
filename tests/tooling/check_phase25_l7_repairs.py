@@ -501,7 +501,7 @@ type Person:
   age: Int
 
 fn name_of(p: Person) -> String:
-  return p.name
+  return copy(p.name)
 
 fn ident(s: String) -> String:
   return s

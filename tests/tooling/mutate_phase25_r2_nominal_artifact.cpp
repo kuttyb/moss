@@ -130,13 +130,20 @@ int main(int argc, char** argv) {
         body.semantic_hash);
     assert(!statements.empty() && statements.front().expr);
     auto& expression = *statements.front().expr;
+    auto* field_expression = &expression;
+    if (field_expression->kind == moss::checked_ir::ExprKind::Copy) {
+      assert(field_expression->operands.size() == 1);
+      field_expression = &field_expression->operands.front();
+    }
     if (mode == "field-ordinal") {
-      assert(expression.kind == moss::checked_ir::ExprKind::Field);
-      expression.member_ordinal = 1;
+      assert(field_expression->kind == moss::checked_ir::ExprKind::Field);
+      field_expression->member_ordinal = 1;
     } else {
-      assert(expression.kind == moss::checked_ir::ExprKind::Field);
+      assert(field_expression->kind == moss::checked_ir::ExprKind::Field);
       auto forged_type = moss::Type::primitive("string");
-      expression.type = std::move(forged_type);
+      field_expression->type = std::move(forged_type);
+      if (field_expression != &expression)
+        expression.type = field_expression->type;
     }
     body.checked_ir_bytes =
         moss::checked_ir::encode_checked_body_v1(statements);

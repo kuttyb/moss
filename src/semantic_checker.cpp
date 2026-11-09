@@ -2891,6 +2891,10 @@ class Checker {
         if (!starts_with(occurrence.operation_id, "call:")) return false;
         const string called_name = occurrence.operation_id.substr(5);
         if ((target_id != "builtin:" + called_name &&
+             !(called_name == "copy" &&
+               target_id == checked_ir::kCopyOperationId) &&
+             !(called_name == "take" &&
+               target_id == checked_ir::kTakeOperationId) &&
              target_id != "builtin-scalar-protocol:" + called_name &&
              !(starts_with(target_id, "builtin-scalar-protocol:") &&
                ends_with(target_id, "." + called_name))))
@@ -4384,6 +4388,9 @@ class Checker {
           occurrence.parent_id == UINT32_MAX &&
           occurrence.root_slot == "return-value" && summary.result_type &&
           (occurrence.checked_type->structurally_equal(*summary.result_type) ||
+           ((occurrence.operation_id == "call:copy" ||
+             occurrence.operation_id == "call:take") &&
+            occurrence.source_operands.size() == 1) ||
            (occurrence.kind ==
                 BodyTypeState::ExpressionOccurrence::Kind::MemberCall &&
             summary.member_requirements.size() == 1 &&
@@ -4391,6 +4398,19 @@ class Checker {
                 summary.member_requirements.front().member_name &&
             relate_type(occurrence.checked_type, summary.result_type)));
       moss::TypeRef type;
+      const auto parent_occurrence = occurrence.parent_id <
+              state.expression_occurrences.size()
+          ? &state.expression_occurrences[occurrence.parent_id] : nullptr;
+      const bool copied_or_taken_result_operand =
+          occurrence.kind ==
+              BodyTypeState::ExpressionOccurrence::Kind::Field &&
+          parent_occurrence &&
+          (parent_occurrence->operation_id == "call:copy" ||
+           parent_occurrence->operation_id == "call:take") &&
+          parent_occurrence->parent_id == UINT32_MAX &&
+          parent_occurrence->root_slot == "return-value" &&
+          parent_occurrence->source_operands.size() == 1 &&
+          occurrence.child_role == "argument:0" && summary.result_type;
       if (occurrence.kind ==
               BodyTypeState::ExpressionOccurrence::Kind::Identifier &&
           starts_with(occurrence.resolved_binding_id, "parameter:")) {
@@ -4428,6 +4448,7 @@ class Checker {
         type = summary.result_type;
       } else {
         type = summary_typed_return_root
+            || copied_or_taken_result_operand
             ? summary.result_type : checked_body_type(occurrence.checked_type);
       }
       const auto returned_initializer = returned_initializer_types.find(id);
@@ -4738,6 +4759,37 @@ class Checker {
         case BodyTypeState::ExpressionOccurrence::Kind::Call: {
           const bool builtin_assert =
               occurrence.semantic_target_id == "builtin:assert";
+          const bool builtin_copy =
+              occurrence.semantic_target_id == checked_ir::kCopyOperationId &&
+              occurrence.operation_id == "call:copy" &&
+              occurrence.source_operands.size() == 1;
+          const bool builtin_take =
+              occurrence.semantic_target_id == checked_ir::kTakeOperationId &&
+              occurrence.operation_id == "call:take" &&
+              occurrence.source_operands.size() == 1;
+          if (builtin_copy || builtin_take) {
+            const auto arguments = children_for("argument:0");
+            const auto call_arguments = children_for("call-argument:0");
+            const auto& exact_children = occurrence.root_slot == "call-invocation"
+                ? call_arguments : arguments;
+            if (exact_children.size() != 1 || !type) return std::nullopt;
+            auto operand = lower_expression(exact_children.front()->id,
+                                            depth + 1);
+            if (!operand || !operand->type ||
+                !type->structurally_equal(*operand->type) ||
+                (builtin_take &&
+                 (!checked_ir::checked_body_take_field_path(*operand) ||
+                  !checked_ir::checked_body_take_collection_type(
+                      operand->type))))
+              return std::nullopt;
+            result.kind = builtin_copy ? checked_ir::ExprKind::Copy
+                                       : checked_ir::ExprKind::Take;
+            result.semantic_target_id = builtin_copy
+                ? string(checked_ir::kCopyOperationId)
+                : string(checked_ir::kTakeOperationId);
+            result.operands.push_back(std::move(*operand));
+            return result;
+          }
           const bool returned_callback_call =
               occurrence.semantic_target_id == "parameter:0" &&
               occurrence.root_slot == "return-value" &&
@@ -5209,7 +5261,9 @@ class Checker {
           if (!expression ||
               !((expression->kind == checked_ir::ExprKind::Call &&
                  expression->semantic_target_id == "builtin:assert") ||
-                expression->kind == checked_ir::ExprKind::CollectionPush))
+                expression->kind == checked_ir::ExprKind::CollectionPush ||
+                expression->kind == checked_ir::ExprKind::Copy ||
+                expression->kind == checked_ir::ExprKind::Take))
             return std::nullopt;
           lowered.kind = checked_ir::StmtKind::ExprStmt;
           lowered.expr = std::move(*expression);
@@ -6516,6 +6570,18 @@ class Checker {
           function.body.size() == 1 &&
               function.body.front().kind == Stmt::Kind::Return
               ? &function.body.front().a : nullptr;
+      string copied_or_taken_result;
+      if (single_result_expression) {
+        string result_callee;
+        vector<string> result_arguments;
+        if (tree_parse_simple_call(*single_result_expression, result_callee,
+                                   result_arguments) &&
+            (result_callee == "copy" || result_callee == "take") &&
+            result_arguments.size() == 1) {
+          copied_or_taken_result = result_arguments.front();
+          single_result_expression = &copied_or_taken_result;
+        }
+      }
       if (!summary.result_type && single_result_expression &&
           (function.body.empty() ||
            (function.body.size() == 1 &&
@@ -11322,8 +11388,15 @@ class Checker {
     const bool checked_domain_identifier = argument_type &&
         contains_domain_handle(*argument_type) && identifier &&
         env.count(string(*identifier));
-    if (!checked_domain_identifier)
-      check_expression(line, arguments.front(), env, {}, "copy-argument");
+    if (!checked_domain_identifier) {
+      const string argument_role = current_body_types_ &&
+              !current_body_types_->active_expression_occurrences.empty() &&
+              current_body_types_->expression_occurrences.at(
+                  current_body_types_->active_expression_occurrences.back())
+                      .root_slot == "call-invocation"
+          ? "call-argument:0" : "argument:0";
+      check_expression(line, arguments.front(), env, {}, argument_role);
+    }
     auto type = inferred_expr_term(arguments.front(), env);
     if (current_body_types_ && type)
       type = current_body_types_->solver.resolve(type);
@@ -23026,6 +23099,39 @@ class Checker {
     return !is_implicit_copy_primitive(type);
   }
 
+  void reject_implicit_field_move(int line, const string& expression,
+                                  const OwnershipEnv& env) {
+    const string source = tree_strip_expression_parens(
+        tree_normalize_pipeline(trim(expression)));
+    if (source.empty()) return;
+    const auto location = storage_location(source, env.types);
+    const bool bare_state_field = tree_simple_identifier(source) &&
+        env.state_fields.count(source) &&
+        !env.binding_identities.count(source);
+    const bool member_field = location && !location->path.empty() &&
+        location->path.back() != "[]";
+    if (!member_field && !bare_state_field)
+      return;
+    auto type = inferred_expr_type(source, env.types);
+    if (!type || is_implicit_copy_primitive(*type)) return;
+    const string concrete = canonical_type_name(*type);
+    const string quoted = "'" + source + "'";
+    if (concrete == "vector" || starts_with(concrete, "vector[") ||
+        concrete == "map" || starts_with(concrete, "map[") ||
+        starts_with(concrete, "option["))
+      err(line, quoted + " is a field; write take(" + source +
+          ") to move it out (leaves it empty) or copy(" + source +
+          ") to duplicate it", "IMPLICIT_FIELD_MOVE");
+    std::set<string> active;
+    const auto parsed = moss::Type::parse_canonical(concrete);
+    if (!parsed || moss_copy_failure(*parsed, active))
+      err(line, quoted + " (type " + concrete +
+          ") cannot be moved out of a field; read it in place",
+          "IMPLICIT_FIELD_MOVE");
+    err(line, quoted + " is a field; write copy(" + source +
+        ") to duplicate it", "IMPLICIT_FIELD_MOVE");
+  }
+
   void check_ownership_expression_walk(int line, const string& expression,
                                        OwnershipEnv& env, Effect requested) {
     string original = trim(expression);
@@ -23033,9 +23139,11 @@ class Checker {
     string value = tree_strip_expression_parens(tree_normalize_pipeline(std::move(original)));
     if (value.empty()) return;
     if (auto elements = tree_parse_vector_literal(value)) {
-      for (const auto& element : *elements)
+      for (const auto& element : *elements) {
+        reject_implicit_field_move(line, element, env);
         check_ownership_expression(line, element, env,
                                    vector_element_effect(element, env.types));
+      }
       return;
     }
     auto requested_type = inferred_expr_type(value, env.types);
@@ -23043,6 +23151,7 @@ class Checker {
       string copied_type;
       if (implicit_copy_read_source(value, env, copied_type))
         reject_implicit_copy(line, value, copied_type, env.types);
+      reject_implicit_field_move(line, value, env);
     }
     string unary_operation, unary_operand;
     if (requested == Effect::Consume && requested_type &&
@@ -23143,9 +23252,11 @@ class Checker {
           if (!tree_parse_named_argument(argument, name, expression)) continue;
           auto field = std::find_if(item->fields.begin(), item->fields.end(),
               [&](const Field& candidate) { return candidate.name == name; });
-          if (field != item->fields.end())
+          if (field != item->fields.end()) {
+            reject_implicit_field_move(line, expression, env);
             check_ownership_expression(line, expression, env,
                 transfer_type(field->type) ? Effect::Consume : Effect::Read);
+          }
         }
         return;
       }
@@ -23205,6 +23316,9 @@ class Checker {
             receiver_shape->kind == moss::TypeKind::Builtin &&
             moss::Type::collection_arity(receiver_shape->name).has_value();
         if (collection && builtin && builtin->argument_effects.size() == arguments.size()) {
+          if (method == "push")
+            for (const auto& argument : arguments)
+              reject_implicit_field_move(line, argument, env);
           if (method == "push" && !arguments.empty()) {
             auto item = inferred_expr_type(arguments.front(), env.types);
             if (item && fileio_scoped_type(*item))
@@ -23339,9 +23453,11 @@ class Checker {
                                         access_effects, env);
         for (const auto& field : objects_.at(callee)->fields) {
           auto supplied_value = supplied.find(field.name);
-          if (supplied_value != supplied.end())
+          if (supplied_value != supplied.end()) {
+            reject_implicit_field_move(line, supplied_value->second, env);
             check_ownership_expression(line, supplied_value->second, env,
                 constructor_field_effect(field, supplied_value->second, env.types));
+          }
         }
         return;
       }
@@ -23874,6 +23990,7 @@ class Checker {
         case Stmt::Kind::Var: {
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
+          reject_implicit_field_move(s.line, source, env);
           if (source_type && canonical_type_name(*source_type) == "FileIO" &&
               !tree_root_member_access_named(source, "FileIO", "open") &&
               storage_location(s.b, env.types))
@@ -23938,9 +24055,10 @@ class Checker {
             err(s.line, "FileIO ownership is pinned and cannot be reassigned",
                 "FILEIO_PINNED_OWNERSHIP");
           string lhs_base, lhs_index;
-          if (tree_parse_index(s.a, lhs_base, lhs_index))
+          if (tree_parse_index(s.a, lhs_base, lhs_index)) {
+            reject_implicit_field_move(s.line, lhs_index, env);
             check_ownership_expression(s.line, s.a, env, Effect::Write);
-          else {
+          } else {
             if (tree_member_access(s.a))
               check_ownership_expression(s.line, s.a, env, Effect::Write);
             else if (tree_simple_identifier(s.a))
@@ -23948,6 +24066,7 @@ class Checker {
           }
           string source = trim(s.b);
           auto source_type = inferred_expr_type(s.b, env.types);
+          reject_implicit_field_move(s.line, source, env);
           string implicit_copy_type;
           if (implicit_copy_read_source(source, env, implicit_copy_type))
             reject_implicit_copy(s.line, source, implicit_copy_type, env.types);
@@ -24059,13 +24178,19 @@ class Checker {
                   "MOSS_INTERNAL_INVARIANT");
             const auto& plan = p_.root_submission_plans.at(plan_index);
             if (plan.argument_expressions.size() !=
-                plan.argument_accesses.size())
+                  plan.argument_accesses.size() ||
+              plan.argument_expressions.size() !=
+                  plan.argument_explicit_copies.size() ||
+              plan.argument_expressions.size() !=
+                  plan.argument_explicit_takes.size())
               err(s.line,
                   "executor.invoke checked argument access plan is incomplete",
                   "MOSS_INTERNAL_INVARIANT");
             for (size_t argument_index = 0;
                  argument_index < plan.argument_expressions.size();
                  ++argument_index) {
+              reject_implicit_field_move(
+                  s.line, plan.argument_expressions[argument_index], env);
               if (plan.argument_accesses[argument_index] == Effect::Consume)
                 check_ownership_expression(
                     s.line, plan.argument_expressions[argument_index], env,

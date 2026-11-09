@@ -76,7 +76,7 @@ export type Stock:
     totals = Map()
     totals[""] = 0
     for it in items:
-      totals[it.category] = totals.get(it.category, 0) + it.qty
+      totals[copy(it.category)] = totals.get(it.category, 0) + it.qty
     return totals
 
   fn report(width: Int) -> Vector[String]:

@@ -125,7 +125,7 @@ export type Box:
   value
 
 export fn unbox(item: Box):
-  return item.value
+  return copy(item.value)
 '''
 
 PROVIDER_SIMPLE = '''module Provider

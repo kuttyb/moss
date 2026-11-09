@@ -232,6 +232,24 @@ void encode_checked_expr(std::string& out, const Expr& expr) {
         encode_checked_expr(out, child);
       break;
 
+    case ExprKind::Copy:
+    case ExprKind::Take: {
+      const bool copy = expr.kind == ExprKind::Copy;
+      const auto expected_id = copy ? kCopyOperationId : kTakeOperationId;
+      if (expr.semantic_target_id != expected_id ||
+          expr.operands.size() != 1 || !expr.operands.front().type ||
+          !expr.type->structurally_equal(*expr.operands.front().type) ||
+          (!copy && (!checked_body_take_field_path(expr.operands.front()) ||
+                     !checked_body_take_has_field(expr.operands.front()) ||
+                     !checked_body_take_collection_type(
+                         expr.operands.front().type))))
+        throw std::invalid_argument(
+            "invalid checked copy/take operation identity or shape");
+      checked_body_field(out, expr.semantic_target_id);
+      encode_checked_expr(out, expr.operands.front());
+      break;
+    }
+
     case ExprKind::PipelineElement:
       if (expr.semantic_target_id.rfind("pipeline-placeholder:", 0) != 0 ||
           !expr.operands.empty() || !expr.literal_value.empty() ||

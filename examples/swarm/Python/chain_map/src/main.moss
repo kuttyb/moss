@@ -7,7 +7,7 @@ type MapHolder:
 
 fn empty_map() -> Map[String, Int]:
   var holder = MapHolder(m: Map())
-  return holder.m
+  return take(holder.m)
 
 fn map_item(m: Map[String, Int], key: String) -> Int:
   return m[key]
@@ -39,7 +39,7 @@ fn clone_map(m: Map[String, Int]) -> Map[String, Int]:
     val = map_item(m, k)
     holder.m[k] = val
     i = i + 1
-  return holder.m
+  return take(holder.m)
 
 type ChainMap:
   maps: Vector[Map[String, Int]]

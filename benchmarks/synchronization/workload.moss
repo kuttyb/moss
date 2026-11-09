@@ -85,9 +85,9 @@ domain Bench:
   fn ForwardVector() -> Int:
     reply message sink.Values(payload.values)
   fn ReplyText() -> String:
-    reply payload.text
+    reply copy(payload.text)
   fn ReplyVector() -> Vector[Int]:
-    reply payload.values
+    reply copy(payload.values)
   fn Nested() -> Int:
     increment(left)
     result = message middle.Work()

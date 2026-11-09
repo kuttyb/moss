@@ -3,7 +3,7 @@ type MapHolder:
 
 fn empty_map() -> Map[String, Int]:
   var h = MapHolder(m: Map())
-  return h.m
+  return take(h.m)
 
 fn search_key(m: Map[String, Int], target: String) -> Bool:
   var keys = m.keys()

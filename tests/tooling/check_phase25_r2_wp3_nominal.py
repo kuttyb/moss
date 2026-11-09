@@ -66,7 +66,7 @@ export fn fresh(value):
   return result
 
 export fn unbox(item: Box):
-  return item.value
+  return copy(item.value)
 """)
     provider_env = fresh_env(scratch / "provider-home", MOSS_STAGED_ABI="v10")
     run([MARGO, "build"], cwd=provider, env=provider_env)

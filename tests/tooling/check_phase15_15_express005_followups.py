@@ -512,7 +512,7 @@ domain Source:
   fn Fetch(result: Result) -> String:
     match result:
       case Error(code, message):
-        reply message
+        reply copy(message)
       case Cancelled:
         reply "cancelled"
 

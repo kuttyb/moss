@@ -190,6 +190,18 @@ void check_executor_invoke(const Stmt& statement, const TypeEnv& env,
     plan.argument_types.push_back(canonical_type_name(formal_type));
     plan.argument_accesses.push_back(
         transfer_type(formal_type) ? Effect::Consume : Effect::Read);
+    string argument_callee;
+    vector<string> argument_call_args;
+    const string normalized_argument = tree_strip_expression_parens(
+        tree_normalize_pipeline(argument));
+    plan.argument_explicit_copies.push_back(
+        tree_parse_simple_call(normalized_argument, argument_callee,
+                               argument_call_args) &&
+        argument_callee == "copy" && argument_call_args.size() == 1);
+    plan.argument_explicit_takes.push_back(
+        tree_parse_simple_call(normalized_argument, argument_callee,
+                               argument_call_args) &&
+        argument_callee == "take" && argument_call_args.size() == 1);
   }
 
   p_.root_submission_plans.push_back(std::move(plan));

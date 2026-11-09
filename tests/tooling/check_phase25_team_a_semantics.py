@@ -757,7 +757,7 @@ fn main():
   value
 
 fn unwrap(item: Box):
-  return item.value
+  return copy(item.value)
 
 fn main():
   echo unwrap(Box(value: 42))
@@ -802,7 +802,7 @@ fn main():
 fn main():
   container_box = Box(value: [1])
   var field = [0]
-  field = container_box.value
+  field = copy(container_box.value)
   var item = 0
   item = field[0]
   echo item

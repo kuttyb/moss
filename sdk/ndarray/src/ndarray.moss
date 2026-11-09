@@ -168,7 +168,7 @@ fn binary_elementwise(left: NdArray, right: NdArray, operation: Int) -> NdArray:
           value = left.data[left_offset] / right.data[right_offset]
     output_data.push(value)
     flat_index = flat_index + 1
-  return NdArray(shape: output_shape, strides: info.strides, data: output_data)
+  return NdArray(shape: output_shape, strides: take(info.strides), data: output_data)
 
 fn scalar_elementwise(array: NdArray, value: Float, operation: Int) -> NdArray:
   require_valid(array)
@@ -293,7 +293,7 @@ fn reduce_axis(array: NdArray, axis: Int, operation: Int) -> NdArray:
           i = i + 1
         output_data.push(value)
     flat_index = flat_index + 1
-  return NdArray(shape: output_shape, strides: info.strides, data: output_data)
+  return NdArray(shape: output_shape, strides: take(info.strides), data: output_data)
 
 export fn validate(array: NdArray) -> Bool:
   let rank_value = array.shape |> count
@@ -320,7 +320,7 @@ export fn from_flat(shape: Vector[Int], data: Vector[Float]) -> NdArray:
   let info = shape_info(shape)
   if (data |> count) != info.count:
     raise NdArrayError.DataLengthMismatch
-  return NdArray(shape: copy_int_vector(shape), strides: info.strides, data: copy_float_vector(data))
+  return NdArray(shape: copy_int_vector(shape), strides: take(info.strides), data: copy_float_vector(data))
 
 export fn scalar(value: Float) -> NdArray:
   return NdArray(shape: Vector[Int](), strides: Vector[Int](), data: [value])
@@ -332,7 +332,7 @@ export fn full(shape: Vector[Int], value: Float) -> NdArray:
   while i < info.count:
     data.push(value)
     i = i + 1
-  return NdArray(shape: copy_int_vector(shape), strides: info.strides, data: data)
+  return NdArray(shape: copy_int_vector(shape), strides: take(info.strides), data: data)
 
 export fn zeros(shape: Vector[Int]) -> NdArray:
   return full(shape, 0.0)
@@ -380,7 +380,7 @@ export fn reshape(array: NdArray, shape: Vector[Int]) -> NdArray:
   let info = shape_info(shape)
   if info.count != (array.data |> count):
     raise NdArrayError.ReshapeSizeMismatch
-  return NdArray(shape: copy_int_vector(shape), strides: info.strides, data: copy_float_vector(array.data))
+  return NdArray(shape: copy_int_vector(shape), strides: take(info.strides), data: copy_float_vector(array.data))
 
 export fn add(left: NdArray, right: NdArray) -> NdArray:
   return binary_elementwise(left, right, 0)
@@ -442,7 +442,7 @@ export fn slice_copy(array: NdArray, starts: Vector[Int], stops: Vector[Int], st
       axis = axis + 1
     output_data.push(array.data[source_offset])
     flat_index = flat_index + 1
-  return NdArray(shape: output_shape, strides: info.strides, data: output_data)
+  return NdArray(shape: output_shape, strides: take(info.strides), data: output_data)
 
 export fn subarray_copy(array: NdArray, origin: Vector[Int], shape: Vector[Int]) -> NdArray:
   require_valid(array)
@@ -513,7 +513,7 @@ export fn permute_axes(array: NdArray, axes: Vector[Int]) -> NdArray:
       i = i + 1
     data.push(array.data[source_offset])
     flat_index = flat_index + 1
-  return NdArray(shape: new_shape, strides: info.strides, data: data)
+  return NdArray(shape: new_shape, strides: take(info.strides), data: data)
 
 export fn transpose(array: NdArray) -> NdArray:
   require_valid(array)

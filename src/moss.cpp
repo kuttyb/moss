@@ -4298,6 +4298,32 @@ static std::optional<est::ExprId> imported_checked_body_expression_node(
       target = expression.semantic_target_id;
       break;
     }
+    case checked_ir::ExprKind::Copy:
+    case checked_ir::ExprKind::Take: {
+      const bool copy = expression.kind == checked_ir::ExprKind::Copy;
+      if (expression.operands.size() != 1 ||
+          expression.semantic_target_id !=
+              (copy ? checked_ir::kCopyOperationId
+                    : checked_ir::kTakeOperationId) ||
+          !expression.type || !expression.operands.front().type ||
+          !expression.type->structurally_equal(
+              *expression.operands.front().type) ||
+          (!copy &&
+           (!checked_ir::checked_body_take_field_path(
+                expression.operands.front()) ||
+            !checked_ir::checked_body_take_has_field(
+                expression.operands.front()) ||
+            !checked_ir::checked_body_take_collection_type(
+                expression.operands.front().type))))
+        return std::nullopt;
+      auto argument = child(expression.operands.front());
+      if (!argument) return std::nullopt;
+      const auto callee_id = append_auxiliary(
+          est::Identifier{copy ? "copy" : "take"});
+      node = est::Call{callee_id, {*argument}};
+      target = expression.semantic_target_id;
+      break;
+    }
     case checked_ir::ExprKind::NominalConstruct: {
       auto declaration = program.type_context
           ? program.type_context->find_id(expression.semantic_target_id)
@@ -5234,6 +5260,28 @@ void project_imported_h3_checked_bodies(Program& program) {
             }
             return result + ")";
           }
+          case checked_ir::ExprKind::Copy:
+          case checked_ir::ExprKind::Take: {
+            const bool copy = expression.kind == checked_ir::ExprKind::Copy;
+            if (expression.operands.size() != 1 || !expression.type ||
+                !expression.operands.front().type ||
+                expression.semantic_target_id !=
+                    (copy ? checked_ir::kCopyOperationId
+                          : checked_ir::kTakeOperationId) ||
+                !expression.type->structurally_equal(
+                    *expression.operands.front().type) ||
+                (!copy &&
+                 (!checked_ir::checked_body_take_field_path(
+                      expression.operands.front()) ||
+                  !checked_ir::checked_body_take_has_field(
+                      expression.operands.front()) ||
+                  !checked_ir::checked_body_take_collection_type(
+                      expression.operands.front().type))))
+              return std::nullopt;
+            auto argument = render(expression.operands.front(), depth + 1);
+            if (!argument) return std::nullopt;
+            return string(copy ? "copy(" : "take(") + *argument + ")";
+          }
           case checked_ir::ExprKind::CollectionPush: {
             if (!generic_for_candidate || expression.operands.size() != 2 ||
                 expression.semantic_target_id !=
@@ -5311,6 +5359,15 @@ void project_imported_h3_checked_bodies(Program& program) {
               auto argument = render(checked.expr->operands.front(), 0);
               if (!argument) return false;
               statement.a = "assert";
+              statement.args.push_back(*argument);
+            } else if ((checked.expr->kind ==
+                            checked_ir::ExprKind::Copy ||
+                        checked.expr->kind == checked_ir::ExprKind::Take) &&
+                       checked.expr->operands.size() == 1) {
+              auto argument = render(checked.expr->operands.front(), 0);
+              if (!argument) return false;
+              statement.a = checked.expr->kind == checked_ir::ExprKind::Copy
+                  ? "copy" : "take";
               statement.args.push_back(*argument);
             } else if (checked.expr->kind ==
                            checked_ir::ExprKind::CollectionPush &&
@@ -5520,7 +5577,9 @@ void project_imported_h3_checked_bodies(Program& program) {
                  statement.expr->semantic_target_id == "builtin:assert" &&
                  (checked_assert_body_candidate || generic_for_candidate)) ||
                 statement.expr->kind ==
-                    checked_ir::ExprKind::CollectionPush))
+                    checked_ir::ExprKind::CollectionPush ||
+                statement.expr->kind == checked_ir::ExprKind::Copy ||
+                statement.expr->kind == checked_ir::ExprKind::Take))
             checked_projection_subset = false;
         } else if (statement.kind != checked_ir::StmtKind::Return &&
                    statement.kind != checked_ir::StmtKind::Pass &&
@@ -5820,6 +5879,26 @@ void project_imported_h3_checked_bodies(Program& program) {
             }
             return result + ")";
           }
+          case checked_ir::ExprKind::Copy:
+          case checked_ir::ExprKind::Take: {
+            const bool copy = expression.kind == checked_ir::ExprKind::Copy;
+            if (expression.operands.size() != 1 || !expression.type ||
+                !expression.operands.front().type ||
+                expression.semantic_target_id !=
+                    (copy ? checked_ir::kCopyOperationId
+                          : checked_ir::kTakeOperationId) ||
+                !expression.type->structurally_equal(
+                    *expression.operands.front().type) ||
+                (!copy &&
+                 (!checked_ir::checked_body_take_field_path(
+                      expression.operands.front()) ||
+                  !checked_ir::checked_body_take_collection_type(
+                      expression.operands.front().type))))
+              return std::nullopt;
+            auto argument = render(expression.operands.front(), depth + 1);
+            if (!argument) return std::nullopt;
+            return string(copy ? "copy(" : "take(") + *argument + ")";
+          }
           case checked_ir::ExprKind::CollectionPush: {
             if (!generic_for_candidate || expression.operands.size() != 2 ||
                 expression.semantic_target_id !=
@@ -5967,6 +6046,15 @@ void project_imported_h3_checked_bodies(Program& program) {
             auto argument = render(checked.expr->operands.front(), 0);
             if (!argument) return false;
             statement.a = "assert";
+            statement.args.push_back(*argument);
+          } else if ((checked.expr->kind ==
+                          checked_ir::ExprKind::Copy ||
+                      checked.expr->kind == checked_ir::ExprKind::Take) &&
+                     checked.expr->operands.size() == 1) {
+            auto argument = render(checked.expr->operands.front(), 0);
+            if (!argument) return false;
+            statement.a = checked.expr->kind == checked_ir::ExprKind::Copy
+                ? "copy" : "take";
             statement.args.push_back(*argument);
           } else if (checked.expr->kind ==
                          checked_ir::ExprKind::CollectionPush &&
@@ -6414,6 +6502,54 @@ void project_imported_h3_checked_bodies(Program& program) {
           !valid_checked_string_literal_spelling(expression.literal_value))
         invalid("checked ABI-v10 string literal has an invalid Moss spelling");
       lowered = expression.literal_value;
+      direct_return_projection = true;
+    } else if (expression.kind == checked_ir::ExprKind::Copy ||
+               expression.kind == checked_ir::ExprKind::Take) {
+      const bool copy = expression.kind == checked_ir::ExprKind::Copy;
+      if (!direct_return_body || parameters.size() != 1 ||
+          function.params.size() != 1 || statements.size() != 1 ||
+          statements.front().kind != checked_ir::StmtKind::Return ||
+          expression.operands.size() != 1 || !expression.type || !result ||
+          !expression.type->structurally_equal(*result) ||
+          !expression.operands.front().type ||
+          !expression.type->structurally_equal(
+              *expression.operands.front().type) ||
+          expression.semantic_target_id !=
+              (copy ? checked_ir::kCopyOperationId
+                    : checked_ir::kTakeOperationId) ||
+          (!copy &&
+           (!checked_ir::checked_body_take_field_path(
+                expression.operands.front()) ||
+            !checked_ir::checked_body_take_has_field(
+                expression.operands.front()) ||
+            !checked_ir::checked_body_take_collection_type(
+                expression.operands.front().type))))
+        invalid("checked ABI-v10 copy/take body has a mismatched result or operand");
+      std::function<std::optional<string>(const checked_ir::Expr&)> render_field =
+          [&](const checked_ir::Expr& node) -> std::optional<string> {
+        if (node.kind == checked_ir::ExprKind::Parameter &&
+            node.ordinal < function.params.size() &&
+            node.type && node.type->structurally_equal(*parameters[node.ordinal]))
+          return function.params[node.ordinal].name;
+        if (node.kind != checked_ir::ExprKind::Field ||
+            node.operands.size() != 1 || node.semantic_target_id.empty() ||
+            !node.operands.front().type ||
+            node.operands.front().type->kind != moss::TypeKind::NominalInstance ||
+            !node.operands.front().type->declaration ||
+            node.operands.front().type->declaration->id != node.semantic_target_id ||
+            node.member_ordinal >=
+                node.operands.front().type->declaration->fields.size() ||
+            node.member_name != node.operands.front().type->declaration
+                ->fields[node.member_ordinal].name)
+          return std::nullopt;
+        auto receiver = render_field(node.operands.front());
+        if (!receiver) return std::nullopt;
+        return *receiver + "." + node.member_name;
+      };
+      auto argument = render_field(expression.operands.front());
+      if (!argument)
+        invalid("checked ABI-v10 copy/take operand is not a field path");
+      lowered = string(copy ? "copy(" : "take(") + *argument + ")";
       direct_return_projection = true;
     } else if (expression.kind == checked_ir::ExprKind::Field) {
       if (!abi_v10_generic_field_summary_candidate(summary))

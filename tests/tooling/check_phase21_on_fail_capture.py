@@ -72,8 +72,8 @@ source = fixtures / "phase21_capture_state_borrow.moss"
 checked = run(compiler, "check", source, "--json")
 assert checked.returncode != 0, (checked.stdout, checked.stderr)
 diagnostic = json.loads(checked.stdout)["error"]
-assert diagnostic["code"] == "MOSS_COMPILE_ERROR", diagnostic
-assert "domain state 'value' cannot be consumed" in diagnostic["message"], diagnostic
+assert diagnostic["code"] == "IMPLICIT_FIELD_MOVE", diagnostic
+assert "'value' is a field" in diagnostic["message"], diagnostic
 
 
 # The same handler dispatches its trailer as a Root, while its nested call

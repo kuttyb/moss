@@ -6,7 +6,7 @@ type Tag:
     return label == other.label
 
   fn hash() -> String:
-    return label
+    return copy(label)
 
 fn main():
   var m = Map()

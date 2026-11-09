@@ -59,7 +59,9 @@ enum class ExprKind : uint32_t {
   CollectionPush = 18,
   PipelineElement = 19,
   PipelineMap = 20,
-  EnumConstruct = 21
+  EnumConstruct = 21,
+  Copy = 22,
+  Take = 23
 };
 
 inline constexpr std::string_view kCollectionCountOperationId =
@@ -70,6 +72,8 @@ inline constexpr std::string_view kMemberRequirementPrefix =
     "member-requirement-v1:";
 inline constexpr std::string_view kCollectionPushOperationId =
     "builtin:vector-push-v1";
+inline constexpr std::string_view kCopyOperationId = "builtin:copy-v1";
+inline constexpr std::string_view kTakeOperationId = "builtin:take-v1";
 
 enum class UnaryOp : uint32_t {
   Neg = 1,
@@ -124,6 +128,28 @@ struct Expr {
   std::string target_domain;
   std::vector<uint32_t> payload_ordinals;
 };
+
+inline bool checked_body_take_field_path(const Expr& expression) {
+  if (expression.kind == ExprKind::Parameter ||
+      expression.kind == ExprKind::LocalRead)
+    return expression.operands.empty();
+  return expression.kind == ExprKind::Field &&
+      expression.operands.size() == 1 &&
+      checked_body_take_field_path(expression.operands.front());
+}
+
+inline bool checked_body_take_has_field(const Expr& expression) {
+  return expression.kind == ExprKind::Field ||
+      (!expression.operands.empty() &&
+       checked_body_take_has_field(expression.operands.front()));
+}
+
+inline bool checked_body_take_collection_type(const TypeRef& type) {
+  return type && type->kind == TypeKind::Builtin &&
+      ((type->name == "vector" && type->type_args.size() == 1) ||
+       (type->name == "map" && type->type_args.size() == 2) ||
+       (type->name == "option" && type->type_args.size() == 1));
+}
 
 enum class StmtKind : uint32_t {
   Let = 1,
@@ -537,7 +563,7 @@ class H3BodyReader {
     if (++node_count_ > kMaxBodyNodes)
       fail("checked body node count exceeds bounds");
     const auto tag = number();
-    if (tag > static_cast<std::uint32_t>(ExprKind::EnumConstruct))
+    if (tag > static_cast<std::uint32_t>(ExprKind::Take))
       fail("checked body expression kind is unknown");
     Expr expression;
     expression.kind = static_cast<ExprKind>(tag);
@@ -763,6 +789,22 @@ class H3BodyReader {
           receiver->name != "vector" || receiver->type_args.size() != 1 ||
           !receiver->type_args.front()->structurally_equal(*value))
         fail("checked Vector.push receiver and element TypeRefs disagree");
+    } else if (expression.kind == ExprKind::Copy ||
+               expression.kind == ExprKind::Take) {
+      expression.semantic_target_id = field();
+      expression.operands.push_back(read_expr(depth + 1));
+      const bool copy = expression.kind == ExprKind::Copy;
+      if (expression.semantic_target_id !=
+              (copy ? kCopyOperationId : kTakeOperationId) ||
+          !expression.operands.front().type ||
+          !expression.type->structurally_equal(
+              *expression.operands.front().type) ||
+          (!copy &&
+           (!checked_body_take_field_path(expression.operands.front()) ||
+            !checked_body_take_has_field(expression.operands.front()) ||
+            !checked_body_take_collection_type(
+                expression.operands.front().type))))
+        fail("checked copy/take identity, operand, or type is invalid");
     } else if (expression.kind == ExprKind::PipelineElement) {
       expression.semantic_target_id = field();
       if (expression.semantic_target_id.rfind("pipeline-placeholder:", 0) != 0 ||
@@ -1004,7 +1046,9 @@ class H3BodyReader {
             expression.kind == ExprKind::Call &&
             expression.semantic_target_id == "builtin:assert";
         const bool checked_push =
-            expression.kind == ExprKind::CollectionPush;
+            expression.kind == ExprKind::CollectionPush ||
+            expression.kind == ExprKind::Copy ||
+            expression.kind == ExprKind::Take;
         if (!checked_assert && !checked_push)
           fail("checked expression statement is not a validated assertion or mutation");
         if (checked_push) {

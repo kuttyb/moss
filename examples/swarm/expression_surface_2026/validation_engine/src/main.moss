@@ -21,14 +21,14 @@ type Rule:
 
   fn evaluate_at(configured_limit: Int) -> Evaluation:
     if value < minimum:
-      return Evaluation(normalized: 0, penalty: (minimum - value) * 3, accepted: false, key: key)
+      return Evaluation(normalized: 0, penalty: (minimum - value) * 3, accepted: false, key: copy(key))
     else:
       if value > maximum:
-        return Evaluation(normalized: 100, penalty: (value - maximum) * 2, accepted: false, key: key)
+        return Evaluation(normalized: 100, penalty: (value - maximum) * 2, accepted: false, key: copy(key))
       else:
         span = maximum - minimum
         delta = value - minimum
-        return Evaluation(normalized: delta * 100 / span, penalty: 0, accepted: value <= configured_limit, key: key)
+        return Evaluation(normalized: delta * 100 / span, penalty: 0, accepted: value <= configured_limit, key: copy(key))
 
   fn contribution() -> Int:
     if value < minimum:

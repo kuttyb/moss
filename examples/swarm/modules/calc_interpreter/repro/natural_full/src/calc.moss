@@ -42,17 +42,17 @@ export fn run(session: Session, chars: Vector[String]) -> Outcome:
   lexed = lexer.tokenize(chars)
   if lexed.error.failed():
     session.fail()
-    return failure(lexed.error)
+    return failure(copy(lexed.error))
   else:
     parsed = parser.parse(lexed.tokens)
     if parsed.error.failed():
       session.fail()
-      return failure(parsed.error)
+      return failure(copy(parsed.error))
     else:
       result = eval.evaluate(parsed.ast, session.scope)
       if result.error.failed():
         session.fail()
-        return failure(result.error)
+        return failure(copy(result.error))
       else:
         session.record(result.value)
         return Outcome(ok: true, value: result.value, error: errors.none())

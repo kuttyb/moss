@@ -12,9 +12,9 @@ type Packet:
   fn read_code():
     return code
 
-  # Returning a nontrivial field transfers it and consumes this Packet.
+  # Returning a field makes an explicit independent copy.
   fn take_payload():
-    return payload
+    return copy(payload)
 
 # Passing the same value to multiple READ parameters is legal.
 fn inspect(first: Packet, second: Packet):

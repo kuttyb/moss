@@ -75,7 +75,7 @@ with tempfile.TemporaryDirectory(prefix="p24-adversarial-gate-") as temp_dir:
         'export fn wrap_item(item: Item) -> Container:\n'
         '  return Container(item: item)\n'
         'export fn unwrap_container(c: Container) -> Item:\n'
-        '  return c.item\n',
+        '  return copy(c.item)\n',
         encoding="utf-8"
     )
 

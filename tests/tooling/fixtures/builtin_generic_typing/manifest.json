@@ -481,7 +481,7 @@
     }
   },
   "vector_literal_owned_state_reject": {
-    "code": "MOSS_COMPILE_ERROR"
+    "code": "IMPLICIT_FIELD_MOVE"
   },
   "vector_literal_state_replace": {
     "stdout": "old\nnew\n",

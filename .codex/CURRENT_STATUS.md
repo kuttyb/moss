@@ -18255,3 +18255,42 @@ future optimizer-isolated proof and must remain explicit in final review.
   copy migrations and primitive Map.get `.copied()` lowering. Origin main
   remains `558b509ffdaf388c9d8eca663b3eb5435ad1e477`; delivery commit/push is
   next.
+
+## Moss field-moves checkpoint (2026-11-09)
+
+- Branch: `moss-field-moves`, one local commit `dcd4321c` atop `origin/main` at `5c0ca386`; no push or main update has happened.
+- Implemented `IMPLICIT_FIELD_MOVE` checking, checker-owned `copy`/`take` facts for executor arguments, owned reply lowering, the registered `check_moss_field_moves` gate, and source/probe migrations. Current diff is below the 700-line stop limit.
+- Baseline corpus: 2,257 sources / 1,447 accepted. Candidate corpus: 2,257 / 1,447 accepted; zero accept/reject status changes. Corpus diagnostic/hash differences were printed by `corpus_verdicts.py` and still need final generated-Rust attribution.
+- Directed field-move gate passes native and Fast Debug, including `take(field)` and `copy(field)` as executor arguments. `check_moss_take` and `check_phase21_on_fail_capture` pass directly after source/expectation updates.
+- The first Default suite run failed 23/169 jobs; after honest source/probe migrations and diagnostic updates, the second run failed 8/169. Most newly identified snippets were migrated afterward. `check_phase27_accepts_rustc` and `shard_swarm_cases` contain the pre-existing `swarm_035_nested_mutating_calls.moss` Rust E0499 failure.
+- A direct rerun of `check_phase25_r2_wp3_nominal.py` still fails source-free consumption of a generic provider callable whose body uses `copy(item.value)`: `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE`. The related conformance source-free gate also failed. This is the repeated acceptance blocker; no final suite rerun, Shadow suite, generated-Rust audit, or Agent 2 review has been completed.
+- Work is stopped at this blocker. Do not publish this commit. Resume by resolving generic source-free checked-body support for explicit copy or establish a permitted non-weakening migration, then rerun all gates and review.
+
+## Moss field-moves source-free transport follow-up (2026-11-09)
+
+- Resumed `moss-field-moves` at commit `dcd4321c` with the stop-rule count reset. Bootstrap confirms `moss-0.1`.
+- Tried ordinary builtin targets (`builtin:copy` / `builtin:take`), retained them as checked-body Call expressions, projected them back as ordinary `copy(...)` / `take(...)` calls, and normalized the copy argument occurrence role.
+- `check_phase25_r2_wp3_nominal.py` still fails twice on the resumed attempts with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` for generic `Service.unbox` using `copy(item.value)`. This meets the resumed stop rule. The source-free package directed case has not yet been added; no Default/Shadow/corpus reruns or Agent 2 review have been done for this follow-up.
+- Follow-up edits are uncommitted in the worktree; no push or main update has happened. Stop here and report the repeated gate failure. Resume only with a new approach to why `retain_checked_occurrence_ir` does not produce a checked body for the reserved builtin call.
+
+## Moss field-moves additive Copy/Take IR attempt (2026-11-09)
+
+- L8 clarified the implementation: checked-body IR v1 needs additive `Copy=22` and `Take=23` nodes with exact `builtin:copy-v1` / `builtin:take-v1` IDs. Existing tag values were left unchanged. The implementation now lowers those nodes, encodes/decodes and validates their shape/types, and projects them through the checked-body consumers. The compiler rebuild succeeded.
+- The required `check_phase25_r2_wp3_nominal.py` gate was run twice and failed both times with `SOURCE_FREE_CHECKED_BODY_UNAVAILABLE` for `Service.unbox` (`copy(item.value)`). Provider inspection shows this is blocked before occurrence lowering: its exported summary has `scheme_complete=0` and `return=_specialized_result:Service__unbox`; the checked-body retention loop skips summaries without a complete scheme. Therefore the new IR tags alone cannot pass this gate. This exposes a generic inferred-field result-summary gap beyond the requested local IR-tag addition.
+- No Default, Shadow, corpus, package-specific new gate, or Agent 2 review was run after the repeated failure. The current compiler/test edits are uncommitted; do not push or fast-forward main. Temporary trace widening was removed.
+
+## Moss field-moves upstream rebase and source-free Copy/Take (2026-11-09)
+
+- L8 added the specialized-result summary rule: for `copy(x)` or `take(x)` with one argument, infer the specialized return relation from `x` before the existing member-access projection. The checker now retains that relation, and imported checked-body projection emits the verified `copy(...)`/`take(...)` form. Copy/Take are explicit checked-body tags 22 and 23; earlier tags are unchanged.
+- `check_phase25_r2_wp3_nominal.py` passes, including source-free `copy(item.value)` consumers and all hostile-artifact mutations. The `check_moss_field_moves.py` package test passes both operations source-free in Native, matching source-visible Native and Fast Debug output.
+- A pre-rebase full Default run completed: candidate 165/169, baseline `5c0ca386` 165/168. Baseline failures were `check_phase25_conformance`, `check_phase27_accepts_rustc`, and `shard_swarm_cases`. Candidate additionally had `check_phase25_s3_key_protocol` because its runtime Moss snippet returned a String field implicitly; migrated to `copy(d.title)` afterward. The current full Default run therefore does not certify the latest tree.
+- A corpus comparison on the migrated source set at `dcd4321c`: baseline and candidate each accepted 1,447/2,257; seven diagnostic signatures changed, no accept/reject count change. The first attempted comparison used the pre-migration `5c0ca386` source set and showed expected source-migration deltas; it is not the corpus result to report.
+- User requested rebase onto fetched `origin/main` `02a667d4`, plus direct allowed-field tests for `s.items.remove(0)` and `s.items.pop()`. The latter test is added; `remove` is unavailable before the rebase, as expected from the old language surface. Rebase and complete post-rebase validation remain pending, as do Agent 2 GO and push.
+
+## Moss field-moves rebased validation (2026-11-09)
+
+- Rebased `moss-field-moves` onto `origin/main` 02a667d4 and rebuilt from scratch. Added an allowed-field probe for `s.items.remove(0)` followed by `s.items.pop()`; both engines output `1 3 1` with no `IMPLICIT_FIELD_MOVE`.
+- `check_moss_field_moves.py` passes all directed rejects and allowed uses, including source-free generic `copy(item.value)` and `take(store.items)` consumers; `check_phase25_r2_wp3_nominal.py` passes, including hostile artifact mutations.
+- Corpus on a matched 2,257-program source set: baseline and candidate each accept 1,447. There are 7 diagnostic-signature differences and no accept/reject status changes.
+- Default: candidate 167/170, baseline 166/169. Shadow: candidate 167/170, baseline 166/169. Both have only the same three baseline failures: `check_phase25_conformance` (nested Cargo jobserver descriptor), `check_phase27_accepts_rustc` and `shard_swarm_cases` (`swarm_035_nested_mutating_calls.moss`, Rust E0499). No candidate-only failing names.
+- `git diff --check` passes. Agent 2 review is in progress for commit 0f6cc437. No push or main update has happened.

@@ -50,7 +50,7 @@ type OptIter:
     if done:
       return None
     done = true
-    return val
+    return copy(val)
 
 fn show_opt(v: option[Int]) -> String:
   for x in OptIter(val: v, done: false):
@@ -81,7 +81,7 @@ type OptIter:
     if done:
       return None
     done = true
-    return val
+    return copy(val)
 
 fn show_opt(v: option[Int]) -> String:
   for x in OptIter(val: v, done: false):

@@ -9,7 +9,7 @@ type Packet:
     return code
 
   fn take_payload():
-    return payload
+    return copy(payload)
 
 fn main():
   let packet = Packet(payload = Payload(value = 7), code = 42)

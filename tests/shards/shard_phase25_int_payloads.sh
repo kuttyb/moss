@@ -276,8 +276,8 @@ reject_case phase26_payload_rebind_copy \
   "cannot WRITE incoming message payload 'x'"
 grep -F 'fn read_code(&self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
   fail "copyable field read did not retain a READ receiver"
-grep -F 'fn take_payload(self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
-  fail "nontrivial field movement did not lower a CONSUME receiver"
+grep -F 'fn take_payload(&self)' "$test_build/method_receiver_effects.rs" >/dev/null ||
+  fail "explicit field copy did not retain a READ receiver"
 warning_stdout="$test_build/large_payload_warning.stdout"
 warning_stderr="$test_build/large_payload_warning.stderr"
 "$compiler" --check tests/large_payload_warning.moss >"$warning_stdout" 2>"$warning_stderr"
@@ -294,7 +294,7 @@ reject_case write_write_alias "'item' is passed to 'conflict' through overlappin
 reject_case consume_read_alias "'item' is passed to 'conflict' through overlapping CONSUME and READ accesses"
 reject_case consume_write_alias "'item' is passed to 'conflict' through overlapping CONSUME and WRITE accesses"
 reject_case double_consume_alias "'item' is passed to 'conflict' through overlapping CONSUME and CONSUME accesses"
-reject_case nontrivial_field_move "value 'packet' was transferred"
+reject_case nontrivial_field_move "IMPLICIT_FIELD_MOVE"
 reject_case branch_join_consume "value 'item' was transferred"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"

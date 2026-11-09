@@ -91,7 +91,9 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
                       "caller continues after submission");
   o << pad << "{\n";
   if (plan.argument_expressions.size() != plan.argument_types.size() ||
-      plan.argument_expressions.size() != plan.argument_accesses.size())
+      plan.argument_expressions.size() != plan.argument_accesses.size() ||
+      plan.argument_expressions.size() != plan.argument_explicit_copies.size() ||
+      plan.argument_expressions.size() != plan.argument_explicit_takes.size())
     throw std::runtime_error(
         "MOSS_INTERNAL_INVARIANT checked executor argument access plan is incomplete");
   string domain_temp = "__moss_invoke_domain_" + std::to_string(executor_invoke_temp_++);
@@ -102,11 +104,41 @@ void emit_root_submit(std::ostringstream& o, const Stmt& s, int spaces,
         "MOSS_INTERNAL_INVARIANT checked executor invocation arguments do not match root plan");
   for (size_t index = 0; index < plan.argument_expressions.size(); ++index) {
     string temp = "__moss_invoke_arg_" + std::to_string(executor_invoke_temp_++);
-    o << pad << "    let " << temp << " = "
-      << message_arg(checked_arguments[index], plan.argument_types[index],
-                     nullptr, locals, &types, 0,
-                     plan.argument_accesses[index] == Effect::Consume)
-      << ";\n";
+    string lowered_argument;
+    if (plan.argument_explicit_copies[index] ||
+        plan.argument_explicit_takes[index]) {
+      const auto& expression = checked_arguments[index];
+      const auto root = est::unparenthesized(*expression.arena, expression.id);
+      const auto* call = std::get_if<est::Call>(&expression.arena->at(root));
+      const auto* callee = call ? std::get_if<est::Identifier>(
+          &expression.arena->at(est::unparenthesized(
+              *expression.arena, call->callee))) : nullptr;
+      const string expected_builtin = plan.argument_explicit_copies[index]
+          ? "copy" : "take";
+      if (!call || !callee || callee->name != expected_builtin ||
+          call->arguments.size() != 1)
+        throw std::runtime_error(
+            "MOSS_INTERNAL_INVARIANT checked executor explicit copy/take argument is missing");
+      const auto operand = expression.child(call->arguments.front());
+      const string rendered = expr(operand, nullptr, locals, &types);
+      if (plan.argument_explicit_takes[index]) {
+        lowered_argument = "std::mem::take(&mut " +
+            write_call_place(operand, nullptr, locals, &types) + ")";
+      } else if (is_object_view(operand, nullptr, locals, &types)) {
+        lowered_argument = "(" + rendered + ").__moss_value()";
+      } else {
+        const string type = canonical_type_name(plan.argument_types[index]);
+        const bool primitive = type == "int" || type == "float" ||
+            type == "bool" || type == "char";
+        lowered_argument = primitive ? rendered : "(" + rendered + ").clone()";
+      }
+    } else {
+      lowered_argument = message_arg(
+          checked_arguments[index], plan.argument_types[index], nullptr,
+          locals, &types, 0,
+          plan.argument_accesses[index] == Effect::Consume);
+    }
+    o << pad << "    let " << temp << " = " << lowered_argument << ";\n";
     argument_locals.push_back(temp);
   }
   o << pad << "    " << s.a << ".enqueue_root(MossRootDescriptor::with_target(next_root_id(), "

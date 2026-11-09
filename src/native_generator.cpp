@@ -11580,7 +11580,8 @@ class Generator {
           o << indent(level) << reply_slot << " = Some("
             << message_arg(checked_reply, *current_handler->reply_type,
                 d, locals, &types,
-                statement_functional_pipeline_id(s, functional_context, 0)) << ");\n";
+                statement_functional_pipeline_id(s, functional_context, 0),
+                true) << ");\n";
           }
           o << indent(level) << "break 'handler;\n";
           ++i;
