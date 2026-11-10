@@ -20,7 +20,7 @@ moments instead of waiting on a full build. Fast Debug, a tracing interpreter, r
 program instantly with no Rust compile, even while unrelated code is still broken, and
 records exactly what happened so an agent debugs from facts instead of guesses.
 
-> **Status:** experimental (v0.1; the v0.9 ownership release is in progress). Linux and macOS.
+> **Status:** experimental (v0.1; the v0.9 ownership release is in progress). Linux, macOS and Windows WSL.
 
 ---
 
