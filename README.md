@@ -1,6 +1,6 @@
 # Moss
 
-**Reads like Python. Compiles to Rust. Safe concurrency, by construction.**
+**Reads like Python. Compiles to Rust. Safe Concurrency by construction.**
 
 Moss is a Python-like language that compiles to Rust. Rust made memory safety the
 compiler's job. Moss makes concurrency safety the compiler's job as well.
