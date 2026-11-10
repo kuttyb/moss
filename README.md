@@ -1,589 +1,218 @@
-# Moss v0.1
+# Moss
 
-Moss v0.1 is the Phase 10 usable-language milestone: a dependency-free C++17 front end that checks Moss source and emits Rust, plus a direct Fast Debug interpreter. Phase 15.15 adds closed enums, exhaustive matching, and the narrow `replace(place, replacement)` state transition operation. Start with the [v0.1 guide](docs/V0_1.md), [language syntax](docs/LANGUAGE_SYNTAX.md), [ownership rules](docs/OWNERSHIP.md), and [ledger seed project](examples/projects/ledger/README.md).
+**Reads like Python. Compiles to Rust. Safe concurrency, by construction.**
 
-Domain routing is statically closed: declare dependencies with `domainroutes`,
-bind them in the initial `main` composition prefix, and invoke them with
-synchronous `message`. Handles cannot be payloads, replies, ordinary parameters,
-or stored/aliased values. See [domain syntax](docs/LANGUAGE_SYNTAX.md#closed-routing-capabilities-phase-106b1)
-and [topology introspection](docs/AGENT_API.md#closed-concrete-domain-topology).
+Moss is a Python-like language that compiles to Rust. Rust made memory safety the
+compiler's job. Moss makes concurrency safety the compiler's job as well.
 
-Production domains use one `SynchronizationPlan`-driven `Handler2PL` backend with
-borrowed protected READs. Synchronization planning is compile-time only: generated
-Rust owns typed `RwLock<ClassState>` fields and acquires them directly, with no
-runtime plan or field lookup. Fast Debug executes the same checked synchronous
-domain semantics directly, without locks or scheduling. Retired runtime
-implementations were removed in Phase 10.6E.
+In most languages, concurrency correctness depends on the programmer: knowing which
+data is shared, guarding it with the right lock, taking locks in the right order, and
+keeping all of that true as the code changes. Moss takes those decisions away from the
+programmer. You describe who owns which state. The compiler generates fine-grained,
+deadlock-free locks for you, and proves the program free of data races.
 
-Phase 4 functional/dataflow compilation is now implemented on top of that frozen
-foundation. Pipelines are typed Moss IR, callable effects are inferred separately
-from ownership effects, and `-O` can fuse proven-safe stages into explicit Rust loops.
-`-O0` remains the eager, stage-at-a-time semantic reference.
+> **Types like a dynamic language. Runs like a static one.**
+> Write it like Python, iterate on it like Python, ship it as Rust.
 
-Phase 4.5 extends that same IR across a conservative lexical scope. It plans physical
-materialization explicitly, simplifies exact counts, short-circuits safe `any`/`all`,
-virtualizes single-use immutable pipeline bindings, and represents compatible terminal
-consumers as a shared-source dataflow DAG. This adds no Moss syntax or lazy runtime.
+**Built for AI coding.** Agents live in the edit–compile–test loop, and Moss keeps that
+loop short. Checks are fast and incremental, so an agent validates every edit in
+moments instead of waiting on a full build. Fast Debug, a tracing interpreter, runs the
+program instantly with no Rust compile, even while unrelated code is still broken, and
+records exactly what happened so an agent debugs from facts instead of guesses.
 
-Phase 4.6 adds a bounded semantic-space optimizer over that same authoritative IR. It
-composes adjacent maps and filters, pushes a predicate only through a proven identity
-map, removes safe dead maps before `count`, collapses single-use temporaries, and uses
-terminal/cardinality facts before ordinary lowering. These are Moss-to-Moss rewrites,
-not Rust iterator tricks or hardware-specific optimization.
+> **Status:** experimental (v0.1; the v0.9 ownership release is in progress). Linux and macOS.
 
-Phase 4.7 adds statically resolved `for` loops. Ranges and vectors receive native
-counted/indexed traversal, while user-defined iteration resolves to concrete
-`next() -> option[element]` methods under the static `Iterator` contract. Iteration
-does not introduce runtime dispatch, vtables, boxing, or hidden copies; `while` remains
-the general arbitrary loop.
+---
 
-Phase 5 adds tooling without changing those frozen semantics. Every compilation emits
-one deterministic `.mossmap` provenance artifact shared by Emacs navigation, LLDB/DAP
-source breakpoints, and symbol-targeted native disassembly. A dependency-light
-`moss-mode` provides editing, checking, building, running, debugging, and generated-code
-inspection from Moss source.
+## Types like a dynamic language, runs like a static one
 
-Phase 6 is frozen with a small, vendor-independent AI-native compiler workflow. Agents
-can discover capabilities, receive structured diagnostics and repair alternatives, query
-existing semantic/cost facts, compare durable semantic snapshots with `moss impact`,
-make exact edits, format canonical Moss, and run only affected tests during iteration.
-All of this is one versioned JSON envelope over the ordinary compiler truth; it adds no
-duplicate semantic analysis or new language syntax. Start with
-`moss agent bootstrap --json` and read [AI-native development](docs/AI_NATIVE_DEVELOPMENT.md).
+```moss
+type Circle:
+  r: Float
 
-Phase 7 is frozen with the practical project layer. Phase 15.2 adds `margo` as the
-canonical package/project driver: `margo build`, `margo test`, and `margo bench` share
-one manifest, compiler pipeline, profile model, semantic identity
-scheme, artifact layout, and Phase 6A JSON protocol. Tests report Moss assertions at
-Moss locations; benchmarks use release compilation, robust sampling,
-toolchain-compatible saved comparisons, and complete discarded-value black boxing
-without leaking Rust tooling into the normal workflow.
+  fn area():
+    return 3.14159 * r * r
 
-## Requirements
+type Square:
+  side: Float
 
-- A C++17 compiler (`g++`, `clang++`, or Apple Clang)
-- `make`
-- Rust (`rustc`) to compile the generated program
-- Optional: Emacs 29+, LLDB with `lldb-dap`, Python 3, and `llvm-objdump` or
-  GNU `objdump` for the corresponding Phase 5 integrations
+  fn area():
+    return side * side
 
-## Install and project workflow
+fn report(shape):              # no types: anything with an area() works
+  return shape.area()
 
-### Agent / tool discovery
+fn main():
+  echo report(Circle(r = 1.0))
+  echo report(Square(side = 2.0))
 
-Working with Moss from a repository checkout:
-
-```sh
-make                         # if ./moss has not been built
-./moss agent bootstrap --json
+  ages = Map()                 # Map[String, Int], inferred
+  ages["ada"] = 36
+  ages["alan"] = 41
+  echo ["ada", "alan"] |> map(ages[_]) |> sum
 ```
 
-The bootstrap response describes the current language and tool capabilities.
-See [AGENTS.md](AGENTS.md) for the repository agent workflow.
+It reads like a script: no `self`, no type parameters, no lifetimes, no annotations.
+It compiles like a systems language: every untyped function is specialized for the
+concrete types that reach it, so the generated Rust has direct calls, no vtables and
+no runtime type checks.
 
-```sh
-make
+The development loop feels dynamic too:
+
+- **Fast Debug.** A built-in interpreter runs the checked program immediately, with no
+  Rust build in the way, and is held to the same results as the native binary. Step
+  through it, or record a structured trace of what happened.
+- **Run it while it's half-written.** Fast Debug only needs the code your run actually
+  reaches to be correct. A broken function you haven't wired in yet doesn't stop you
+  from trying the part that works. The release build still rejects every error.
+- **Fast checks.** Each package is checked against the compiled interfaces of its
+  dependencies instead of rechecking the world, keeping the edit–check–test loop short
+  as projects grow.
+- **A compiler agents can talk to.** Diagnostics come as structured data with suggested
+  repairs, and everything the compiler knows (types, ownership, effects, locks,
+  optimization decisions) can be queried directly. Moss measures this on a fixed
+  benchmark of fresh-agent coding tasks.
+
+---
+
+## Concurrency the compiler can vouch for
+
+A **domain** is an actor: private mutable state, reached only through its handlers.
+Nothing else in a Moss program is shared, so there is nothing else to race on.
+
+```moss
+domain Account:
+  balance = 0
+  owner = "nobody"
+  deposits = 0
+
+  fn Deposit(amount: Int):
+    balance = balance + amount
+    deposits = deposits + 1
+
+  fn Rename(name: String):
+    owner = copy(name)         # payloads are lent, not given: keeping one is explicit
+
+  fn Balance() -> Int:
+    reply balance
+
+fn main():
+  acct = Account()
+  executor = Executor().threads(2).start()
+  executor.invoke(acct.Deposit(50))      # two independent executions, in parallel
+  executor.invoke(acct.Rename("ada"))
+  executor.join()
+  echo message acct.Balance()            # synchronous call: 50
 ```
 
-This creates `./moss`; the checked-in `./margo` package driver is executable too.
+There is no lock anywhere in that program, so there is no lock to forget, misplace or
+take in the wrong order. The compiler reads what each handler touches and derives the
+synchronization:
 
-For the commands below, put the checkout on `PATH` with
-`export PATH="$PWD:$PATH"` or replace `moss` with the absolute path to that
-binary. Phase 7 does not yet provide an installer.
+| Lock | Protects | `Deposit` | `Rename` | `Balance` |
+|---|---|---|---|---|
+| 0 | `balance` | exclusive | — | shared |
+| 1 | `deposits` | exclusive | — | — |
+| 2 | `owner` | — | exclusive | — |
 
-For a Moss project, the normal workflow is:
+What that buys you:
 
-```sh
-margo build
-margo test
-margo build --release
-margo bench
+- **No data races.** Every access to shared state is covered by a lock the compiler
+  chose from the code itself. You can't miss one.
+- **No lock-order deadlocks.** Locks are ranked and always taken in rank order, and the
+  graph of which domains call which must be acyclic. A cycle is a compile-time error
+  that names the connections involved, not a hang in production.
+- **Safe *and* concurrent.** `Deposit` and `Rename` touch disjoint state, so they get
+  disjoint locks and run in parallel on the same actor. A classic actor mailbox would
+  have serialized them; a hand-written single mutex would too.
+- **Stays correct as the code changes.** `balance` and `deposits` have separate locks
+  only because `Balance` reads one and not the other. Remove that reader and they merge.
+  Add a handler and the plan is re-derived. Nobody has to remember to update it.
+- **Ownership across the boundary.** A synchronous `message` lends its arguments
+  read-only: the sender keeps them, nothing is copied, and the handler can't modify
+  them. Keeping a payload requires an explicit `copy(...)`, as above. Forgetting it is
+  a compile error, not a silent clone or a dangling reference.
+
+The output is ordinary safe Rust: one reader/writer lock per derived class, taken
+directly, with no runtime scheduler, message queue or futures.
+
+---
+
+## Functional and eager, optimized past the eager boundary
+
+Pipelines are eager in the language: each stage logically finishes before the next one
+starts. That keeps them easy to reason about and to debug. The optimizer then asks a
+different question: *could anyone observe the difference?*
+
+```moss
+fn normalize(x: Int) -> Int = x * 2
+
+fn main():
+  readings = [3, -1, 4, -1, 5, 9]
+  scaled = readings |> map(normalize)
+  total  = scaled |> filter(_ > 0) |> map(_ + 10) |> sum
+  hits   = readings |> filter(_ > 3) |> count
+  peak   = readings |> any(_ > 8)
+  echo total, hits, peak
 ```
 
-Packages use `Moss.toml` (legacy `moss.toml` remains accepted) with conventional `src/`, `tests/`, and `benches/`
-directories. Start with the practical [Moss project
-workflow](docs/PROJECT_WORKFLOW.md): it provides a complete working project,
-debug and release builds, cleaning and cache behavior, tests, benchmarks,
-baselines, artifact locations, JSON output, and troubleshooting. The detailed
-references are [the build system](docs/BUILD_SYSTEM.md), [unit
-testing](docs/TESTING.md), and [benchmarking](docs/BENCHMARKING.md).
-
-Projects without explicit modules retain the temporary global compilation unit:
-`build` combines `src/**/*.moss`, `test` combines `src/**/*.moss` with
-`tests/**/*.moss`, and `bench` combines `src/**/*.moss` with `benches/**/*.moss`.
-Explicit modules instead compile into separate Rust crates/rlibs in import-DAG
-order. Their `.mossi` interfaces carry Moss contracts and generic semantic IR;
-typed imports need `.mossi` plus rlib, while generic imports specialize from
-`.mossi` without provider source. Paths remain attached to diagnostics and
-provenance.
-
-Semantic queries and edits use that same temporary project context. A `src` source
-queries all application files, a `tests` source queries `src + tests`, and a `benches`
-source queries `src + benches`; standalone files outside a project remain single-file.
-
-Automation and coding agents can discover the structured protocol first with
-`./moss agent bootstrap --json` from a repository checkout.
-
-### Coding-agent onboarding
-
-Repository-local Codex Skills live in [`.agents/skills`](.agents/skills): load
-[`moss-language`](.agents/skills/moss-language/SKILL.md) before writing `.moss`, and
-[`moss-agent-workflow`](.agents/skills/moss-agent-workflow/SKILL.md) for the
-compiler-first edit/check/debug loop. They teach current v0.1 syntax and explicitly
-avoid retired source and backend assumptions; the compiler remains authoritative.
-See [agent onboarding skills](docs/AGENT_SKILLS.md) for discovery and validation.
-
-The short agent loop is:
-
-```sh
-./moss agent bootstrap --json
-./moss check src/main.moss --json
-./moss fmt
-./moss impact fn:changed --json
-./moss test --affected
-```
-
-See [the agent API](docs/AGENT_API.md) for durable IDs, semantic edits, repair actions,
-cost facts, and structured output.
-
-## Use
-
-```sh
-./moss --check examples/checkout.moss
-mkdir -p build
-./moss -Oshared-memory examples/checkout.moss -o build/checkout.rs
-./moss -O --dump-functional-ir examples/functional_dataflow.moss -o build/dataflow.rs
-rustc build/checkout.rs -o build/checkout
-./build/checkout
-```
-
-Compilation also writes `build/checkout.mossmap`. It contains deterministic Moss
-source/provenance identities, generated Rust ranges, concrete native symbols, and
-functional fusion provenance. These Phase 5 identities are repeatable for an unchanged
-source layout; Phase 6 exposes separate `entity-v1` durable semantic identities for
-incremental analysis and exact edits.
-
-Expected output:
+Read eagerly, that is four traversals and three intermediate vectors. Optimized, it is
+two loops and no allocations:
 
 ```text
-charged: 75
-order completed
-order rejected: insufficient inventory
+total        one loop: normalize → filter → +10 → sum, straight through 'scaled'
+hits, peak   one shared loop over readings; 'any' stops evaluating once true
+scaled       still a named value in your code, never built in memory
 ```
 
-Run the complete smoke test with `make check`.
-
-For machine-readable compiler facts, bootstrap the Phase 6A protocol and use structured
-checks or focused semantic queries:
-
-```sh
-./moss agent bootstrap --json
-./moss check examples/functional_dataflow.moss --json
-./moss effects fn:normalize --source examples/functional_dataflow.moss --json
-./moss why main@12:expression:0 --source examples/functional_dataflow.moss --json -O
-```
-
-See [the agent semantic API](docs/AGENT_API.md) for selectors, diagnostic codes, and the
-minimal recommended `AGENTS.md` onboarding snippet.
-
-Compile every valid top-level example with functional optimizations enabled using `make examples-optimized` (or its alias `make examples`). Generated Rust and binaries are written under `build/examples/optimized`; the intentional negative `use_after_transfer.moss` example is skipped. Additional diagnostic examples live under `examples/errors` and are not part of this build target.
-
-## What Moss looks like
-
-Moss keeps types static while letting ordinary source stay compact: untyped functions
-can require methods structurally, named traits are resolved to concrete call sites,
-collections infer their contained types, and functional pipelines remain visible to
-the compiler through typing, effect analysis, and optimization.
-The showcase programs are executable syntax guides:
-
-- [static duck typing](examples/static_duck_typing.moss) uses one method-based function with unrelated concrete types.
-- [named traits](examples/traits.moss) calls one trait-typed function for Circle and Rectangle.
-- [collections and methods](examples/collections_and_methods.moss) combines inferred Vector, Map, and Queue values with object methods.
-- [functional dataflow](examples/functional_dataflow.moss) executes a typed `map |> filter |> map |> sum` chain that `-O` fuses into one explicit loop.
-- [functional basics](examples/functional_basics.moss) combines named functions, placeholders, an immutable capture, and source reuse.
-- [functional reductions](examples/functional_reductions.moss) demonstrates every terminal, empty-input identities, explicit-initializer `reduce`, and wrapping sums.
-- [static functional callables](examples/functional_static_callables.moss) uses bound methods, method placeholders, and a higher-order helper specialized to two functions.
-- [functional effect order](examples/functional_effect_order.moss) makes eager stage ordering and an effectful reduction initializer observable.
-- [functional objects](examples/functional_objects.moss) runs statically resolved read-only methods and trivial field projections over user-defined values.
-- [functional domains](examples/functional_domains.moss) shows a synchronous `message` inside a callback acting as a fusion barrier, followed by a scalar message boundary.
-- [functional terminal optimization](examples/functional_terminal_optimization.moss) shows count-to-length, dead pure-map removal, and safe `any`/`all` short-circuiting.
-- [functional scope fusion](examples/functional_scope_fusion.moss) keeps a source-level immutable binding while removing its physical intermediate collection.
-- [functional shared traversal](examples/functional_shared_traversal.moss) gives three independent terminals one stable-source traversal.
-- [functional materialization](examples/functional_materialization.moss) shows a second consumer forcing a collection to exist before its terminal traversal is shared.
-- [functional semantic optimization](examples/functional_semantic_optimization.moss) shows map/filter composition, a virtual named intermediate, dead-map removal, known-size count, and safe short circuiting.
-- [mini application](examples/mini_application.moss) combines jobs, static dispatch, collections, synchronous domains, messages, and a pipeline.
-- [Phase 2 safety](examples/phase2_safety.moss) demonstrates compatible read aliases, copyable projections, consuming method receivers, and explicit message/reply copy boundaries.
-- [Phase 7 project](examples/projects/phase7_demo) demonstrates a manifest, debug/release builds, in-source and external tests, filtered benchmarks, and baselines.
-- [failing Phase 7 test](examples/projects/phase7_failing_test) demonstrates Moss-level assertion details and continued test reporting.
-
-Every valid showcase compiles to standalone Rust with `make examples`; the generated
-programs contain concrete calls rather than runtime trait objects or vtables.
-
-## Emacs, debugging, and disassembly
-
-Load the bundled major mode directly from the repository:
-
-```elisp
-(add-to-list 'load-path "/path/to/moss/editors/emacs")
-(require 'moss-mode)
-```
-
-From a `.moss` buffer, `M-x moss-check-buffer`, `moss-compile-buffer`, and
-`moss-run-buffer` use Emacs compilation buffers with clickable Moss diagnostics.
-`moss-show-generated-rust` and `moss-show-debug-map` open generated artifacts without
-requiring their paths to be known.
-
-For source debugging, run `M-x moss-build-debug-buffer`, add Moss breakpoints with
-`M-x moss-toggle-breakpoint`, then launch `M-x moss-debug` through optional `dape` and
-`lldb-dap`. Exact debug stops are mirrored back into Moss source through the shared map.
-`M-x moss-disassemble-at-point` resolves the native symbol from that map and invokes
-`llvm-objdump` or GNU `objdump`. See [Moss tooling and source
-provenance](docs/TOOLING.md) for setup, LLDB commands, metadata format, and optimized
-debugging limitations.
-
-## Functional pipelines
-
-The Phase 4 source surface includes `map`, `filter`, `reduce`, `sum`, `count`,
-`any`, and `all`:
-
-```moss
-fn normalize(value: Int) -> Int:
-  return value * 2
-
-result = values
-  |> map(normalize)
-  |> filter(_ > 0)
-  |> map(_ + 10)
-  |> sum
-```
-
-The reference meaning is logically eager and source ordered: each complete `map` or
-`filter` produces its logical result before the next stage starts. Ordinary
-transformations READ their source and do not mutate it. `reduce` always takes an
-explicit initial accumulator, so its empty-input result is defined; a nontrivial bound
-initializer transfers into the reduction rather than being copied. Empty `sum` and
-`count` produce zero, `any` produces false, and `all` produces true.
-Initializer effects are part of the `Reduce` node and conservatively stop fusion, so
-their eager evaluation order is identical under `-O0` and `-O`.
-
-Named functions, statically bound instance methods such as `scaler.apply`, method
-placeholders such as `_.score()`, and placeholder expressions with immutable captures
-are supported. A higher-order helper
-may accept an untyped callable parameter, but every call must bind it to one concrete
-function identity; the compiler specializes the helper and erases that parameter
-before Rust generation. There are no boxed callables, function-object vtables, or
-runtime callable lookup.
-
-`-O` fuses a chain only when its inferred observable effects make element-at-a-time
-execution equivalent to the eager reference. I/O, local mutation, domain observation
-or mutation, `message`, unresolved effects, and possible failure ordering are
-barriers. A missed fusion is valid; a speculative reordering is not. Fused reductions
-use Moss's wrapping integer arithmetic and allocate no intermediate vector.
-
-Phase 4.5 applies the same proof facts to scope-level plans. Exact `count` becomes a
-length query; preceding pure, non-failing, non-divergent maps can be removed when only
-cardinality is used. Optimized `any` and `all` stop their own computation once known,
-while the `-O0` reference and effectful, possibly failing, or potentially divergent
-callbacks still visit every element. A
-single-use immutable functional binding may remain virtual across the immediately
-following consumer. Independent pure terminals over one unchanged local source may
-share one explicit loop. Multiple uses, mutable bindings, intervening effects, source
-mutation, dependencies between terminal results, and control flow conservatively keep
-the relevant materialization or traversal boundary.
-
-Potential divergence is distinct from failure and other observable effects. A callback
-containing `while`, or transitively calling one that does, is conservatively marked
-`may_diverge`; Moss does not claim to prove termination. This fact blocks optimizations
-that skip invocations, but does not by itself block ordered fusion that preserves the
-eager program's callback work.
-
-Phase 4.6 makes the pre-lowering rewrite boundary explicit. Moss semantic-space
-optimization is a Moss-to-Moss rewrite phase: it preserves a functional computation in
-semantic form long enough to replace it with an equivalent Moss computation that asks
-for less work. Adjacent pure maps become one composed map; adjacent pure filters become
-one left-to-right, short-circuiting predicate; a safe trailing map whose values are
-ignored by `count` disappears; and inert literal counts can become constants. A filter
-may move through `map(_)` only for a trivial element type, where the existing typed IR
-proves the map is identity. General predicate pushdown and algebraic rewriting remain
-deferred because the compiler cannot yet prove them.
-
-This is not lazy language semantics. Moss retains eager reference behavior under `-O0`;
-the optimized plan merely avoids materialization or callback work when effects,
-ownership, failure, and termination facts prove that difference unobservable. If an
-optimization can be described as “this equivalent Moss computation asks for less
-work,” it belongs here. SIMD, threading, GPUs, loop tiling, instruction selection, and
-the existing domain-placement/locking choices belong downstream. Phase 4.6 adds no
-MLIR or generic rewrite framework.
-
-Semantic analysis attaches each expression's exact pipeline-plan ID to the checked AST;
-code generation does not infer a plan again from matching source text. Numeric IR IDs are
-transient compilation handles, while deterministic source/provenance identities carry
-function/method context, real Moss lines, stage identity, and fusion provenance. Non-Copy
-placeholder identity/projection maps are rejected at Moss level when they would move out
-of the READ-only source, and capture mutation remains forbidden even when hidden behind
-ordinary helper calls.
-
-Inspect the compiler-owned representation and decisions with:
-
-```sh
-./moss -O --dump-functional-ir examples/functional_dataflow.moss -o build/dataflow.rs
-./moss -O --explain-fusion tests/phase4_effect_smoke.moss --check
-```
-
-See [Functional/dataflow design and lowering](docs/FUNCTIONAL_DATAFLOW.md) for the
-semantic and compiler contract.
-
-Additional examples:
-
-- `examples/counter.moss` demonstrates synchronous calls and protected state updates.
-- `examples/shared_memory.moss` shows synchronous Moss calls through plan-driven handler entry.
-- `examples/frontend_syntax.moss` demonstrates inferred `fn` functions, `type Name:` fields, pipelines, and synchronous message expressions.
-- `examples/object_pipeline.moss` computes an object value inside a domain and sends a primitive argument through a declared route.
-- `examples/message_payload_reply.moss` shows explicit copies when replying with an immutable record payload.
-- `examples/use_after_transfer.moss` demonstrates the approved ownership-transfer rule for nontrivial local values.
-
-The intentional programs under `examples/errors` showcase current Moss diagnostics rather
-than Rust backend failures:
-
-- [concrete route cycle](examples/errors/domain_route_cycle.moss) rejects a cyclic static composition and identifies its route bindings.
-- [recursive local call](examples/errors/recursive_call.moss) has a base case but is rejected because Phase 2 has no recursion.
-- [conflicting call access](examples/errors/conflicting_access.moss) passes one binding as both WRITE and READ; two READ uses remain legal in `phase2_safety.moss`.
-
-Inspect them directly:
-
-```sh
-./moss --check examples/errors/domain_route_cycle.moss
-./moss --check examples/errors/recursive_call.moss
-./moss --check examples/errors/conflicting_access.moss
-```
-
-To inspect the ownership failure:
-
-```sh
-./moss --check examples/use_after_transfer.moss
-```
-
-The later use is rejected with `OWNERSHIP_USE_AFTER_CONSUME`. Whole-local
-assignment still moves; use `copy(original)` before the move when both values
-must remain independently usable. See the single source of truth for these
-rules in [OWNERSHIP.md](docs/OWNERSHIP.md).
-
-## Implemented language slice
-
-Moss `Int` is currently a signed 64-bit two's-complement value. Integer
-arithmetic has explicit wrapping semantics: overflow is reduced modulo
-2<sup>64</sup> and interpreted again as a signed `Int`. In particular, integer
-`+`, `-`, and `*`, integer collection `sum`, and generated state-update
-equivalents all wrap. Integer division also wraps its sole signed-overflow case
-(`Int` minimum divided by `-1`); division by zero remains invalid. Generated
-Rust uses explicit wrapping operations, so Rust debug/release overflow settings
-cannot change Moss results.
-
-- Domain-owned mutable state
-- Synchronous, run-to-completion domain handlers with planned shared/exclusive class locking
-- Cross-domain synchronous `message domain.Handler(...)` calls
-- `message domain.Handler(...)` expression and statement syntax
-- Request/reply handlers with inferred or optional `-> Type` reply annotations
-- Domain state with inferred `name = initializer` bindings and optional `name: Type` constraints
-- `reply value`, which sends one response and terminates the current handler
-- terminating `reply value` handlers; source-level `await` is retired
-- Inferred top-level `fn` functions, expression-bodied functions, and typed functional pipeline expressions
-- Eager ordered `map`, `filter`, `reduce(initial, fn)`, `sum`, `count`, `any`, and `all`
-- Static named/placeholder callables, immutable captures, and specialized higher-order helpers
-- Effect-aware functional fusion and explicit-loop allocation elimination under `-O`
-- Explicit functional materialization plans, count/short-circuit simplification,
-  conservative cross-binding fusion, and shared-source terminal DAGs under `-O`
-- Bounded Phase 4.6 semantic-stage rewrites for adjacent map/filter composition,
-  identity-only predicate pushdown, terminal-aware dead work, and inert known-size count
-- Versioned Phase 6A JSON bootstrap, structured diagnostics, and read-only semantic
-  queries over existing compiler facts
-- Deterministic `--dump-functional-ir` and `--explain-fusion` development diagnostics
-- Colon-style `type Name:` declarations with statically inferred field types
-- direct construction of statically enumerable domain instances in `main`'s composition prefix
-- declaration-only `domainroutes(...)` slots and a concrete DAG with deterministic `domain_rank`
-- Primitive and object value payloads
-- `let`, `var`, `if`/`else`, `while`, `echo`, and bare `return`
-- Nim-style `and`, `or`, `not`, `true`, and `false`
-- `int`, `float`, `bool`, `string`, `seq`, `option`, and `table` lowering
-
-## Synchronous domain messages and reply
-
-A handler without `-> Type` is inferred as one-way when it has no `reply`. If it contains
-typed `reply` expressions, Moss infers their common reply type. An explicit `-> Type`
-remains an optional constraint:
-
-```moss
-fn Reserve(quantity: int) -> bool:
-  if available >= quantity:
-    available = available - quantity
-    reply true
-  reply false
-```
-
-Domain state uses the same inference rule:
-
-```moss
-domain Counter:
-  value = 0
-```
-
-Named object constructors use `=` for value bindings:
-
-```moss
-Quote(symbol = "MOSS", price = 12.5)
-```
-
-`message receiver.Handler(args)` is a synchronous, blocking domain invocation. It may
-be used as an expression or statement; statement position discards the result. The
-caller continues only after the handler has completed:
-
-```moss
-reserved = message inventory.Reserve(quantity)
-message logger.Record(reserved)
-```
-
-Use `value = message receiver.Handler(...)` when the handler returns a value.
-
-Ordinary local functions use `fn` and can omit types when inference is unambiguous:
-
-```moss
-fn square(x) = x * x
-
-fn score(x):
-  x |> square
-```
-
-`message` is required at domain boundaries. A naked `domain.Handler(...)` call is
-rejected by the compiler; a call without a domain receiver remains an ordinary local
-function call. Self-send and same-domain handler chaining are illegal; put reusable
-logic in an ordinary helper function.
-
-`reply expr` evaluates `expr` and terminates the handler immediately, like a handler
-return. A value-returning handler must reply on every normal path; a no-value handler
-may complete normally. A synchronous message lends its arguments as read-only
-borrows; the sender keeps its values, and a handler must use `copy(...)` to reply
-with a payload.
-
-`spawn` is retired. Construct domains directly in the initial `main` composition prefix;
-the compiler rejects construction in later execution, control flow, helpers, or handlers.
-`domainroutes(...)` declares immutable route slots, and state fields/routes share one
-member namespace. The compiler validates a concrete acyclic routing graph and assigns
-deterministic domain ranks. Phase 10.6C derives synchronization classes, handler
-ClassSets, and local class ranks in a graph-relative
-[`SynchronizationPlan`](docs/SYNCHRONIZATION_PLAN.md). Production locking acquires exactly each handler's planned shared/exclusive
-classes in increasing class rank and retains them through nested synchronous
-messages until handler completion.
-
-## Domain execution
-
-```text
-Moss source → checker / specialization / effects → ConcreteDomainGraph
-                                                   ├─ SynchronizationPlan
-                                                   │    → production: 2PL + borrowed views
-                                                   └─ Fast Debug: direct deterministic interpreter
-```
-
-Production runtime instances own one RwLock per synchronization class. Protected
-READs borrow stored values under retained guards; immutable state is borrowed
-without locking. EXCLUSIVE values move into private working storage and are
-restored before unlock. Nested calls retain ancestor guards and obey the global
-`(domain_rank, class_rank)` order. Unexpected handler failure is fail-closed.
-See [synchronization architecture](docs/SYNCHRONIZATION_PLAN.md) for the structural
-deadlock proof and domain-local conflict-serializability scope.
-
-`-O0`, `-O`, and `-Oshared-memory` share the same domain runtime semantics and
-`SynchronizationPlan`-driven `Handler2PL` backend. `-O` and `-Oshared-memory`
-enable functional rewrites and fusion; `-O0` uses eager functional lowering.
-Generated ordinary domain calls contain no queue, completion channel, worker
-loop, or future. Historical/superseded backend options `--cluster` and
-`--no-await-error-handling` were removed in Phase 10.6E.
-
-Future lexical domain scopes and concurrency ingress remain separate design
-work. No fairness guarantee, transaction spanning domains, or recovery semantics
-is implied. Early unlock, lock elision, and atomic promotion remain future
-optimizations. The historical domain-cluster backend is removed; any future
-domain grouping would require a separate compiler correctness proof.
-
-## Important status
-
-Moss v0.1 reached its usable-language milestone in Phase 10. Phase 15 dogfooding and the Phase 15.15 language expressiveness work are complete; see the current status and EXPRESS-005 corrective review for validation details. Moss implements static duck-typed methods and named traits through concrete call-site specialization, typed functional/dataflow IR, conservative loop fusion, scope-level materialization/shared-traversal planning, and bounded semantic-space rewrites, without runtime trait or callable objects. Associated types, trait inheritance, default trait methods, source-level generics, automatic parallel/GPU lowering, later failure and cancellation semantics, blocking FFI rules, and arenas remain future work.
-
-Phase 2 local calls are non-recursive. The compiler rejects direct and mutual call cycles, infers READ/WRITE/CONSUME effects internally, and rejects conflicting access to the same storage location within one call. Moss exposes no ownership or effect annotations.
-
-`message` lends read-only arguments for the synchronous call, makes no copy, and
-leaves the sender's value available afterward. `executor.invoke` moves its
-arguments into queued work; use `copy(x)` if the caller must keep `x`. Replies
-of incoming payloads and domain state require `copy(...)`. A non-primitive
-value is never copied implicitly, and a non-primitive field leaves only through
-`take(...)` where supported or `copy(...)`. Whole-local moves, rebinding,
-control-flow joins and loops, and reads in place retain their existing rules.
-See [OWNERSHIP.md](docs/OWNERSHIP.md).
-
-## Fast Debug execution
-
-For a short edit → check → run loop, execute a checked Moss program without
-generating Rust:
-
-```text
-moss run --interp program.moss
-moss test --interp tests/fast_debug.moss
-moss debug app
-```
-
-Use `--trace` for newline-delimited structured execution events. The
-interpreter supports ordinary functions, arithmetic, locals, conditionals,
-while loops, structs, methods, assertions, and synchronous domains with static
-routes, directly interpreted synchronous messages, and terminating replies,
-including nested calls; see [Fast Debug](docs/FAST_DEBUG.md). In a project,
-`moss debug` interprets the complete reachable Moss source closure (or the
-legacy project uber-module) as one checked program; it never mixes a native
-Moss module into that run.
-
-## Semantic convergence and agent introspection
-
-[`docs/SEMANTIC_CONVERGENCE.md`](docs/SEMANTIC_CONVERGENCE.md) records the current
-first-order effect graph, functional callable specialization, domain terminology,
-derived synchronization plan, and the shared semantic/source identities exposed by
-`moss-agent-1`. It also calls out explicitly historical material and design questions
-that remain intentionally open.
-
-## Platforms
-
-The source builds on Linux and macOS with a C++17 compiler. Build the compiler locally with `make`.
-# Modules and separate compilation
-
-Phase 8 adds first-class modules, qualified imports/exports, materialized typed
-exports, semantic-IR generic exports, and `.mossi` module interfaces. See
-[`docs/MODULES.md`](docs/MODULES.md) and
-[`docs/MODULE_ABI.md`](docs/MODULE_ABI.md). Concrete topology and synchronization plans are keyed by exact domain
-instances and specializations, never by domain type alone.
-
-For a minimal two-module project, see
-[`examples/projects/phase10_modules`](examples/projects/phase10_modules):
-`Second` imports the exported functions from `First` and can be run with
-`moss debug .` or `moss build` from that directory.
-
-## Roadmap
-
-Phase 15 dogfooding and Phase 20 FileIO/Executor work are implemented. Phase 21
-Error Handling and Recovery is in progress; the remaining capture-frame and
-proof gates are recorded in [.codex/CURRENT_STATUS.md](.codex/CURRENT_STATUS.md).
-Later roadmap entries include Phase 22 Agent Agency Tooling, Phase 23 Static
-Compiler Optimizations, and Phase 24 TileIR Integration (Dynamic
-Optimizations). The [v0.1 roadmap](docs/V0_1.md) preserves current
-restrictions and the future scoped-domain breadcrumb.
-
-Phase 22.2A and 22.2B provide a hardened, frozen 30-task
-[fresh-agent benchmark](benchmarks/agent/README.md) and the isolated
-`moss agent benchmark list|show|validate|run` interface. Phase 22.2C's canonical
-pre-22.1 fresh-agent baseline and Phase 22.2D's aggregate analysis are recorded.
-Phase 22.1's teaching diagnostics and post-change comparison are complete. Phase
-22.3 adds robust semantic target resolution plus compiler-owned type, ownership,
-effect, call/message, domain, synchronization, and structured why facts. Its fixed
-post-22.3 benchmark remains flat at 28/30 final passes while showing lower tool-call
-counts in one stochastic trial; see
-[`docs/PHASE_22_3_QUERY_MAPPING.md`](docs/PHASE_22_3_QUERY_MAPPING.md) and the
-[`post-22.3 report`](benchmarks/agent/baselines/post-22.3/REPORT.md). Phase 22.4
-adds bounded structured Fast Debug queries for events, semantic targets, causal
-subtrees, messages, control flow, writes, and failure slices. Phase 22.5 remains
-repair/workflow automation and is not part of this completed consolidation.
+- **It works across statements, not just within a chain.** Named intermediates
+  disappear, and independent results over the same data share one pass.
+- **It is driven by proofs.** The compiler infers what every callback can do: I/O,
+  mutation, messages, failure, non-termination. Stages are fused only when running them
+  element by element is indistinguishable from the eager meaning. A missed optimization
+  is allowed; an observable reordering is not.
+- **It rewrites the computation, not just the loop.** Adjacent maps compose, a `count`
+  after a pure `map` skips the map, `any` and `all` stop early when it is safe.
+- **The eager meaning is always there.** Unoptimized builds and Fast Debug run every
+  stage in order, and every optimization decision can be inspected.
+
+---
+
+## Moss next to Rust
+
+| | Rust | Moss |
+|---|---|---|
+| Memory safety | borrow checker; you write `&`, `&mut`, lifetimes | same guarantees; ownership inferred, no annotations |
+| Data races | prevented by `Send`/`Sync` | prevented: only actor state exists to share |
+| Locks | you choose, size and order them | derived, ranked and deadlock-free by construction |
+| Generics | traits and type parameters | untyped functions, specialized per call site |
+| Iterators | lazy adapters | eager meaning, fused by effect proofs |
+| Dev loop | compile, then run | interpret instantly, compile for release |
+
+Moss stands on Rust for everything below the language: the type system it lowers to,
+the code generator and the ecosystem. Moss owns the decisions above it.
+
+## What Moss deliberately leaves out
+
+No recursion, no runtime polymorphism, no closures, no shared mutable state outside
+domains, no implicit copies of non-primitive values. Each omission buys something the
+compiler can then prove for you.
+
+## Work in progress
+
+- **Recursive data: graphs, trees and linked lists.** Moss has no recursive types in
+  the core language. Recursive structures are coming through a dedicated Graph DSL, so
+  they stay safe by construction rather than reopening the door to aliasing and races.
+- **GPU support.**
+- **Complex I/O through formally proven protocols.** Interactions with the outside
+  world that need more than a simple blocking call will be described as protocols the
+  compiler verifies before it generates the code.
+
+## Learn more
+
+- [A Gentle Introduction to Moss](https://github.com/kuttyb/moss/blob/main/docs/GENTLE_INTRODUCTION_TO_MOSS.md), written for Python programmers
+- [Language syntax](https://github.com/kuttyb/moss/blob/main/docs/LANGUAGE_SYNTAX.md) and [ownership](https://github.com/kuttyb/moss/blob/main/docs/OWNERSHIP.md)
+- [How the compiler derives locks](https://github.com/kuttyb/moss/blob/main/docs/SYNCHRONIZATION_PLAN.md)
+- [Functional pipelines and fusion](https://github.com/kuttyb/moss/blob/main/docs/FUNCTIONAL_DATAFLOW.md)
+- [Fast Debug](https://github.com/kuttyb/moss/blob/main/docs/FAST_DEBUG.md) and [AI-native development](https://github.com/kuttyb/moss/blob/main/docs/AI_NATIVE_DEVELOPMENT.md)
+- [Projects, building and testing](https://github.com/kuttyb/moss/blob/main/docs/PROJECT_WORKFLOW.md)
