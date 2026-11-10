@@ -1558,6 +1558,7 @@ run_case primitive_field_projection tests/primitive_field_projection.moss \
 run_case method_receiver_effects tests/method_receiver_effects.moss \
   "$(printf '42\n7')"
 run_case generic_method_effects tests/generic_method_effects.moss '12 5'
+run_case generic_constructor_field_specialization tests/generic_constructor_field_specialization.moss '3 2'
 run_case phase2_safety examples/phase2_safety.moss \
   "$(printf 'read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original')"
 
@@ -1679,6 +1680,8 @@ reject_case consume_write_alias "'item' is passed to 'conflict' through overlapp
 reject_case double_consume_alias "'item' is passed to 'conflict' through overlapping CONSUME and CONSUME accesses"
 reject_case nontrivial_field_move "value 'packet' was transferred"
 reject_case branch_join_consume "value 'item' was transferred"
+reject_case generic_constructor_field_consume "value 'x' was transferred"
+reject_case generic_constructor_field_consume_alias "value 'y' was transferred"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \

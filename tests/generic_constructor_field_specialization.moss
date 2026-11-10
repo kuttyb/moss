@@ -1,0 +1,17 @@
+type Bag:
+  count: Int
+
+type Holder:
+  item
+
+fn hold_copy(x):
+  h = Holder(item = x)
+  return x
+
+fn hold_owned(x):
+  h = Holder(item = x)
+  return h
+
+fn main():
+  h = hold_owned(Bag(count = 2))
+  echo hold_copy(3), h.item.count

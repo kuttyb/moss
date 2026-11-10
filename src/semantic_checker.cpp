@@ -23760,6 +23760,23 @@ class Checker {
           current_body_types_->scoped_locals = found->second;
           current_body_types_->scoped_locals_active = true;
           env.types.terms = found->second;
+          // The retained terms are the generic body's solver facts. In a
+          // specialization, a concrete binding is authoritative over them
+          // (the same rule the specialization's type walk applies to its
+          // parameters); otherwise an unsolved term such as `_typevar:...`
+          // hides the concrete type and ownership decisions see no type.
+          if (checking_specialization_)
+            for (auto term = env.types.terms.begin(); term != env.types.terms.end();) {
+              auto binding = env.types.bindings.find(term->first);
+              const string concrete = binding != env.types.bindings.end() && binding->second
+                  ? canonical_type_name(binding->second) : string();
+              if (!concrete.empty() && concrete != "_value" &&
+                  concrete.find("_typevar") == string::npos &&
+                  !contains_internal_placeholder(concrete))
+                term = env.types.terms.erase(term);
+              else
+                ++term;
+            }
         }
         current_body_types_->binding_identities_at_statement[&s] =
             env.binding_identities;

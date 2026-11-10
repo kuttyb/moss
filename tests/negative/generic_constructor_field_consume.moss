@@ -1,0 +1,14 @@
+type Bag:
+  count: Int
+
+type Holder:
+  item
+
+fn hold(x):
+  h = Holder(item = x)
+  return x
+
+fn main():
+  b = Bag(count = 1)
+  c = hold(b)
+  echo 1
