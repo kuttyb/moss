@@ -6,7 +6,7 @@
 #   <base-moss>  an unmodified build of the base commit (e.g. 8c363fee), for parity
 #   <out-dir>    results; reruns overwrite
 #   JOBS=N       parallel jobs (default: nproc)
-#   SWEEP=all    validate every .moss under tests/ examples/ benchmarks/
+#   SWEEP=all    validate every .moss under tests/ examples/ benchmarks/ plus tools/sumt/fixtures/
 #                (default: top-level tests/ and examples/, tools/sumt/targets.txt,
 #                tools/sumt/fixtures/)
 #
@@ -18,7 +18,7 @@ BASE=$1; OUT=$2; JOBS=${JOBS:-$(nproc)}; SWEEP=${SWEEP:-bounded}
 MOSS=./moss
 mkdir -p "$OUT/val"; rm -f "$OUT"/val/*.jsonl
 if [ "$SWEEP" = all ]; then
-  find tests examples benchmarks -name '*.moss' -not -path '*/build/*' | sort > "$OUT/files.txt"
+  { find tests examples benchmarks -name '*.moss' -not -path '*/build/*'; ls tools/sumt/fixtures/*.moss; } | sort -u > "$OUT/files.txt"
 else
   { ls tests/*.moss examples/*.moss; cat tools/sumt/targets.txt; ls tools/sumt/fixtures/*.moss; } | sort -u > "$OUT/files.txt"
 fi
