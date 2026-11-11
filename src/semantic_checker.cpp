@@ -737,6 +737,7 @@ class Checker {
 
   void run() {
     CompilerStageTimer semantic_timer("semantic_analysis");
+    sumt_capture_pristine();
     const auto imported_signatures = imported_function_signatures();
     {
       CompilerStageTimer timer("type_inference");
@@ -899,7 +900,15 @@ class Checker {
       // Signature and effect fixed points have settled. The return cache has
       // been kept coherent by invalidation at each changing inference round.
       check_method_ownership();
-      for (const auto& f : p_.functions) check_function(f);
+      for (const auto& f : p_.functions) {
+        try {
+          check_function(f);
+        } catch (...) {
+          sumt_shadow_emit_rejected(f);
+          throw;
+        }
+        sumt_shadow_emit_function(f, "generic_check");
+      }
       refresh_open_nominal_constructor_results_from_checked_types();
       refresh_open_arithmetic_summaries_from_checked_types();
       refresh_open_collection_summaries_from_checked_types();
@@ -1864,6 +1873,8 @@ class Checker {
           effects_complete && dependencies_complete &&
           occurrence_dependencies_complete;
     }
+    sumt_shadow_emit();
+    sumt_validate();
     retain_checked_body_ir();
     // The staged ABI cannot publish a multi-statement generic/private-helper
     // chain through the legacy generic_stmt fallback. Until every reachable
@@ -2681,6 +2692,18 @@ class Checker {
     std::unordered_map<const Stmt*, moss::TypeRef> assignment_values;
     vector<moss::OpenCallableSummaryFacts::OperationFact> open_operations;
     vector<moss::Requirement> open_operator_requirements;
+    // SUMT shadow only: relations this generic check deferred to each concrete
+    // specialization, recorded where the check decided to defer them.
+    struct SumtDeferredRelation {
+      string kind;   // same_type
+      string origin; // e.g. "push argument of 'v'"
+      moss::TypeRef left;
+      moss::TypeRef right;
+      int line = 0;
+      // kind "result": the occurrence whose result is `left`.
+      uint32_t occurrence = UINT32_MAX;
+    };
+    vector<SumtDeferredRelation> sumt_deferred_relations;
     TypeEnv closed_projection;
     struct ProviderCallableOrigin {
       string file;
@@ -10045,7 +10068,13 @@ class Checker {
               err(arm.line, "on_fail capture '" + name +
                   "' has different types on selected raise paths",
                   "ON_FAIL_CAPTURE_TYPE_MISMATCH");
-            if (exit.ownership.moved.count(name))
+            if (exit.ownership.moved.count(name) &&
+                !exit.ownership.moved.at(name).conditional_on.empty())
+              sumt_record("on_fail_conditional_transfer", name,
+                          sumt_identity(exit.ownership, name),
+                          exit.ownership.moved.at(name).conditional_on,
+                          exit.ownership.moved.at(name).line, arm.line);
+            else if (exit.ownership.moved.count(name))
               err(arm.line, "on_fail capture '" + name +
                   "' was consumed before a selected raise",
                   "ON_FAIL_CAPTURE_CONSUMED");
@@ -10558,6 +10587,16 @@ class Checker {
     for (std::size_t index = 0; index < f.params.size(); ++index)
       ownership.binding_identities[f.params[index].name] =
           "parameter:" + std::to_string(index);
+    struct SumtOwnershipScope {
+      const Function*& slot;
+      const Function* prior;
+      ~SumtOwnershipScope() { slot = prior; }
+    } sumt_scope{sumt_ownership_function_, sumt_ownership_function_};
+    if (sumt_shadow_enabled_ && !checking_specialization_ &&
+        (f.generic || f.static_dispatch))
+      sumt_ownership_function_ = &source_function;
+    if (deferred_match)
+      sumt_record("ownership_deferred_generic_match", "", "", "", f.line, 0);
     OwnershipEnv final_ownership = deferred_match ? std::move(ownership) :
         check_ownership(f.body, std::move(ownership), nullptr, nullptr);
     check_fileio_lifecycle(f.body, entry_env, nullptr, f.line,
@@ -10880,6 +10919,9 @@ class Checker {
   struct MoveInfo {
     int line = 0;
     string destination;
+    // SUMT shadow only: non-empty when the generic ownership walk skipped
+    // this transfer because the type was unresolved (the placeholder type).
+    string conditional_on;
   };
 
   struct OwnershipEnv {
@@ -10909,6 +10951,8 @@ class Checker {
     std::unordered_map<string,string> borrowed_enum_payloads;
     std::map<string,MoveInfo> moved;
   };
+
+#include "sumt_shadow.inc"
 
   struct ExceptionalOwnershipExit {
     RaiseSet alternatives;
@@ -11432,6 +11476,14 @@ class Checker {
     auto type = inferred_expr_term(arguments.front(), env);
     if (current_body_types_ && type)
       type = current_body_types_->solver.resolve(type);
+    // SUMT shadow: copy's result is its argument's type. The generic check
+    // knows this (inferred_expr) but the occurrence's solver term does not
+    // carry it; record the relation where copy is checked.
+    if (sumt_shadow_enabled_ && !checking_specialization_ && current_body_types_ && type &&
+        !type->is_closed() && !current_body_types_->active_expression_occurrences.empty())
+      current_body_types_->sumt_deferred_relations.push_back(
+          {"result", "copy result", type, nullptr, line,
+           current_body_types_->active_expression_occurrences.back()});
     if (!type && current_check_result_function_ &&
         current_check_result_function_->static_dispatch &&
         !checking_specialization_)
@@ -11454,12 +11506,48 @@ class Checker {
     }
   }
 
+  // The single ownership transfer decision for a value of `type`, for
+  // concrete and symbolic (placeholder) types alike.
+  //   NoTransfer   copy types and domain handles
+  //   Transfer     every other resolved type, and placeholders nested inside
+  //                a constructor that is never copy (vector[_generic:x], …)
+  //   Conditional  copy-ness depends on an unresolved type: a bare
+  //                placeholder, or option[...] over one
+  // transfer_type() and effect_requires_borrow() are adapters over this
+  // decision. They keep their historical answers for Conditional and for
+  // placeholders (transfer_type: transfers; effect_requires_borrow: does not),
+  // so checker behavior is unchanged; SUMT records where those defaults apply.
+  enum class TransferDecision { NoTransfer, Transfer, Conditional };
+
+  static bool placeholder_copy_dependent(const string& canonical) {
+    const string t = trim(canonical);
+    if (internal_semantic_placeholder(t)) return true;
+    if (starts_with(t, "option[") && t.size() > 8 && t.back() == ']')
+      return placeholder_copy_dependent(t.substr(7, t.size() - 8));
+    return false;
+  }
+
+  TransferDecision ownership_transfer_decision(const string& type) const {
+    const string t = canonical_type_name(type);
+    if (copy_type_name(t) || domains_.count(t)) return TransferDecision::NoTransfer;
+    if (!t.empty() && contains_internal_placeholder(t) && placeholder_copy_dependent(t))
+      return TransferDecision::Conditional;
+    return TransferDecision::Transfer;
+  }
+
+  TransferDecision ownership_transfer_decision(const moss::TypeRef& type) const {
+    return ownership_transfer_decision(canonical_type_name(type));
+  }
+
   bool transfer_type(const string& type) const {
-    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+    const auto decision = ownership_transfer_decision(type);
+    if (decision == TransferDecision::Conditional)
+      sumt_note_placeholder_default("transfer_type: assumed transfer", type);
+    return decision != TransferDecision::NoTransfer;
   }
 
   bool transfer_type(const moss::TypeRef& type) const {
-    return !copy_type(type) && !domains_.count(canonical_type_name(type));
+    return transfer_type(canonical_type_name(type));
   }
 
   static bool tree_expressions_structurally_equal(const string& left,
@@ -14585,8 +14673,18 @@ class Checker {
           auto parsed = moss::Type::parse_canonical(canonical_type_name(element));
           if (parsed && !contains_internal_placeholder(element))
             loop_term = freshen_open_type(*parsed);
-          else if (starts_with(element, "_iterator_element:") || open_generic(element) || element == "_value")
+          else if (starts_with(element, "_iterator_element:") || open_generic(element) || element == "_value") {
             loop_term = solver.fresh(0);
+            // SUMT shadow: the generic check defers iteration over an open
+            // source and gives the element a fresh variable. Record the
+            // relation it deferred (element of the source), here, where the
+            // decision is made.
+            if (sumt_shadow_enabled_ && !checking_specialization_)
+              if (auto source = term_for(statement.b))
+                body_types.sumt_deferred_relations.push_back(
+                    {"element", "iteration over '" + trim(statement.b) + "'", source,
+                     loop_term, statement.line});
+          }
         }
         body_types.for_bindings[&statement] = loop_term;
         if (loop_term) {
@@ -14687,7 +14785,18 @@ class Checker {
           }
         }
         auto retained_source = body_types.known_expression(statement.b);
-        if (!instantiated && !retained_source && !inferred) continue;
+        if (!instantiated && !retained_source && !inferred) {
+          // SUMT shadow: rebinding an existing local to a value this pass
+          // cannot type is left to specialization. Record the relation
+          // between the binding and the value (resolved against the value's
+          // checked occurrence at this line).
+          auto prior = locals.find(statement.a);
+          if (sumt_shadow_enabled_ && !checking_specialization_ && prior != locals.end())
+            body_types.sumt_deferred_relations.push_back(
+                {"binding_value", "rebinding of '" + statement.a + "'", prior->second, nullptr,
+                 statement.line});
+          continue;
+        }
         auto parsed = inferred ? moss::Type::parse_canonical(
             canonical_type_name(*inferred)) : std::nullopt;
         if (!instantiated && !retained_source && !parsed) {
@@ -14709,6 +14818,11 @@ class Checker {
         body_types.assignment_values.emplace(&statement, term);
         const bool prior_open = prior != locals.end() &&
             !solver.resolve(prior->second)->is_closed();
+        if (sumt_shadow_enabled_ && !checking_specialization_ && prior != locals.end() &&
+            (prior_open || !solver.resolve(term)->is_closed()))
+          body_types.sumt_deferred_relations.push_back(
+              {"same_type", "reassignment of '" + statement.a + "'", prior->second, term,
+               statement.line});
         if (prior != locals.end() && !solver.unify(prior->second, term))
           err(statement.line, "assignment type mismatch for binding '" +
               statement.a + "'", "TYPE_MISMATCH");
@@ -14739,6 +14853,11 @@ class Checker {
         // specialization. Reporting either here states the wrong thing.
         const bool resolved_argument = argument->kind != moss::TypeKind::Domain &&
             !contains_internal_placeholder(argument->to_canonical_string());
+        if (!resolved_argument && sumt_shadow_enabled_ && !checking_specialization_ &&
+            argument->kind != moss::TypeKind::Domain)
+          body_types.sumt_deferred_relations.push_back({"same_type",
+              statement.b + " argument of '" + statement.a + "'",
+              current->type_args.front(), argument, statement.line});
         if (resolved_argument &&
             !solver.unify(current->type_args.front(), argument)) {
           const string message = statement.b +
@@ -16676,8 +16795,20 @@ class Checker {
   }
 
   bool effect_requires_borrow(const string& type) const {
-    string t = canonical_type_name(type);
-    if (t.empty() || contains_internal_placeholder(t) || copy_type(t) || domains_.count(t)) return false;
+    const string t = canonical_type_name(type);
+    const auto decision = ownership_transfer_decision(t);
+    if (t.empty()) {
+      // An untyped value is also a permissive default: it can hide a transfer.
+      sumt_note_placeholder_default("effect_requires_borrow: untyped value assumed no transfer", t);
+      return false;
+    }
+    if (decision == TransferDecision::NoTransfer) return false;
+    if (contains_internal_placeholder(t)) {
+      sumt_note_placeholder_default(decision == TransferDecision::Conditional
+          ? "effect_requires_borrow: assumed no transfer (conditional)"
+          : "effect_requires_borrow: assumed no transfer (always transfers)", t);
+      return false;
+    }
     return true;
   }
 
@@ -18570,8 +18701,13 @@ class Checker {
                                        accesses[right].location))
           continue;
         if (accesses[left].effect == Effect::Read &&
-            accesses[right].effect == Effect::Read)
+            accesses[right].effect == Effect::Read) {
+          sumt_conditional_conflict(line, call_name, accesses[left].location.root,
+                                    accesses[left].expression,
+                                    accesses[left].argument_index,
+                                    accesses[right].argument_index, env);
           continue;
+        }
         const string left_mode = diagnostic_effect_name(accesses[left].effect);
         const string right_mode = diagnostic_effect_name(accesses[right].effect);
         vector<DiagnosticEntity> entities;
@@ -22840,6 +22976,12 @@ class Checker {
   void require_available(int line, const string& expression, const OwnershipEnv& env) const {
     for (const auto& entry : env.moved) {
       if (expression_uses(expression, entry.first)) {
+        if (!entry.second.conditional_on.empty()) {
+          sumt_record("use_after_conditional_transfer", entry.first,
+                      sumt_identity(env, entry.first),
+                      entry.second.conditional_on, entry.second.line, line);
+          continue;
+        }
         err(line, "value '" + entry.first + "' was transferred to '" +
             entry.second.destination + "' at line " + std::to_string(entry.second.line) +
             " (the value was consumed). Reinitialize a mutable binding or construct a new owned value.");
@@ -22874,6 +23016,9 @@ class Checker {
                        const string& destination) const {
     auto type = env.types.find(name);
     if (type == env.types.end() || !transfer_type(type->second)) return;
+    if (ownership_transfer_decision(type->second) == TransferDecision::Conditional)
+      sumt_record("assumed_transfer", name, sumt_identity(env, name),
+                  canonical_type_name(type->second), line, 0);
     if (env.borrowed_iterator_bindings.count(name))
       err(line, "cannot consume borrowed loop value '" + name +
           "'; use copy(" + name + ") to pass an independent value to " +
@@ -23189,16 +23334,28 @@ class Checker {
     string base, index;
     if (tree_parse_index(expression, base, index)) {
       auto container_type = inferred_expr_type(base, env.types);
+      // SUMT shadow: with an open container or element the walk cannot tell
+      // whether this read is an implicit copy (allowed only for primitives)
+      // and lets it pass; record that obligation at this decision point.
+      auto note_open = [&](const string& why) {
+        if (sumt_recording_ownership())
+          sumt_record("implicit_copy_unless_primitive", trim(expression), "", why,
+                      ownership_current_stmt_ ? ownership_current_stmt_->line : 0,
+                      ownership_current_stmt_ ? ownership_current_stmt_->line : 0);
+      };
       if (!container_type) return false;
       const string container = canonical_type_name(*container_type);
       if (container != "vector" && container != "queue" &&
           !starts_with(container, "vector[") &&
           !starts_with(container, "queue[") && container != "map" &&
-          !starts_with(container, "map["))
+          !starts_with(container, "map[")) {
+        if (contains_internal_placeholder(container)) note_open(container);
         return false;
+      }
       auto result_type = inferred_expr_type(expression, env.types);
-      if (!result_type) return false;
+      if (!result_type) { note_open("unresolved element"); return false; }
       type = *result_type;
+      if (contains_internal_placeholder(type)) note_open(type);
       return !is_implicit_copy_primitive(type);
     }
 
@@ -23259,8 +23416,12 @@ class Checker {
     if (auto elements = tree_parse_vector_literal(value)) {
       for (const auto& element : *elements) {
         reject_implicit_field_move(line, element, env);
-        check_ownership_expression(line, element, env,
-                                   vector_element_effect(element, env.types));
+        const Effect element_effect = vector_element_effect(element, env.types);
+        check_ownership_expression(line, element, env, element_effect);
+        if (element_effect == Effect::Read)
+          sumt_conditional_transfer(line, trim(element),
+                                    inferred_expr_type(element, env.types),
+                                    "a vector element at line " + std::to_string(line), env);
       }
       return;
     }
@@ -23573,8 +23734,13 @@ class Checker {
           auto supplied_value = supplied.find(field.name);
           if (supplied_value != supplied.end()) {
             reject_implicit_field_move(line, supplied_value->second, env);
-            check_ownership_expression(line, supplied_value->second, env,
-                constructor_field_effect(field, supplied_value->second, env.types));
+            const Effect field_effect =
+                constructor_field_effect(field, supplied_value->second, env.types);
+            check_ownership_expression(line, supplied_value->second, env, field_effect);
+            if (field_effect == Effect::Read)
+              sumt_conditional_transfer(line, trim(supplied_value->second),
+                  inferred_expr_type(supplied_value->second, env.types),
+                  "field '" + field.name + "' of '" + callee + "'", env);
           }
         }
         return;
@@ -23616,6 +23782,8 @@ class Checker {
                   *function->second, index,
                   concrete_argument_types(call_arguments, env.types));
         check_ownership_expression(line, call_arguments[index], env, argument_effect);
+        if (function != functions_.end() && sumt_shadow_enabled_ && !checking_specialization_)
+          sumt_call_argument(line, callee, index, call_arguments[index], argument_effect, env);
       }
       return;
     }
@@ -23643,7 +23811,7 @@ class Checker {
 
   static void merge_moved(OwnershipEnv& destination, const OwnershipEnv& branch) {
     for (const auto& entry : branch.moved) {
-      if (destination.types.count(entry.first)) destination.moved.emplace(entry.first, entry.second);
+      if (destination.types.count(entry.first)) sumt_merge_move(destination.moved, entry);
     }
   }
 
@@ -23760,6 +23928,23 @@ class Checker {
           current_body_types_->scoped_locals = found->second;
           current_body_types_->scoped_locals_active = true;
           env.types.terms = found->second;
+          // The retained terms are the generic body's solver facts. In a
+          // specialization, a concrete binding is authoritative over them
+          // (the same rule the specialization's type walk applies to its
+          // parameters); otherwise an unsolved term such as `_typevar:...`
+          // hides the concrete type and ownership decisions see no type.
+          if (checking_specialization_)
+            for (auto term = env.types.terms.begin(); term != env.types.terms.end();) {
+              auto binding = env.types.bindings.find(term->first);
+              const string concrete = binding != env.types.bindings.end() && binding->second
+                  ? canonical_type_name(binding->second) : string();
+              if (!concrete.empty() && concrete != "_value" &&
+                  concrete.find("_typevar") == string::npos &&
+                  !contains_internal_placeholder(concrete))
+                term = env.types.terms.erase(term);
+              else
+                ++term;
+            }
         }
         current_body_types_->binding_identities_at_statement[&s] =
             env.binding_identities;
@@ -23873,7 +24058,7 @@ class Checker {
             path_types.push_back(branch.types);
             continuing_paths.push_back(branch);
             for (const auto& moved : branch.moved)
-              merged_moves.emplace(moved);
+              sumt_merge_move(merged_moves, moved);
           }
         }
         env = incoming;
@@ -23932,11 +24117,16 @@ class Checker {
               // at the edge. The outer binding is visible again in the arm;
               // only a non-Copy one may have been consumed before the shadow.
               if (!same_binding && !copy_type(binding.second)) {
-                recovered.moved.emplace(
-                    binding.first, MoveInfo{arm.line, "shadowed before raise"});
+                if (ownership_transfer_decision(binding.second) ==
+                    TransferDecision::Conditional)
+                  sumt_record("assumed_transfer", binding.first,
+                              sumt_identity(incoming, binding.first),
+                              canonical_type_name(binding.second), arm.line, 0);
+                sumt_merge_move(recovered.moved, std::pair<const string, MoveInfo>(
+                    binding.first, MoveInfo{arm.line, "shadowed before raise"}));
               } else if (auto moved = raised.ownership.moved.find(binding.first);
                          moved != raised.ownership.moved.end()) {
-                recovered.moved.emplace(*moved);
+                sumt_merge_move(recovered.moved, *moved);
               }
             }
           }
@@ -24015,10 +24205,17 @@ class Checker {
                               current_domain, current_handler, exceptional);
         if (!is_if && body.can_continue)
           for (const auto& moved : body.moved)
-            if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first))
+            if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first)) {
+              if (!moved.second.conditional_on.empty()) {
+                sumt_record("loop_conditional_transfer", moved.first,
+                            sumt_identity(incoming, moved.first),
+                            moved.second.conditional_on, moved.second.line, s.line);
+                continue;
+              }
               err(s.line, "loop may reach its next iteration with outer binding '" +
                   moved.first + "' consumed; reinitialize a var on every continuing path",
                   "LOOP_OUTER_BINDING_CONSUMED");
+            }
         if (is_if && index < statements.size() && statements[index].indent == level &&
             statements[index].kind == Stmt::Kind::Else) {
           ++index;
@@ -24087,10 +24284,17 @@ class Checker {
         OwnershipEnv incoming = env;
         if (body.can_continue)
           for (const auto& moved : body.moved)
-            if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first))
+            if (incoming.types.count(moved.first) && !incoming.moved.count(moved.first)) {
+              if (!moved.second.conditional_on.empty()) {
+                sumt_record("loop_conditional_transfer", moved.first,
+                            sumt_identity(incoming, moved.first),
+                            moved.second.conditional_on, moved.second.line, s.line);
+                continue;
+              }
               err(s.line, "loop may reach its next iteration with outer binding '" +
                   moved.first + "' consumed; reinitialize a var on every continuing path",
                   "LOOP_OUTER_BINDING_CONSUMED");
+            }
         TypeEnv joined_types;
         for (const auto& entry : incoming.types) {
           auto found = body.types.find(entry.first);
@@ -24126,6 +24330,8 @@ class Checker {
             }
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
+            if (storage_location(s.b, env.types))
+              sumt_conditional_transfer(s.line, source, source_type, s.a, env);
           }
           record_direct_raise();
           std::optional<string> type;
@@ -24200,6 +24406,8 @@ class Checker {
             }
           } else {
             check_ownership_expression(s.line, s.b, env, Effect::Read);
+            if (storage_location(s.b, env.types))
+              sumt_conditional_transfer(s.line, source, source_type, s.a, env);
           }
           record_direct_raise();
           if (auto constructed = domain_constructor(s.b)) {
@@ -26334,6 +26542,21 @@ class Checker {
       } else if (open_generic(local->second)) {
         if (resolved_target_id)
           *resolved_target_id = "binding:pending:" + identity;
+        // SUMT shadow: the stage's callback contract is deferred to
+        // specialization here. Record it (operation, callable binding,
+        // concrete input types) where the decision is deferred.
+        if (sumt_shadow_enabled_ && !checking_specialization_ && current_body_types_ &&
+            std::none_of(input_types.begin(), input_types.end(), [&](const string& type) {
+              return type.empty() || contains_internal_placeholder(type) ||
+                     unresolved_semantic_type(type);
+            })) {
+          string contract = operation_name + "|" + identity;
+          for (const auto& type : input_types) contract += "|" + canonical_type_name(type);
+          current_body_types_->sumt_deferred_relations.push_back(
+              {"callback", contract, nullptr, nullptr, line,
+               current_body_types_->active_expression_occurrences.empty()
+                   ? UINT32_MAX : current_body_types_->active_expression_occurrences.back()});
+        }
         return "_functional_callable_result:" + identity;
       } else {
         err(line, "callable identity '" + identity +
@@ -26629,6 +26852,67 @@ class Checker {
           current_body_types_->active_expression_occurrences.empty()) return;
       const auto pipeline_id =
           current_body_types_->active_expression_occurrences.back();
+      // SUMT shadow (proof of concept): a pipeline over an open source or an
+      // open callable is deferred here. Record its shape where the decision
+      // is deferred: the source term plus each stage's text, with references
+      // to locals marked ({fn:x} for a callable stage argument, {val:x} for a
+      // value) so they can be re-bound at instantiation. Stage arguments that
+      // mention a local inside a larger expression are not recorded.
+      if (sumt_shadow_enabled_ && !parsed->stages.empty()) {
+        auto source = current_body_types_->known_expression(parsed->source);
+        if (!source) source = inferred_expr_term(parsed->source, env);
+        string text;
+        bool recordable = static_cast<bool>(source);
+        for (size_t index = 0; recordable && index < parsed->stages.size(); ++index) {
+          const auto& stage = parsed->stages[index];
+          string name = functional_node_name(stage.kind);
+          std::transform(name.begin(), name.end(), name.begin(),
+                         [](unsigned char c) { return static_cast<char>(moss::ascii_to_lower(c)); });
+          string arguments;
+          for (size_t argument = 0; argument < stage.arguments.size(); ++argument) {
+            const string value = trim(stage.arguments[argument]);
+            string rendered = value;
+            if (tree_simple_identifier(value) && env.find(value) != env.end()) {
+              const bool callable_position = argument + 1 == stage.arguments.size();
+              rendered = string(callable_position ? "{fn:" : "{val:") + value + "}";
+            } else {
+              // A local mentioned inside a larger argument (e.g. `_ > limit`)
+              // is marked as a value reference at each whole-identifier use.
+              for (const auto& binding : env.bindings) {
+                if (binding.first == "_" || !expression_uses(rendered, binding.first)) continue;
+                string marked;
+                const string& name = binding.first;
+                bool in_string = false;
+                for (size_t at = 0; at < rendered.size();) {
+                  const char c = rendered[at];
+                  if (c == '"') in_string = !in_string;
+                  const bool boundary_before = at == 0 ||
+                      !(std::isalnum(static_cast<unsigned char>(rendered[at - 1])) ||
+                        rendered[at - 1] == '_' || rendered[at - 1] == '.' || rendered[at - 1] == '{' ||
+                        rendered[at - 1] == ':');
+                  const size_t end = at + name.size();
+                  const bool boundary_after = end >= rendered.size() ||
+                      !(std::isalnum(static_cast<unsigned char>(rendered[end])) || rendered[end] == '_');
+                  if (!in_string && boundary_before && boundary_after &&
+                      rendered.compare(at, name.size(), name) == 0) {
+                    marked += "{val:" + name + "}";
+                    at = end;
+                  } else {
+                    marked += c;
+                    ++at;
+                  }
+                }
+                rendered = marked;
+              }
+            }
+            arguments += (argument ? ", " : "") + rendered;
+          }
+          text += (index ? " ~> " : "") + name + (stage.arguments.empty() ? "" : "(" + arguments + ")");
+        }
+        if (recordable)
+          current_body_types_->sumt_deferred_relations.push_back(
+              {"pipeline", text, source, nullptr, line, pipeline_id});
+      }
       bool stages_resolved = true;
       for (size_t index = 0; index < parsed->stages.size(); ++index) {
         const auto& stage = parsed->stages[index];
@@ -30227,6 +30511,17 @@ class Checker {
         FileIOOwnerScope fileio_owner(fileio_owner_initializer_, statement.b);
         check_expression(statement.line, statement.b, current_env,
                          "initializer");
+        // SUMT shadow: an indexed assignment over an open place or value is
+        // left to specialization; record the place/value relation it defers.
+        if (sumt_shadow_enabled_ && !checking_specialization_ && current_body_types_ &&
+            statement.kind == Stmt::Kind::Assign && !tree_simple_identifier(statement.a)) {
+          auto place = checked_expression_term(statement.a, current_env);
+          auto value = checked_expression_term(statement.b, current_env);
+          if (place && value && (!place->is_closed() || !value->is_closed()))
+            current_body_types_->sumt_deferred_relations.push_back(
+                {"same_type", "indexed assignment to '" + statement.a + "'", place, value,
+                 statement.line});
+        }
         if (statement.kind == Stmt::Kind::Assign &&
             tree_simple_identifier(statement.a) && !current_env.count(statement.a)) {
           auto inferred = inferred_expr_type(statement.b, current_env);
@@ -30237,6 +30532,19 @@ class Checker {
             tree_simple_identifier(statement.a) && current_env.count(statement.a)) {
           const auto prior_type = current_env.at(statement.a);
           auto new_type = inferred_expr_type(statement.b, current_env);
+          // SUMT shadow: when either side is open the compatibility check
+          // below is skipped (left to specialization); record the relation.
+          if (sumt_shadow_enabled_ && !checking_specialization_ && current_body_types_ &&
+              (!new_type || contains_internal_placeholder(*new_type) ||
+               unresolved_semantic_type(*new_type) || contains_internal_placeholder(prior_type) ||
+               !prior_type || !prior_type->is_closed())) {
+            auto prior_term = checked_expression_term(statement.a, current_env);
+            auto value_term = checked_expression_term(statement.b, current_env);
+            if (prior_term && value_term)
+              current_body_types_->sumt_deferred_relations.push_back(
+                  {"same_type", "reassignment of '" + statement.a + "'", prior_term, value_term,
+                   statement.line});
+          }
           if (new_type && !contains_internal_placeholder(prior_type) &&
               !contains_internal_placeholder(*new_type) &&
               prior_type && prior_type->is_closed() &&

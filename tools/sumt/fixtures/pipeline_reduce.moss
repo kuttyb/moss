@@ -1,0 +1,18 @@
+fn add(a: Int, b: Int) -> Int:
+  return a + b
+
+fn concat(a: String, b: String) -> String:
+  return a + b
+
+fn is_even(x: Int) -> Bool:
+  return x % 2 == 0
+
+fn fold_all(xs, f):
+  return xs |> reduce(0, f)
+
+fn fold_from(xs, init, f):
+  return xs |> reduce(init, f)
+
+fn main():
+  echo fold_all([1, 2, 3], add)
+  echo fold_from(["a", "b"], "", concat)

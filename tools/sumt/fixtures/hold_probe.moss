@@ -1,0 +1,14 @@
+type Bag:
+  items: Vector[Int]
+
+type Holder:
+  item
+
+fn hold2(x):
+  h = Holder(item: x)
+  return x
+
+fn main():
+  b = Bag(items: [1])
+  c = hold2(b)
+  echo 1

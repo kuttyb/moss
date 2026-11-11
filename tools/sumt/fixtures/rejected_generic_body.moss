@@ -1,0 +1,6 @@
+fn mix(x, y):
+  v = [x, y]
+  return x
+
+fn main():
+  echo mix(1, 2)

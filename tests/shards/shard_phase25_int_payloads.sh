@@ -215,6 +215,7 @@ run_case primitive_field_projection tests/primitive_field_projection.moss \
 run_case method_receiver_effects tests/method_receiver_effects.moss \
   "$(printf '42\n7')"
 run_case generic_method_effects tests/generic_method_effects.moss '12 5'
+run_case generic_constructor_field_specialization tests/generic_constructor_field_specialization.moss '3 2'
 run_case phase2_safety examples/phase2_safety.moss \
   "$(printf 'read aliases: 7 7\nprimitive projection: 7\nafter message copy: 7 7\ntransferred payload: original')"
 

@@ -1,0 +1,15 @@
+fn is_even(x: Int) -> Bool:
+  return x % 2 == 0
+
+fn is_short(s: String) -> Bool:
+  return s == "ab"
+
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn count_matching(items: Vector[Int], pred) -> Int:
+  return items |> filter(pred) |> count
+
+fn main():
+  v = [1, 2, 3, 4, 5, 6]
+  echo count_matching(v, is_even)

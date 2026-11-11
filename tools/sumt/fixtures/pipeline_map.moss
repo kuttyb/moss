@@ -1,0 +1,14 @@
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn shout(s: String) -> String:
+  return s + "!"
+
+fn is_even(x: Int) -> Bool:
+  return x % 2 == 0
+
+fn transform(xs, f):
+  return xs |> map(f)
+
+fn main():
+  echo transform([1, 2, 3], double)

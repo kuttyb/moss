@@ -1,0 +1,20 @@
+type Bag:
+  count: Int
+
+type Gauge:
+  level: Int
+
+  fn score() -> Int:
+    return level * 2
+
+fn leaf(x):
+  return x.score() + 1
+
+fn middle(x):
+  return leaf(x) * 2
+
+fn root(x):
+  return middle(x) + 3
+
+fn main():
+  echo root(Gauge(level = 1))

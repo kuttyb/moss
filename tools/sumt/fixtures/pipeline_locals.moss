@@ -1,0 +1,12 @@
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn above(xs, limit):
+  return xs |> filter(_ > limit) |> count
+
+fn scaled_sum(xs, k, f):
+  return xs |> map(f) |> map(_ * k) |> sum
+
+fn main():
+  echo above([1, 5, 9], 4)
+  echo scaled_sum([1, 2], 3, double)

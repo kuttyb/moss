@@ -1,0 +1,14 @@
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn is_even(x: Int) -> Bool:
+  return x % 2 == 0
+
+fn shout(s: String) -> String:
+  return s + "!"
+
+fn chain(xs, f, g):
+  return xs |> map(f) |> filter(g) |> count
+
+fn main():
+  echo chain([1, 2, 3], double, is_even)
