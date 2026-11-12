@@ -18930,6 +18930,10 @@ static CheckedProjectUnit check_project_sources(
                             fast_debug_scope->test_filter,
                             fast_debug_scope->all_package_tests);
     prepare_and_validate_module_exports(program, false);
+    // Package hardening: a whole-package check records SUMT summaries for the
+    // interface writer. File-scoped checks and Fast Debug scopes do not.
+    program.sumt_harden = program.explicit_module && !file_check_root &&
+        !fast_debug_scope;
     CheckedProgram checker(program);
     checker.run();
     prepare_and_validate_module_exports(program, true);
@@ -22604,6 +22608,32 @@ static string append_execution_body_section(
   return section.str();
 }
 
+// Package hardening (baby step): publish the checker's SUMT summaries for one
+// module's generic functions as `<module>.sumt`, beside its `.mossi`. Header
+// line, then one JSON object per function, sorted by name. Not part of the
+// .mossi hashes; nothing reads it yet.
+static void write_sumt_sidecar(const Program& program,
+                               const std::filesystem::path& directory,
+                               const string& module) {
+  if (!program.sumt_harden) return;
+  std::ostringstream text;
+  text << "moss-sumt-sidecar-v1\n";
+  for (const auto& [name, entry] : program.sumt_hardened)
+    if (belongs_to_module(name, module)) text << entry << "\n";
+  const auto file = directory / (tooling_name(module) + ".sumt");
+  const string bytes = text.str();
+  std::ifstream old(file, std::ios::binary);
+  std::ostringstream old_bytes;
+  if (old) old_bytes << old.rdbuf();
+  if (old && old_bytes.str() == bytes) return;
+  std::ofstream output(file, std::ios::binary);
+  if (!output)
+    throw ProjectError("MOSS_INTERFACE_ERROR",
+                       "cannot write Moss summary sidecar '" + file.string() + "'",
+                       file.string());
+  output << bytes;
+}
+
 static vector<std::filesystem::path> write_module_interfaces(
     const ProjectManifest& manifest, const Program& program,
     const std::filesystem::path& directory,
@@ -23271,6 +23301,7 @@ static vector<std::filesystem::path> write_module_interfaces(
               location_file.string());
         locations << location_bytes;
       }
+      write_sumt_sidecar(program, directory, entry.first);
       result.push_back(file);
       continue;
     }
@@ -23386,6 +23417,7 @@ static vector<std::filesystem::path> write_module_interfaces(
                            file.string());
       output << text;
     }
+    write_sumt_sidecar(program, directory, entry.first);
     result.push_back(file);
   }
   return result;

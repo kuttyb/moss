@@ -32,7 +32,9 @@ struct SumtOwnershipEvent {
   int use_line = 0;
 };
 
-bool sumt_shadow_enabled_ = std::getenv("MOSS_SUMT_SHADOW") != nullptr &&
+// Package hardening turns on the same recording, without the env var.
+bool sumt_shadow_enabled_ =
+    (std::getenv("MOSS_SUMT_SHADOW") != nullptr || p_.sumt_harden) &&
     !sumt_nested_checker_active();
 const Function* sumt_ownership_function_ = nullptr;
 mutable vector<SumtOwnershipEvent> sumt_ownership_events_;
@@ -1058,13 +1060,11 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
   if (!sumt_shadow_enabled_) return;
   if (compiled_interface_file(function.source_file)) return;
   if (!function.generic && !function.static_dispatch) return;
-  const string target = std::getenv("MOSS_SUMT_SHADOW");
-  std::ofstream file;
-  std::ostream* out = &std::cerr;
-  if (target != "-" && !target.empty()) {
-    file.open(target, std::ios::app);
-    if (file) out = &file;
-  }
+  // The line is built in three parts: head and legacy go only to the shadow
+  // file; `entry` (shadow summary plus ownership) is also what hardening
+  // publishes.
+  std::ostringstream head_text, legacy_text, entry_text;
+  std::ostream* out = &head_text;
   {
     *out << "{\"phase\":";
     sumt_json_string(*out, phase);
@@ -1074,6 +1074,7 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
     sumt_json_string(*out, function.source_file);
 
     // Existing producer, for comparison.
+    out = &legacy_text;
     *out << ",\"legacy\":{";
     if (function.open_summary) {
       const auto& legacy = *function.open_summary;
@@ -1163,6 +1164,7 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
       }
       *out << "]";
     };
+    out = &entry_text;
     *out << ",\"shadow\":{\"parameters\":";
     write_list(fold.parameters);
     *out << ",\"result\":";
@@ -1224,7 +1226,23 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
       sumt_json_string(*out, std::get<2>(key));
       *out << ",\"count\":" << count << "}";
     }
-    *out << "]}}\n";
+    *out << "]}}";
+  }
+  if (const char* target = std::getenv("MOSS_SUMT_SHADOW")) {
+    std::ofstream file;
+    std::ostream* sink = &std::cerr;
+    if (string(target) != "-" && *target) {
+      file.open(target, std::ios::app);
+      if (file) sink = &file;
+    }
+    *sink << head_text.str() << legacy_text.str() << entry_text.str() << "\n";
+  }
+  if (p_.sumt_harden) {
+    std::ostringstream hardened;
+    hardened << "{\"function\":";
+    sumt_json_string(hardened, function.name);
+    hardened << entry_text.str();
+    p_.sumt_hardened[function.name] = hardened.str();
   }
 }
 
@@ -1236,7 +1254,7 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
 // retains no error provenance. Invariant: only a rejection proven
 // type-independent may be recorded as universal; none is, today.
 void sumt_shadow_emit_rejected(const Function& function) {
-  if (!sumt_shadow_enabled_) return;
+  if (!sumt_shadow_enabled_ || !std::getenv("MOSS_SUMT_SHADOW")) return;
   if (!function.generic && !function.static_dispatch) return;
   const string target = std::getenv("MOSS_SUMT_SHADOW");
   std::ofstream file;
@@ -1875,7 +1893,7 @@ SumtVerdict sumt_concrete(const Function& function, const vector<string>& sigma,
 }
 
 void sumt_validate() {
-  if (!sumt_shadow_enabled_ || !sumt_pristine_) return;
+  if (!sumt_shadow_enabled_ || !sumt_pristine_ || !std::getenv("MOSS_SUMT_SHADOW")) return;
   const string target = std::getenv("MOSS_SUMT_SHADOW");
   std::ofstream file;
   std::ostream* out = &std::cerr;
