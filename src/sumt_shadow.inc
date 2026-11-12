@@ -694,7 +694,14 @@ const SumtFold& sumt_fold(const Function& function) {
         for (;; ++arity) {
           const auto* argument = child_with_role(occurrence.id, "argument:" + std::to_string(arity));
           if (!argument) break;
-          argument_terms += (arity ? ";" : "") + value_of(*argument, argument_free);
+          // A literal argument travels as its source text (#4), not its type:
+          // some member checks depend on the value (FileIO's bounded read
+          // request), which a typed placeholder cannot carry.
+          const string literal = trim(argument->source_expression);
+          const bool literal_safe = argument->kind == Kind::Literal && !literal.empty() &&
+              literal.find_first_of("|;(),") == string::npos;
+          argument_terms += (arity ? ";" : "") +
+              (literal_safe ? "#" + literal : value_of(*argument, argument_free));
         }
         if (argument_free) { unhandled(occurrence, "member call argument not related to the inputs"); continue; }
         require("member|" + receiver_term + "." + member + "|" + std::to_string(arity) +
@@ -1334,6 +1341,7 @@ std::optional<string> sumt_term_expression(const string& term, TypeEnv& env,
                                            int& fresh) const {
   const string value = trim(term);
   if (value.empty() || value[0] == '?') return std::nullopt;
+  if (value[0] == '#') return value.substr(1);  // a literal, used as written
   if (starts_with(value, "index(") && value.back() == ')') {
     const string inner = value.substr(6, value.size() - 7);
     int depth = 0;
@@ -1428,11 +1436,29 @@ std::optional<string> sumt_term_expression(const string& term, TypeEnv& env,
     if (ordinal >= sigma.size() || sigma[ordinal].empty()) return std::nullopt;
     string expression = "__sumt_p" + std::to_string(ordinal);
     if (end == value.size()) return expression;
-    // $k.member.result or $k.member(a;b).result
+    // <receiver>.member.result or <receiver>.member(a;b).result, where the
+    // receiver is $k or itself a member result (chains: $0.read(#0;#4).result.length.result).
     const string rest = value.substr(end);
     if (!starts_with(rest, ".") || rest.size() < 9 ||
         rest.substr(rest.size() - 7) != ".result") return std::nullopt;
-    const string call = rest.substr(0, rest.size() - 7);
+    const string chain = value.substr(0, value.size() - 7);  // drop the last ".result"
+    // The last member segment: scan back over a trailing (...) and the name.
+    size_t cut = chain.size();
+    if (chain.back() == ')') {
+      int depth = 0;
+      for (size_t at = chain.size(); at-- > 0;) {
+        if (chain[at] == ')') ++depth;
+        else if (chain[at] == '(' && --depth == 0) { cut = at; break; }
+      }
+    }
+    const size_t dot = chain.rfind('.', cut == chain.size() ? string::npos : cut);
+    if (dot == string::npos || dot < end) return std::nullopt;
+    if (dot > end) {
+      auto receiver = sumt_term_expression(chain.substr(0, dot), env, sigma, fresh);
+      if (!receiver) return std::nullopt;
+      expression = *receiver;
+    }
+    const string call = chain.substr(dot);
     const size_t open_paren = call.find('(');
     if (open_paren == string::npos) return expression + call + "()";
     if (call.back() != ')') return std::nullopt;
