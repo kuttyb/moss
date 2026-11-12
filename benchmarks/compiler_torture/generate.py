@@ -203,9 +203,9 @@ def gen_w7_collections(nesting_depth: int) -> str:
     if nesting_depth == 1:
         lines.append("  echo v_1[0]")
     else:
-        lines.append(f"  var cur_{nesting_depth - 1} = v_{nesting_depth}[0]")
+        lines.append(f"  var cur_{nesting_depth - 1} = copy(v_{nesting_depth}[0])")
         for i in range(nesting_depth - 1, 1, -1):
-            lines.append(f"  var cur_{i - 1} = cur_{i}[0]")
+            lines.append(f"  var cur_{i - 1} = copy(cur_{i}[0])")
         lines.append("  echo cur_1[0]")
     lines.append("")
     return "\n".join(lines)

@@ -81,7 +81,7 @@
     },
     "w7_collections_nested_k2": {
       "expected_status": "pass",
-      "sha256": "9c70b5f764ae4aea8ec02b479be43ec0b214470337f953cee38034ef5a4dd2a9"
+      "sha256": "3fd072601fbcc8d6be0d01dcba72e5ae98b8566029259cfeb53ffdb44ebc898c"
     },
     "w7_collections_nested_k3": {
       "expected_status": "pass",
@@ -89,11 +89,11 @@
     },
     "w7_collections_nested_k4": {
       "expected_status": "pass",
-      "sha256": "baf1194b2cc7eb18b339e014cd156ced30a932b15ecdcf9a49c41178c279f2d7"
+      "sha256": "788edd79c557107e5b48e53a72065e58445ec76c809963164180c985ebfdc6f9"
     },
     "w7_collections_nested_k5": {
       "expected_status": "pass",
-      "sha256": "03ef6f24a0f0ca149b52b5828ba9a8e254219a453af37da25a62838d64d53288"
+      "sha256": "c34527275192964e6d243a20ed77200b58538af95102a1a8192b81093f578302"
     },
     "w8_traits_dispatch_c010": {
       "expected_status": "pass",

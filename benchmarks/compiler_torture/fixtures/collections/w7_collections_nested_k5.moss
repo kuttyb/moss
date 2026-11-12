@@ -7,8 +7,8 @@ fn main():
   var v_3 = [v_2]
   var v_4 = [v_3]
   var v_5 = [v_4]
-  var cur_4 = v_5[0]
-  var cur_3 = cur_4[0]
-  var cur_2 = cur_3[0]
-  var cur_1 = cur_2[0]
+  var cur_4 = copy(v_5[0])
+  var cur_3 = copy(cur_4[0])
+  var cur_2 = copy(cur_3[0])
+  var cur_1 = copy(cur_2[0])
   echo cur_1[0]
