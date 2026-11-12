@@ -11,3 +11,9 @@ export fn root(x):
 
 export fn poke(c):
   return c.bump()
+
+export fn transform(xs, f):
+  return xs |> map(f)
+
+export fn count_matching(items: Vector[Int], pred) -> Int:
+  return items |> filter(pred) |> count

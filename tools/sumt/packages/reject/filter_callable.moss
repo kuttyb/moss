@@ -1,0 +1,9 @@
+module app
+
+import core
+
+fn double(x: Int) -> Int:
+  return x * 2
+
+fn main():
+  echo core.count_matching([1, 2], double)

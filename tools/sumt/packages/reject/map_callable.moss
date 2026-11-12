@@ -1,0 +1,9 @@
+module app
+
+import core
+
+fn shout(s: String) -> String:
+  return s + "!"
+
+fn main():
+  echo core.transform([1, 2], shout)

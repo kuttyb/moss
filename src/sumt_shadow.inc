@@ -2428,6 +2428,22 @@ static std::optional<SumtFold> sumt_fold_from_sidecar(const string& line) {
 // from the published summary before the checker checks it. If the check then
 // throws, the guard records the summary's prediction against the checker's
 // rejection; an accepted call is compared after the run (sumt_consume).
+// A function argument reaches a specialization as `callable:<name>`; Inst
+// (like the validator) takes the function's name at that position.
+static vector<string> sumt_consumer_sigma(const vector<string>& types,
+                                          std::set<size_t>* callables = nullptr) {
+  vector<string> sigma;
+  for (size_t index = 0; index < types.size(); ++index) {
+    string type = canonical_type_name(types[index]);
+    if (starts_with(type, "callable:")) {
+      type = type.substr(9);
+      if (callables) callables->insert(index);
+    }
+    sigma.push_back(type);
+  }
+  return sigma;
+}
+
 std::map<string, std::optional<SumtFold>> sumt_imported_folds_;
 
 const std::optional<SumtFold>* sumt_imported_fold(const string& name) {
@@ -2453,7 +2469,7 @@ struct SumtConsumeGuard {
     if (!fold) return;
     checker = owner;
     function = callee.name;
-    for (const auto& type : types) sigma.push_back(canonical_type_name(type));
+    sigma = sumt_consumer_sigma(types);
     uncaught = std::uncaught_exceptions();
     if (!*fold) { status = "unreadable"; return; }
     status = (*fold)->status;
@@ -2532,13 +2548,20 @@ void sumt_consume() {
         concrete_access.push_back(sumt_effect_name(effect));
       const string concrete_result = canonical_type_name(specialization.return_type);
       SumtVerdict predicted{"unknown", "", ""};
+      std::set<size_t> callables;
+      const auto sigma = sumt_consumer_sigma(specialization.parameter_types, &callables);
       try {
-        predicted = sumt_instantiate(function, *fold, specialization.parameter_types);
+        predicted = sumt_instantiate(function, *fold, sigma);
       } catch (const std::exception& error) {
         predicted = {"unknown", "", string("summary evaluation failed: ") + error.what()};
       }
+      // A callable position is the function's identity, not storage.
+      bool access_agrees = predicted.access.size() == concrete_access.size();
+      for (size_t index = 0; access_agrees && index < concrete_access.size(); ++index)
+        if (!callables.count(index) && predicted.access[index] != concrete_access[index])
+          access_agrees = false;
       const bool agree = predicted.verdict == "accept" && predicted.result == concrete_result &&
-          predicted.access == concrete_access;
+          access_agrees;
       if (agree) ++agreed;
       auto write_list = [&](const vector<string>& values) {
         *out << "[";
