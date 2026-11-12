@@ -1,0 +1,5 @@
+load before (0.10546875, 1.5947265625, 2.16845703125)
+calibration b2_k04 before: 527.9 ms
+b3_dag_d20_w4_k02: moss check <file> --json  wall 375.4 ms (min 357.3, max 395.4, spread 1.11)  cpu 375.1 ms  rss(time %M) 17 MiB  tree peak 18 MiB  exit ok=True
+b3_fanin_d50_w4_k02: moss check <file> --json  wall 584.0 ms (min 558.2, max 592.4, spread 1.06)  cpu 583.9 ms  rss(time %M) 17 MiB  tree peak 19 MiB  exit ok=True
+calibration b2_k04 after: 526.6 ms (drift 0.3%); load after (0.3603515625, 1.55517578125, 2.14306640625)

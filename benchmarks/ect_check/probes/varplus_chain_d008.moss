@@ -1,0 +1,40 @@
+type T:
+  v: Int
+
+  fn score() -> Int:
+    return v + 1
+
+fn n0(x):
+  return x.score()
+
+fn n1(x):
+  var c = n0(x)
+  return c + 1
+
+fn n2(x):
+  var c = n1(x)
+  return c + 1
+
+fn n3(x):
+  var c = n2(x)
+  return c + 1
+
+fn n4(x):
+  var c = n3(x)
+  return c + 1
+
+fn n5(x):
+  var c = n4(x)
+  return c + 1
+
+fn n6(x):
+  var c = n5(x)
+  return c + 1
+
+fn n7(x):
+  var c = n6(x)
+  return c + 1
+
+fn main():
+  echo n7(T(v: 1))
+

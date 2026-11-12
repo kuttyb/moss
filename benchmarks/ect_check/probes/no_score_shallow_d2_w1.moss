@@ -1,0 +1,14 @@
+type Bad:
+  v: Int
+
+fn n001_0(x):
+  return x.score()
+
+fn n000_0(x):
+  return n001_0(x) + 1
+
+fn root(x):
+  return n000_0(x)
+
+fn main():
+  echo root(Bad(v: 1))

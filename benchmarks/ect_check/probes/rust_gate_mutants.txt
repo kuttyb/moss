@@ -1,0 +1,6 @@
+M0_unmutated: clean rc=0 ['RESULT 16 / 16'] []
+M1_drop_spans: CAUGHT rc=1 ['RESULT 15 / 16'] ['[FAIL] rust gate strength: a difference in only ONE of line/column/primary/message/level/code/file/e']
+M2_drop_message: CAUGHT rc=1 ['RESULT 15 / 16'] ['[FAIL] rust gate strength: a difference in only ONE of line/column/primary/message/level/code/file/e']
+M3_drop_revert_check: CAUGHT rc=1 ['RESULT 15 / 16'] ['[FAIL] rust revert check: a reverted tree that differs from the frozen hash aborts the sequence: no ']
+M5_ignore_exit_code: CAUGHT rc=1 ['RESULT 14 / 16'] ['[FAIL] rust error path: reference edit step fails with exit 101, code E0277, and revert passes again', '[FAIL] rust gate strength: a difference in only ONE of line/column/primary/message/level/code/file/e']
+M6_drop_line_only: CAUGHT rc=1 ['RESULT 15 / 16'] ['[FAIL] rust gate strength: a difference in only ONE of line/column/primary/message/level/code/file/e']
