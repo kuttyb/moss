@@ -11,7 +11,17 @@ output; summaries are produced only with `MOSS_SUMT_SHADOW` set.
   `validation_summary` per function). Slow: two nested full checks per
   substitution.
 
-Run everything from the repository root:
+Correctness gates on the current tree (no baseline compiler needed):
+
+    make sumt-smoke    # about a minute: package boundary, fixtures
+    make sumt-check    # every .moss: package boundary, shadow neutrality, validation
+
+Each step prints PASS/FAIL; the target fails if any step does. Validation fails
+on an unknown prediction for a complete summary, or on any disagreement whose
+function is not listed in `known_disagreements.txt`. Results: build/sumt-check.
+
+Parity against an older compiler (what changed, not whether it is correct),
+from the repository root:
 
     tools/sumt/run.sh <unmodified-base-moss> <out-dir>      # bounded set
     SWEEP=all JOBS=32 tools/sumt/run.sh <base-moss> <out>   # every .moss

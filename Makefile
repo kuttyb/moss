@@ -68,7 +68,7 @@ RUSTC ?= rustc
 EXAMPLE_BUILD_DIR ?= build/examples/optimized
 TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 16)
 
-.PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-shadow check-preflight check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
+.PHONY: all moss moss-dev moss-opt moss-release sumt-smoke sumt-check check check-parallel check-shadow check-preflight check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
 
 # Default target: build fast development compiler (-O0) and update ./moss
 all: moss-dev
@@ -159,6 +159,14 @@ check: check-preflight
 	env -u MOSS_EST python3 tests/tooling/check_phase27_5_4_runtime_ratchet.py $(MOSS_DEV)
 	env -u MOSS_EST python3 tests/run_parallel.py --jobs $(TEST_JOBS) --compiler-dev $(MOSS_DEV) --compiler-opt $(MOSS_OPT)
 
+# SUMT summary-table gates on the current tree (no baseline compiler).
+# JOBS=N sets parallelism; results go to build/sumt-check.
+sumt-smoke: moss-dev
+	tools/sumt/check.sh quick
+
+sumt-check: moss-dev
+	tools/sumt/check.sh full
+
 check-parallel: check
 
 check-shadow: check-preflight
@@ -225,6 +233,8 @@ help:
 	@echo "  make moss-release - Alias for moss-opt"
 	@echo "  make check        - Run default-mode gates and parallel suite (TEST_JOBS=N)"
 	@echo "  make check-shadow - Run shadow cross-check gates and parallel suite (TEST_JOBS=N)"
+	@echo "  make sumt-smoke   - SUMT gates on packages and fixtures, about a minute (JOBS=N)"
+	@echo "  make sumt-check   - SUMT gates on every .moss: shadow neutrality, validation (JOBS=N)"
 	@echo "  make check-serial - Run original serial regression runner (tests/run.sh)"
 	@echo "  make check-perf   - Run Phase 25.4 B1 permanent compiler performance regression gate"
 	@echo "  make compiler-perf - Run compiler timing/profiling; MOSS_PERF_INCLUDE_REAL_WORLD=1 adds curated Moss workloads; MOSS_PERF_CERTIFY=1 enables certification"

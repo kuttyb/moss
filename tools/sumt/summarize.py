@@ -37,7 +37,10 @@ for path in sys.argv[1:]:
         if complete:
             for x in v:
                 if not x["agree"]:
-                    print("DISAGREE", stem, n, x["sigma"], x["predicted"], x["predicted_reason"][:70], "|", x["concrete"], x["concrete_reason"][:90])
+                    access = ""
+                    if x.get("access_agrees") is False:
+                        access = f' access predicted {x.get("predicted_access")} checker {x.get("concrete_access")}'
+                    print("DISAGREE", stem, n, x["sigma"], x["predicted"], x["predicted_reason"][:70], "|", x["concrete"], x["concrete_reason"][:90] + access)
 if "-v" in sys.argv[0:0] or True:
     for row in rows:
         if row[2] != "complete" or not row[3]: print("LEDGER", *row)

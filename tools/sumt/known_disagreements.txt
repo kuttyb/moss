@@ -1,0 +1,4 @@
+# Validation disagreements that are understood and accepted. One function name
+# per line, then the reason. `tools/sumt/check.sh` fails on any disagreement for
+# a complete summary whose function is not listed here.
+fold_from  summary stricter than the checker: reduce's init is consume_unless_copy in the summary, read in the checker

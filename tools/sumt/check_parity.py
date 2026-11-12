@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """`moss check` parity: every .moss under tests/, examples/, benchmarks/.
 
-usage: check_parity.py <base-moss> <candidate-moss> [--shadow] [--jobs N]
+usage: check_parity.py <base-moss> <candidate-moss> [--shadow] [--jobs N] [--files LIST]
   --shadow  run the candidate with MOSS_SUMT_SHADOW=/dev/null (shadow on)
+  --files   check only the .moss paths listed in LIST (one per line)
 Prints the number of files whose exit code or output differ, then each one.
 """
 import argparse, concurrent.futures as cf, os, pathlib, subprocess
@@ -11,9 +12,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("base"); parser.add_argument("candidate")
 parser.add_argument("--shadow", action="store_true")
 parser.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+parser.add_argument("--files")
 args = parser.parse_args()
-files = sorted(p for d in ("tests", "examples", "benchmarks")
-               for p in pathlib.Path(d).rglob("*.moss") if "build" not in p.parts)
+if args.files:
+    files = sorted(pathlib.Path(l.strip()) for l in open(args.files) if l.strip())
+else:
+    files = sorted(p for d in ("tests", "examples", "benchmarks")
+                   for p in pathlib.Path(d).rglob("*.moss") if "build" not in p.parts)
 
 def run(binary, path, shadow):
     env = dict(os.environ); env.pop("MOSS_SUMT_SHADOW", None); env.pop("MOSS_SUMT_VALIDATE", None)
