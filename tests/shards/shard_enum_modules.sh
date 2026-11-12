@@ -29,6 +29,9 @@ enum_module_expected=$(printf '4\n1')
   fail "enum module Fast Debug output"
 python3 tests/tooling/check_enum_source_free.py ||
   fail "source-free enum module interface"
+trait_alias_native=$(cd tests/tooling/fixtures/trait_alias_export && ../../../../margo run)
+[ "$trait_alias_native" = "18" ] ||
+  fail "exported trait parameter through a local alias (native)"
 # EXPRESS-005 review registry: every repaired F case and decided D case is
 # an ordinary permanent regression across checking, native, and Fast Debug.
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_express005_followups.py "$compiler" --expect-fixed ||
