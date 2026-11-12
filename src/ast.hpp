@@ -915,7 +915,7 @@ struct Program {
   // Package hardening (baby step): when set, the checker records SUMT
   // summaries for this program's generic functions, and the interface writer
   // publishes them as a `<module>.sumt` sidecar. Keyed by function name; each
-  // value is one JSON object (shadow summary plus ownership). Nothing reads it.
+  // value is one JSON object (the shadow summary). Nothing reads it.
   bool sumt_harden = false;
   std::map<string, string> sumt_hardened;
   // Providers loaded from a compiled .mossi/.rlib pair.  Their declarations

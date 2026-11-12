@@ -857,6 +857,7 @@ class Checker {
       invalidate_concrete_effect_cache();
       concrete_effect_cache_enabled_ = true;
       infer_effects();
+      sumt_capture_base_effects();
       infer_observable_effects();
       invalidate_concrete_effect_cache();
       concrete_effect_cache_enabled_ = true;
@@ -18774,6 +18775,11 @@ class Checker {
     parameter_effects.assign(arity, Effect::Read);
     bool found = false;
     string type = canonical_type_name(receiver_type);
+    // SUMT base-effect pass only: an open receiver's method is the
+    // consumer's, so its effect is deferred (recorded as an `effect`
+    // requirement) instead of joined over the methods this build can see.
+    if (sumt_open_method_effects_deferred_ && contains_internal_placeholder(type))
+      return false;
     for (const auto& object : p_.objects) {
       if (!contains_internal_placeholder(type) && traits_.count(type) &&
           !trait_conforms(object.name, type))

@@ -42,6 +42,58 @@ mutable vector<SumtOwnershipEvent> sumt_ownership_events_;
 // keyed by (function, line, which default).
 mutable std::map<std::tuple<string, int, string>, int> sumt_placeholder_defaults_;
 
+// Consumer-independent parameter effects (#5). The checker's effect walk
+// joins an open receiver's method effect over every method of that name the
+// build can see (a closed-world guess: in a package build the consumer's
+// types are absent). The base pass reruns effect inference with those joins
+// deferred; the deferred effect travels as an `effect|...` requirement and
+// is resolved at Inst against the consumer's own method. Shadow only: every
+// effect field the rerun touches is restored.
+bool sumt_open_method_effects_deferred_ = false;
+bool sumt_base_effects_failed_ = false;
+std::map<string, vector<Effect>> sumt_base_effects_;
+
+void sumt_capture_base_effects() {
+  if (!sumt_shadow_enabled_) return;
+  vector<std::pair<vector<Effect>, vector<bool>>> functions;
+  for (const auto& function : p_.functions)
+    functions.emplace_back(function.parameter_effects, function.parameter_mutations);
+  vector<std::pair<vector<Effect>, Effect>> methods;
+  for (const auto& object : p_.objects)
+    for (const auto& method : object.methods)
+      methods.emplace_back(method.parameter_effects, method.receiver_effect);
+  sumt_open_method_effects_deferred_ = true;
+  try {
+    infer_effects();
+    for (const auto& function : p_.functions)
+      if (function.generic || function.static_dispatch)
+        sumt_base_effects_[function.name] = function.parameter_effects;
+  } catch (const std::exception&) {
+    sumt_base_effects_.clear();
+    sumt_base_effects_failed_ = true;
+  }
+  sumt_open_method_effects_deferred_ = false;
+  size_t index = 0;
+  for (auto& function : p_.functions) {
+    function.parameter_effects = functions[index].first;
+    function.parameter_mutations = functions[index].second;
+    ++index;
+  }
+  index = 0;
+  for (auto& object : p_.objects)
+    for (auto& method : object.methods) {
+      method.parameter_effects = methods[index].first;
+      method.receiver_effect = methods[index].second;
+      ++index;
+    }
+  invalidate_concrete_effect_cache();
+  concrete_effect_cache_enabled_ = true;
+}
+
+static string sumt_effect_name(Effect effect) {
+  return effect == Effect::Consume ? "consume" : effect == Effect::Write ? "write" : "read";
+}
+
 // Nested checkers (the shadow validator's copies) never record or emit.
 static bool& sumt_nested_flag() {
   static thread_local bool nested = false;
@@ -708,6 +760,26 @@ const SumtFold& sumt_fold(const Function& function) {
         if (argument_free) { unhandled(occurrence, "member call argument not related to the inputs"); continue; }
         require("member|" + receiver_term + "." + member + "|" + std::to_string(arity) +
                 (arity ? "|" + argument_terms : string()));
+        if (open(*receiver)) {
+          // The method is the consumer's: its effect on the receiver and on
+          // its arguments is deferred to Inst (#5). Inst attributes it to a
+          // parameter passed directly; a place inside a parameter (an element
+          // or an index) has no attribution yet.
+          auto place_of_input = [](const string& term) {
+            return term.find('$') != string::npos && !ends_with(term, ".result") &&
+                (term.find(".element") != string::npos || term.find("index(") != string::npos);
+          };
+          bool place = place_of_input(receiver_term);
+          for (size_t from = 0; !place && !argument_terms.empty();) {
+            const size_t semi = argument_terms.find(';', from);
+            place = place_of_input(argument_terms.substr(from, semi == string::npos ? string::npos : semi - from));
+            if (semi == string::npos) break;
+            from = semi + 1;
+          }
+          if (place) { unhandled(occurrence, "method effect on a place inside a parameter"); continue; }
+          require("effect|" + receiver_term + "." + member + "|" + std::to_string(arity) +
+                  (arity ? "|" + argument_terms : string()));
+        }
         if (open_var)
           context.derived[sumt_var_key(resolved->var_id)] = receiver_term + "." + member +
               (arity ? "(" + argument_terms + ")" : string()) + ".result";
@@ -1036,7 +1108,10 @@ const SumtFold& sumt_fold(const Function& function) {
   // transfers of the parameter binding itself.
   for (size_t index = 0; index < function.params.size(); ++index) {
     string mode = "read";
-    if (function.open_summary && index < function.open_summary->parameter_access.size()) {
+    auto base = sumt_base_effects_.find(function.name);
+    if (base != sumt_base_effects_.end() && index < base->second.size()) {
+      mode = sumt_effect_name(base->second[index]);
+    } else if (function.open_summary && index < function.open_summary->parameter_access.size()) {
       const auto legacy = function.open_summary->parameter_access[index];
       mode = legacy == moss::AccessMode::Consume ? "consume" :
              legacy == moss::AccessMode::Write ? "write" : "read";
@@ -1051,6 +1126,8 @@ const SumtFold& sumt_fold(const Function& function) {
     }
     fold.access.push_back(mode);
   }
+  if (sumt_base_effects_failed_)
+    fold.missing_facts.push_back("consumer-independent parameter effects unavailable");
   return finish();
 }
 
@@ -1062,8 +1139,8 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
   if (!function.generic && !function.static_dispatch) return;
   // The line is built in three parts: head and legacy go only to the shadow
   // file; `entry` (shadow summary plus ownership) is also what hardening
-  // publishes.
-  std::ostringstream head_text, legacy_text, entry_text;
+  // publishes, without the ownership instrumentation.
+  std::ostringstream head_text, legacy_text, entry_text, ownership_text;
   std::ostream* out = &head_text;
   {
     *out << "{\"phase\":";
@@ -1198,7 +1275,10 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
     *out << "}";
     bool first = true;
 
-    // Ownership instrumentation for this function.
+    // Ownership instrumentation for this function. The fold has consumed it
+    // (status, access, copy obligations); it records the checker's own walk,
+    // which can see the consumer's types, so it is not published.
+    out = &ownership_text;
     *out << ",\"ownership\":{\"events\":[";
     first = true;
     for (const auto& event : sumt_ownership_events_) {
@@ -1235,13 +1315,14 @@ void sumt_shadow_emit_function(const Function& function, const char* phase) {
       file.open(target, std::ios::app);
       if (file) sink = &file;
     }
-    *sink << head_text.str() << legacy_text.str() << entry_text.str() << "\n";
+    *sink << head_text.str() << legacy_text.str() << entry_text.str()
+          << ownership_text.str() << "\n";
   }
   if (p_.sumt_harden) {
     std::ostringstream hardened;
     hardened << "{\"function\":";
     sumt_json_string(hardened, function.name);
-    hardened << entry_text.str();
+    hardened << entry_text.str() << "}";
     p_.sumt_hardened[function.name] = hardened.str();
   }
 }
@@ -1341,6 +1422,7 @@ struct SumtVerdict {
   string result;   // result type when accepted
   string reason;
   string origin;   // prediction: origin chain of the failing requirement; oracle: error line
+  vector<string> access;  // per-parameter effect when accepted (read|write|consume)
 };
 
 static string sumt_class_operator(const string& cls) {
@@ -1656,6 +1738,23 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
       env.bindings["__sumt_p" + std::to_string(index)] =
           moss::Type::parse_canonical(sigma[index]).value_or(moss::Type::primitive(sigma[index]));
   int fresh = 0;
+  // Instantiated parameter effects: the base access at sigma, joined with
+  // each deferred method effect (#5).
+  vector<Effect> effects;
+  for (size_t index = 0; index < fold.access.size(); ++index) {
+    const string& mode = fold.access[index];
+    Effect effect = mode == "consume" ? Effect::Consume : mode == "write" ? Effect::Write : Effect::Read;
+    if (mode == "consume_unless_copy")
+      effect = index < sigma.size() && !sigma[index].empty() &&
+          ownership_transfer_decision(sigma[index]) != TransferDecision::NoTransfer
+          ? Effect::Consume : Effect::Read;
+    effects.push_back(effect);
+  }
+  auto bare_parameter = [](const string& term) -> std::optional<size_t> {
+    if (term.size() < 2 || term[0] != '$' ||
+        term.find_first_not_of("0123456789", 1) != string::npos) return std::nullopt;
+    return std::stoul(term.substr(1));
+  };
   for (const auto& requirement : fold.requirements) {
     sumt_failing_requirement_ = requirement;
     vector<string> parts;
@@ -1739,6 +1838,50 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
         if (!sumt_checks(call, env, why))
           return {"reject", "", *receiver + " member '" + member + "' rejected: " + why};
       }
+    } else if (parts[0] == "effect" && parts.size() >= 3) {
+      // The consumer's method, resolved at sigma: its receiver and argument
+      // effects apply to the parameters passed directly.
+      const string path = parts[1];
+      const size_t dot = path.rfind('.');
+      if (dot == string::npos) return {"unknown", "", "malformed effect requirement"};
+      const string receiver_term = path.substr(0, dot);
+      const string member = path.substr(dot + 1);
+      auto receiver = sumt_type_of(receiver_term, env, sigma, fresh);
+      if (!receiver) return {"unknown", "", "effect receiver not expressible: " + requirement};
+      vector<string> argument_terms, argument_types;
+      if (parts.size() >= 4) {
+        size_t from = 0;
+        while (true) {
+          const size_t semi = parts[3].find(';', from);
+          argument_terms.push_back(parts[3].substr(from, semi == string::npos ? string::npos : semi - from));
+          auto type = sumt_type_of(argument_terms.back(), env, sigma, fresh);
+          if (!type) return {"unknown", "", "effect argument not expressible: " + requirement};
+          argument_types.push_back(*type);
+          if (semi == string::npos) break;
+          from = semi + 1;
+        }
+      }
+      Effect receiver_effect = Effect::Read;
+      vector<Effect> argument_effects(argument_terms.size(), Effect::Read);
+      const string concrete = canonical_type_name(*receiver);
+      if (const Method* method = resolve_method(*receiver, member, argument_types)) {
+        receiver_effect = method->receiver_effect;
+        for (size_t index = 0; index < argument_effects.size(); ++index)
+          argument_effects[index] = method_parameter_effect(*method, index);
+      } else if (const auto* builtin = builtin_operation(concrete, member);
+                 builtin && builtin->argument_effects.size() == argument_terms.size()) {
+        receiver_effect = builtin->receiver_effect;
+        argument_effects = builtin->argument_effects;
+      } else if (concrete == "FileIO" && fileio_operation_effect(member)) {
+        receiver_effect = *fileio_operation_effect(member);
+      } else {
+        return {"unknown", "", "no effect model for " + concrete + "." + member};
+      }
+      if (auto index = bare_parameter(receiver_term); index && *index < effects.size())
+        effects[*index] = join_effect(effects[*index], receiver_effect);
+      for (size_t position = 0; position < argument_terms.size(); ++position)
+        if (auto index = bare_parameter(argument_terms[position]); index && *index < effects.size())
+          effects[*index] = join_effect(effects[*index], argument_effects[position]);
     } else if (parts[0] == "op" && parts.size() >= 4) {
       auto left = sumt_term_expression(parts[2], env, sigma, fresh);
       auto right = sumt_term_expression(parts[3], env, sigma, fresh);
@@ -1800,11 +1943,13 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
       return {"unknown", "", "unknown requirement " + requirement};
     }
   }
+  vector<string> access;
+  for (const auto effect : effects) access.push_back(sumt_effect_name(effect));
   if (fold.result == "unit" || fold.result == "?none")
-    return {"accept", fold.result, ""};
+    return {"accept", fold.result, "", "", access};
   auto result = sumt_type_of(fold.result, env, sigma, fresh);
   if (!result) return {"unknown", "", "result not expressible: " + fold.result};
-  return {"accept", *result, ""};
+  return {"accept", *result, "", "", access};
 }
 
 // The oracle: today's checker, through its specialization entry point.
@@ -1873,7 +2018,12 @@ SumtVerdict sumt_concrete(const Function& function, const vector<string>& sigma,
           matches = callables.count(index)
               ? specialization.parameter_types[index].find(sigma[index]) != string::npos
               : specialization.parameter_types[index] == sigma[index];
-        if (matches) verdict.result = canonical_type_name(specialization.return_type);
+        if (matches) {
+          verdict.result = canonical_type_name(specialization.return_type);
+          verdict.access.clear();
+          for (const auto effect : specialization.parameter_effects)
+            verdict.access.push_back(sumt_effect_name(effect));
+        }
       }
     }
     checker.reset();
@@ -2067,8 +2217,17 @@ void sumt_validate() {
         concrete = call;  // a probe that could not run is not evidence either way
       const bool verdict_agrees = predicted.verdict == concrete.verdict;
       const bool result_observed = concrete.verdict != "accept" || !concrete.result.empty();
-      const bool result_agrees = !verdict_agrees || predicted.verdict != "accept" ||
-          !result_observed || predicted.result == concrete.result;
+      // Parameter effects (#5): compared where the oracle's specialization
+      // reports them. A callable position is the function identity, not an
+      // access, and is skipped.
+      bool access_agrees = true;
+      if (verdict_agrees && predicted.verdict == "accept" && !concrete.access.empty() &&
+          concrete.access.size() == predicted.access.size())
+        for (size_t index = 0; index < concrete.access.size(); ++index)
+          if (!callables.count(index) && concrete.access[index] != predicted.access[index])
+            access_agrees = false;
+      const bool result_agrees = (!verdict_agrees || predicted.verdict != "accept" ||
+          !result_observed || predicted.result == concrete.result) && access_agrees;
       if (concrete.verdict == "crash") ++oracle_crashes;
       else {
         ++runs;
@@ -2096,6 +2255,19 @@ void sumt_validate() {
       sumt_json_string(*out, concrete.result);
       *out << ",\"concrete_reason\":";
       sumt_json_string(*out, concrete.reason);
+      auto write_access = [&](const vector<string>& access) {
+        *out << "[";
+        for (size_t index = 0; index < access.size(); ++index) {
+          if (index) *out << ",";
+          sumt_json_string(*out, access[index]);
+        }
+        *out << "]";
+      };
+      *out << ",\"predicted_access\":";
+      write_access(predicted.access);
+      *out << ",\"concrete_access\":";
+      write_access(concrete.access);
+      *out << ",\"access_agrees\":" << (access_agrees ? "true" : "false");
       // Location: the deepest origin of the failing requirement against the
       // line of the compiler's error.
       string predicted_line;
