@@ -2033,7 +2033,12 @@ void sumt_validate() {
       if (call.verdict != direct.verdict && call.verdict != "unknown" && callables.empty()) ++oracle_splits;
       if (call.verdict == "unknown") ++call_site_unavailable;
       SumtVerdict concrete = direct;
-      if (call.verdict == "crash" || direct.verdict == "crash") {
+      if (!callables.empty() && call.verdict == "unknown" &&
+          call.reason.find("probe unavailable") != string::npos) {
+        // A function-name argument can only be checked through a call site,
+        // and the probe cannot run in a module program: no oracle at all.
+        concrete = {"crash", "", "no oracle: function argument in a module program"};
+      } else if (call.verdict == "crash" || direct.verdict == "crash") {
         concrete = call.verdict == "crash" ? call : direct;
         concrete.verdict = "crash";
       } else
