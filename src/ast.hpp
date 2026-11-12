@@ -918,6 +918,10 @@ struct Program {
   // value is one JSON object (the shadow summary). Nothing reads it.
   bool sumt_harden = false;
   std::map<string, string> sumt_hardened;
+  // Consumer side (shadow, MOSS_SUMT_CONSUME): the providers' published
+  // summaries, read from the `.sumt` beside each imported `.mossi`. Keyed by
+  // function name; each value is one sidecar line.
+  std::map<string, string> sumt_imported;
   // Providers loaded from a compiled .mossi/.rlib pair.  Their declarations
   // participate in Moss name/type checking, but are never regenerated into
   // this build's Rust crates.

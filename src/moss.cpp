@@ -18930,6 +18930,22 @@ static CheckedProjectUnit check_project_sources(
                             fast_debug_scope->test_filter,
                             fast_debug_scope->all_package_tests);
     prepare_and_validate_module_exports(program, false);
+    // SUMT consumer (shadow): read each provider's published summaries.
+    if (std::getenv("MOSS_SUMT_CONSUME"))
+      for (const auto& [module, interface_file] : external_module_interfaces) {
+        auto sidecar = interface_file;
+        sidecar.replace_extension(".sumt");
+        std::ifstream input(sidecar);
+        string line;
+        if (!input || !std::getline(input, line) || line != "moss-sumt-sidecar-v1") continue;
+        while (std::getline(input, line)) {
+          const string key = "{\"function\":\"";
+          if (line.rfind(key, 0) != 0) continue;
+          const size_t end = line.find('"', key.size());
+          if (end == string::npos) continue;
+          program.sumt_imported[line.substr(key.size(), end - key.size())] = line;
+        }
+      }
     // Package hardening: a whole-package check records SUMT summaries for the
     // interface writer. File-scoped checks and Fast Debug scopes do not.
     program.sumt_harden = program.explicit_module && !file_check_root &&

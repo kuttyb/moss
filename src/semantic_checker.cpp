@@ -1875,6 +1875,7 @@ class Checker {
     }
     sumt_shadow_emit();
     sumt_validate();
+    sumt_consume();
     retain_checked_body_ir();
     // The staged ABI cannot publish a multi-statement generic/private-helper
     // chain through the legacy generic_stmt fallback. Until every reachable

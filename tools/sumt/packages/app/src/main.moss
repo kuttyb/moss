@@ -1,0 +1,21 @@
+module app
+
+import core
+
+type Counter:
+  n: Int
+  fn bump():
+    n = n + 1
+    return n
+
+type Sq:
+  side: Int
+  fn bump():
+    return side
+
+fn main():
+  echo core.root(3)
+  echo core.root(1.5)
+  k = Counter(n = 1)
+  echo core.poke(k)
+  echo core.poke(Sq(side = 4))

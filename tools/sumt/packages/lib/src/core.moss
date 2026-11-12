@@ -1,0 +1,13 @@
+module core
+
+fn leaf(x):
+  return x + x
+
+fn middle(x):
+  return leaf(x)
+
+export fn root(x):
+  return middle(x)
+
+export fn poke(c):
+  return c.bump()

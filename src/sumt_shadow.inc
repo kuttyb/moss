@@ -2323,6 +2323,187 @@ void sumt_validate() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Consumer side (shadow). A provider package published its summaries as
+// `.sumt`; this checker has just checked each specialization of an imported
+// generic against the provider's body. For each one, the published summary
+// is evaluated at the same types (Inst, the validator's evaluator) and
+// compared with the checker's own conclusion: verdict, result, access.
+// Nothing is decided from the summary yet.
+
+struct SumtJson {
+  enum class Kind { Null, String, Array, Object, Other } kind = Kind::Null;
+  string text;
+  vector<SumtJson> items;
+  vector<std::pair<string, SumtJson>> fields;
+  const SumtJson* get(const string& name) const {
+    for (const auto& field : fields) if (field.first == name) return &field.second;
+    return nullptr;
+  }
+};
+
+// Reads the sidecar's JSON (objects, arrays, strings; anything else is kept
+// as Other). Returns false on malformed input.
+static bool sumt_json_parse(const string& text, size_t& at, SumtJson& out) {
+  auto skip = [&]() { while (at < text.size() && std::isspace(static_cast<unsigned char>(text[at]))) ++at; };
+  auto string_value = [&](string& value) -> bool {
+    if (at >= text.size() || text[at] != '"') return false;
+    for (++at; at < text.size() && text[at] != '"'; ++at) {
+      if (text[at] != '\\') { value += text[at]; continue; }
+      if (++at >= text.size()) return false;
+      const char escaped = text[at];
+      value += escaped == 'n' ? '\n' : escaped == 't' ? '\t' : escaped;
+    }
+    if (at >= text.size()) return false;
+    ++at;
+    return true;
+  };
+  skip();
+  if (at >= text.size()) return false;
+  if (text[at] == '"') { out.kind = SumtJson::Kind::String; return string_value(out.text); }
+  if (text[at] == '[' || text[at] == '{') {
+    const bool object = text[at] == '{';
+    const char close = object ? '}' : ']';
+    out.kind = object ? SumtJson::Kind::Object : SumtJson::Kind::Array;
+    ++at;
+    skip();
+    if (at < text.size() && text[at] == close) { ++at; return true; }
+    while (true) {
+      string name;
+      if (object) {
+        skip();
+        if (!string_value(name)) return false;
+        skip();
+        if (at >= text.size() || text[at] != ':') return false;
+        ++at;
+      }
+      SumtJson value;
+      if (!sumt_json_parse(text, at, value)) return false;
+      if (object) out.fields.emplace_back(name, std::move(value));
+      else out.items.push_back(std::move(value));
+      skip();
+      if (at < text.size() && text[at] == ',') { ++at; continue; }
+      if (at < text.size() && text[at] == close) { ++at; return true; }
+      return false;
+    }
+  }
+  out.kind = SumtJson::Kind::Other;
+  while (at < text.size() && text[at] != ',' && text[at] != '}' && text[at] != ']') ++at;
+  return true;
+}
+
+static std::optional<SumtFold> sumt_fold_from_sidecar(const string& line) {
+  SumtJson root;
+  size_t at = 0;
+  if (!sumt_json_parse(line, at, root) || root.kind != SumtJson::Kind::Object) return std::nullopt;
+  const SumtJson* shadow = root.get("shadow");
+  if (!shadow || shadow->kind != SumtJson::Kind::Object) return std::nullopt;
+  auto list = [&](const char* name) {
+    vector<string> values;
+    if (const auto* field = shadow->get(name))
+      for (const auto& item : field->items) values.push_back(item.text);
+    return values;
+  };
+  auto text = [&](const char* name) {
+    const auto* field = shadow->get(name);
+    return field ? field->text : string();
+  };
+  SumtFold fold;
+  fold.parameters = list("parameters");
+  fold.result = text("result");
+  fold.access = list("access");
+  fold.requirements = list("requirements");
+  fold.missing_facts = list("missing_facts");
+  fold.missing_representation = list("missing_representation");
+  fold.notes = list("notes");
+  for (const auto& callee : list("callees")) fold.callees.insert(callee);
+  if (const auto* origins = shadow->get("requirement_origins"))
+    for (const auto& field : origins->fields) fold.origins[field.first] = field.second.text;
+  fold.status = text("status");
+  fold.done = true;
+  return fold;
+}
+
+void sumt_consume() {
+  const char* target = std::getenv("MOSS_SUMT_CONSUME");
+  if (!target || p_.sumt_imported.empty()) return;
+  std::ofstream file;
+  std::ostream* out = &std::cerr;
+  if (string(target) != "-" && *target) {
+    file.open(target, std::ios::app);
+    if (file) out = &file;
+  }
+  size_t specializations = 0, agreed = 0, without_summary = 0, not_complete = 0;
+  for (const auto& function : p_.functions) {
+    if (!compiled_interface_file(function.source_file) || function.specializations.empty()) continue;
+    auto published = p_.sumt_imported.find(function.name);
+    for (const auto& specialization : function.specializations) {
+      ++specializations;
+      *out << "{\"phase\":\"consume\",\"function\":";
+      sumt_json_string(*out, function.name);
+      *out << ",\"sigma\":[";
+      for (size_t index = 0; index < specialization.parameter_types.size(); ++index) {
+        if (index) *out << ",";
+        sumt_json_string(*out, specialization.parameter_types[index]);
+      }
+      *out << "]";
+      if (published == p_.sumt_imported.end()) {
+        ++without_summary;
+        *out << ",\"summary\":\"absent\"}\n";
+        continue;
+      }
+      const auto fold = sumt_fold_from_sidecar(published->second);
+      if (!fold) {
+        ++without_summary;
+        *out << ",\"summary\":\"unreadable\"}\n";
+        continue;
+      }
+      if (fold->status != "complete") ++not_complete;
+      // The checker accepted this specialization from the provider's body.
+      vector<string> concrete_access;
+      for (const auto effect : specialization.parameter_effects)
+        concrete_access.push_back(sumt_effect_name(effect));
+      const string concrete_result = canonical_type_name(specialization.return_type);
+      SumtVerdict predicted{"unknown", "", ""};
+      try {
+        predicted = sumt_instantiate(function, *fold, specialization.parameter_types);
+      } catch (const std::exception& error) {
+        predicted = {"unknown", "", string("summary evaluation failed: ") + error.what()};
+      }
+      const bool agree = predicted.verdict == "accept" && predicted.result == concrete_result &&
+          predicted.access == concrete_access;
+      if (agree) ++agreed;
+      auto write_list = [&](const vector<string>& values) {
+        *out << "[";
+        for (size_t index = 0; index < values.size(); ++index) {
+          if (index) *out << ",";
+          sumt_json_string(*out, values[index]);
+        }
+        *out << "]";
+      };
+      *out << ",\"summary_status\":";
+      sumt_json_string(*out, fold->status);
+      *out << ",\"predicted\":";
+      sumt_json_string(*out, predicted.verdict);
+      *out << ",\"predicted_reason\":";
+      sumt_json_string(*out, predicted.reason);
+      *out << ",\"predicted_result\":";
+      sumt_json_string(*out, predicted.result);
+      *out << ",\"checked_result\":";
+      sumt_json_string(*out, concrete_result);
+      *out << ",\"predicted_access\":";
+      write_list(predicted.access);
+      *out << ",\"checked_access\":";
+      write_list(concrete_access);
+      *out << ",\"agree\":" << (agree ? "true" : "false") << "}\n";
+    }
+  }
+  *out << "{\"phase\":\"consume_summary\",\"imported_summaries\":" << p_.sumt_imported.size()
+       << ",\"specializations\":" << specializations << ",\"agreed\":" << agreed
+       << ",\"summary_incomplete\":" << not_complete
+       << ",\"summary_absent\":" << without_summary << "}\n";
+}
+
 void sumt_shadow_emit() {
   if (!sumt_shadow_enabled_) return;
   for (const auto& function : p_.functions)
