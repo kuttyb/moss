@@ -26130,6 +26130,7 @@ class Checker {
           name + "'; give empty collections a typed constructor such as Vector[Int]()",
           "TYPE_INFERENCE_FAILED");
     if (concrete_call) {
+      SumtConsumeGuard sumt_consume_probe(this, *function->second, actual_types);
       const auto validation_view = imported_method_validation_view(
           *function->second);
       auto requirements = validate_method_requirements(

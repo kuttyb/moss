@@ -1,0 +1,11 @@
+module app
+
+import core
+
+type W:
+  n: Int
+  fn bump(k: Int):
+    return n + k
+
+fn main():
+  echo core.poke(W(n = 1))

@@ -2424,6 +2424,73 @@ static std::optional<SumtFold> sumt_fold_from_sidecar(const string& line) {
   return fold;
 }
 
+// Rejections (consumer side): a call into an imported generic is predicted
+// from the published summary before the checker checks it. If the check then
+// throws, the guard records the summary's prediction against the checker's
+// rejection; an accepted call is compared after the run (sumt_consume).
+std::map<string, std::optional<SumtFold>> sumt_imported_folds_;
+
+const std::optional<SumtFold>* sumt_imported_fold(const string& name) {
+  auto published = p_.sumt_imported.find(name);
+  if (published == p_.sumt_imported.end()) return nullptr;
+  auto cached = sumt_imported_folds_.find(name);
+  if (cached == sumt_imported_folds_.end())
+    cached = sumt_imported_folds_.emplace(name, sumt_fold_from_sidecar(published->second)).first;
+  return &cached->second;
+}
+
+struct SumtConsumeGuard {
+  Checker* checker = nullptr;
+  string function;
+  vector<string> sigma;
+  string status;
+  SumtVerdict predicted{"unknown", "", ""};
+  int uncaught = 0;
+  SumtConsumeGuard(Checker* owner, const Function& callee, const vector<string>& types) {
+    if (!std::getenv("MOSS_SUMT_CONSUME") || !owner->compiled_interface_file(callee.source_file))
+      return;
+    const auto* fold = owner->sumt_imported_fold(callee.name);
+    if (!fold) return;
+    checker = owner;
+    function = callee.name;
+    for (const auto& type : types) sigma.push_back(canonical_type_name(type));
+    uncaught = std::uncaught_exceptions();
+    if (!*fold) { status = "unreadable"; return; }
+    status = (*fold)->status;
+    try {
+      predicted = owner->sumt_instantiate(callee, **fold, sigma);
+    } catch (const std::exception& error) {
+      predicted = {"unknown", "", string("summary evaluation failed: ") + error.what()};
+    }
+  }
+  SumtConsumeGuard(const SumtConsumeGuard&) = delete;
+  SumtConsumeGuard& operator=(const SumtConsumeGuard&) = delete;
+  ~SumtConsumeGuard() {
+    if (!checker || std::uncaught_exceptions() <= uncaught) return;
+    try { checker->sumt_consume_write_reject(*this); } catch (...) {}
+  }
+};
+
+void sumt_consume_write_reject(const SumtConsumeGuard& guard) const {
+  std::ofstream file(std::getenv("MOSS_SUMT_CONSUME"), std::ios::app);
+  std::ostream& out = string(std::getenv("MOSS_SUMT_CONSUME")) == "-" || !file
+      ? std::cerr : static_cast<std::ostream&>(file);
+  out << "{\"phase\":\"consume\",\"function\":";
+  sumt_json_string(out, guard.function);
+  out << ",\"sigma\":[";
+  for (size_t index = 0; index < guard.sigma.size(); ++index) {
+    if (index) out << ",";
+    sumt_json_string(out, guard.sigma[index]);
+  }
+  out << "],\"summary_status\":";
+  sumt_json_string(out, guard.status);
+  out << ",\"checked\":\"reject\",\"predicted\":";
+  sumt_json_string(out, guard.predicted.verdict);
+  out << ",\"predicted_reason\":";
+  sumt_json_string(out, guard.predicted.reason);
+  out << ",\"agree\":" << (guard.predicted.verdict == "reject" ? "true" : "false") << "}\n";
+}
+
 void sumt_consume() {
   const char* target = std::getenv("MOSS_SUMT_CONSUME");
   if (!target || p_.sumt_imported.empty()) return;
@@ -2483,7 +2550,7 @@ void sumt_consume() {
       };
       *out << ",\"summary_status\":";
       sumt_json_string(*out, fold->status);
-      *out << ",\"predicted\":";
+      *out << ",\"checked\":\"accept\",\"predicted\":";
       sumt_json_string(*out, predicted.verdict);
       *out << ",\"predicted_reason\":";
       sumt_json_string(*out, predicted.reason);
