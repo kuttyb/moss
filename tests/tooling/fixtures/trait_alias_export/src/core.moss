@@ -1,0 +1,14 @@
+# An exported function passes a trait-typed parameter through a local alias.
+# It crashed the provider build ("unresolved state layout") while recording
+# the function's parameter leaf effects.
+module core
+
+export trait Measured:
+  fn measure() -> Int
+
+fn inner(item: Measured) -> Int:
+  return item.measure()
+
+export fn outer(item: Measured) -> Int:
+  selected = item
+  return inner(selected)

@@ -16936,8 +16936,15 @@ class Checker {
   void checked_state_leaves(const string& path, const string& type,
                             StateLeafSet& leaves, std::set<string> active = {}) const {
     string concrete = canonical_type_name(type);
-    synchronization_require(!concrete.empty() && !contains_internal_placeholder(concrete) &&
-                            !traits_.count(concrete), "unresolved state layout");
+    synchronization_require(!concrete.empty() && !contains_internal_placeholder(concrete),
+                            "unresolved state layout");
+    if (traits_.count(concrete)) {
+      // A trait-typed value has no layout here: the implementor supplies it.
+      // Like a collection, it is one aggregate leaf at its own path, so an
+      // access to the value covers every leaf of whatever is passed.
+      leaves.insert(path);
+      return;
+    }
     auto object = objects_.find(concrete);
     if (object == objects_.end()) {
       // Collections, optional values, and runtime indices retain the checked
