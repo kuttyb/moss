@@ -17,3 +17,6 @@ export fn transform(xs, f):
 
 export fn count_matching(items: Vector[Int], pred) -> Int:
   return items |> filter(pred) |> count
+
+export fn bump_first(v):
+  return v[0].bump()

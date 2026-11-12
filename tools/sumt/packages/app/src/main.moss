@@ -8,6 +8,11 @@ type Counter:
     n = n + 1
     return n
 
+type Box:
+  v: Int
+  fn measure() -> Int:
+    return v
+
 type Sq:
   side: Int
   fn bump():
@@ -31,3 +36,4 @@ fn main():
   echo core.transform([1, 2, 3], double)
   echo core.transform(["a"], shout)
   echo core.count_matching([1, 2, 3, 4], is_even)
+  echo core.bump_first([Counter(n = 5)])

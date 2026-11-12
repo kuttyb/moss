@@ -878,6 +878,7 @@ class Checker {
           specialization.parameter_effects.clear();
       for (auto& function : p_.functions)
         for (auto& specialization : function.specializations) {
+          if (sumt_trusted_keys_.count(specialization.stable_type_key)) continue;
           specialization.parameter_effects = concrete_function_effects(
               function, specialization.parameter_types, &specialization.parameter_mutations);
         }
@@ -1876,6 +1877,7 @@ class Checker {
     sumt_shadow_emit();
     sumt_validate();
     sumt_consume();
+    sumt_report_trust();
     retain_checked_body_ir();
     // The staged ABI cannot publish a multi-statement generic/private-helper
     // chain through the legacy generic_stmt fallback. Until every reachable
@@ -25190,7 +25192,7 @@ class Checker {
            !existing->return_type_ref->structurally_equal(**closed_result_type)))
         err(line, "static specialization has inconsistent result types for one key",
             "SOURCE_FREE_SPECIALIZATION_MISMATCH");
-      if (final_parameter_effects_ready_) {
+      if (final_parameter_effects_ready_ && !sumt_trusted_keys_.count(stable_key)) {
         vector<bool> fresh_mutations;
         auto fresh_effects = concrete_function_effects(
             function, canonical_types, &fresh_mutations, true);
@@ -25204,7 +25206,13 @@ class Checker {
       record_dependency();
       return;
     }
-    auto result = specialized_function_return_type(function, canonical_types);
+    // Trusted summary (MOSS_SUMT_TRUST, `moss check` only): a complete
+    // published summary that accepts these types supplies the result and
+    // the parameter effects, and the provider's body is not walked. Any
+    // other outcome takes the body path below unchanged.
+    const auto sumt_trusted = sumt_trusted_specialization(function, canonical_types);
+    auto result = sumt_trusted ? std::optional<string>(sumt_trusted->result)
+                               : specialized_function_return_type(function, canonical_types);
     if (closed_result_type) {
       if (!*closed_result_type || !(*closed_result_type)->is_closed())
         err(line, "static specialization has an unresolved result type",
@@ -25247,10 +25255,23 @@ class Checker {
       specialization.return_type_ref = *closed_result_type;
     specialization.stable_type_key = stable_key;
     specialization.member_requirements = std::move(member_requirements);
-    specialization.parameter_effects = concrete_function_effects(
-        function, canonical_types, &specialization.parameter_mutations);
+    if (sumt_trusted) {
+      for (const auto& access : sumt_trusted->access) {
+        const Effect effect = access == "consume" ? Effect::Consume :
+            access == "write" ? Effect::Write : Effect::Read;
+        specialization.parameter_effects.push_back(effect);
+        specialization.parameter_mutations.push_back(effect == Effect::Write);
+      }
+    } else {
+      specialization.parameter_effects = concrete_function_effects(
+          function, canonical_types, &specialization.parameter_mutations);
+    }
     function.specializations.push_back(specialization);
     record_dependency();
+    if (sumt_trusted) {
+      sumt_trusted_keys_.insert(stable_key);
+      return;
+    }
 
     TypeEnv specialized_env;
     ScopedOpTimer miss_timer("spec_cache_miss_body_check", stable_key);

@@ -922,6 +922,10 @@ struct Program {
   // summaries, read from the `.sumt` beside each imported `.mossi`. Keyed by
   // function name; each value is one sidecar line.
   std::map<string, string> sumt_imported;
+  // Set only for a semantics-only check (`moss check`, which emits no Rust).
+  // With MOSS_SUMT_TRUST=1 such a check may take an imported generic's
+  // specialization from its published summary instead of its body.
+  bool sumt_check_only = false;
   // Providers loaded from a compiled .mossi/.rlib pair.  Their declarations
   // participate in Moss name/type checking, but are never regenerated into
   // this build's Rust crates.

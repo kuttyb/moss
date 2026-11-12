@@ -18701,6 +18701,10 @@ static std::set<string> legacy_standard_error_aliases(const Program& program) {
   return aliases;
 }
 
+// True while check_project_semantics runs: the check stops at semantics and
+// no Rust is generated from it.
+static thread_local bool semantics_only_project_check = false;
+
 static CheckedProjectUnit check_project_sources(
     const ProjectManifest& manifest,
     const vector<std::filesystem::path>& sources,
@@ -18930,8 +18934,11 @@ static CheckedProjectUnit check_project_sources(
                             fast_debug_scope->test_filter,
                             fast_debug_scope->all_package_tests);
     prepare_and_validate_module_exports(program, false);
-    // SUMT consumer (shadow): read each provider's published summaries.
-    if (std::getenv("MOSS_SUMT_CONSUME"))
+    program.sumt_check_only = semantics_only_project_check && !fast_debug_scope &&
+        !load_execution_bodies;
+    // SUMT consumer: read each provider's published summaries.
+    if (std::getenv("MOSS_SUMT_CONSUME") ||
+        (program.sumt_check_only && std::getenv("MOSS_SUMT_TRUST")))
       for (const auto& [module, interface_file] : external_module_interfaces) {
         auto sidecar = interface_file;
         sidecar.replace_extension(".sumt");
@@ -19040,9 +19047,16 @@ static CompiledProjectUnit check_project_semantics(
     ProgramGenerationMode mode,
     const std::map<std::filesystem::path, string>* source_overrides = nullptr,
     const std::filesystem::path* file_check_root = nullptr) {
-  CheckedProjectUnit checked = check_project_sources(
-      manifest, sources, mode, {}, nullptr, source_overrides, false,
-      file_check_root);
+  struct SemanticsOnlyScope {
+    SemanticsOnlyScope() { semantics_only_project_check = true; }
+    ~SemanticsOnlyScope() { semantics_only_project_check = false; }
+  };
+  CheckedProjectUnit checked = [&] {
+    SemanticsOnlyScope semantics_only;
+    return check_project_sources(
+        manifest, sources, mode, {}, nullptr, source_overrides, false,
+        file_check_root);
+  }();
   try {
     optimize_program(checked.program, optimized);
     OptimizationPlan plan = OptimizationPlan{optimized};

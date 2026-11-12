@@ -2507,6 +2507,55 @@ void sumt_consume_write_reject(const SumtConsumeGuard& guard) const {
   out << ",\"agree\":" << (guard.predicted.verdict == "reject" ? "true" : "false") << "}\n";
 }
 
+// Trusting a published summary (MOSS_SUMT_TRUST=1, `moss check` only). The
+// fallback is the old path: an imported generic whose summary is absent,
+// unreadable or incomplete, or whose summary does not accept these types
+// with a closed result and one access per parameter, is specialized from its
+// body exactly as before; so every rejection's diagnostic comes from the body.
+std::set<string> sumt_trusted_keys_;
+size_t sumt_trusted_count_ = 0, sumt_trust_fallbacks_ = 0;
+std::map<string, size_t> sumt_trust_fallback_reasons_;
+
+std::optional<SumtVerdict> sumt_trusted_specialization(const Function& function,
+                                                       const vector<string>& types) {
+  if (!p_.sumt_check_only || !std::getenv("MOSS_SUMT_TRUST") ||
+      !compiled_interface_file(function.source_file))
+    return std::nullopt;
+  auto fall_back = [&](const string& reason) -> std::optional<SumtVerdict> {
+    ++sumt_trust_fallbacks_;
+    ++sumt_trust_fallback_reasons_[reason];
+    return std::nullopt;
+  };
+  const auto* fold = sumt_imported_fold(function.name);
+  if (!fold) return fall_back("no published summary");
+  if (!*fold) return fall_back("unreadable summary");
+  if ((*fold)->status != "complete") return fall_back("summary " + (*fold)->status);
+  SumtVerdict verdict{"unknown", "", ""};
+  try {
+    verdict = sumt_instantiate(function, **fold, sumt_consumer_sigma(types));
+  } catch (const std::exception&) {
+    return fall_back("summary evaluation failed");
+  }
+  if (verdict.verdict != "accept") return fall_back("summary predicts " + verdict.verdict);
+  auto result = moss::Type::parse_canonical(verdict.result);
+  if (verdict.result.empty() || contains_internal_placeholder(verdict.result) ||
+      !result || !(*result)->is_closed())
+    return fall_back("summary result not closed");
+  if (verdict.access.size() != function.params.size())
+    return fall_back("summary access incomplete");
+  ++sumt_trusted_count_;
+  return verdict;
+}
+
+void sumt_report_trust() const {
+  if (!p_.sumt_check_only || !std::getenv("MOSS_SUMT_TRUST")) return;
+  std::cerr << "sumt-trust: " << sumt_trusted_count_ << " specialization(s) from summaries, "
+            << sumt_trust_fallbacks_ << " from bodies";
+  for (const auto& [reason, count] : sumt_trust_fallback_reasons_)
+    std::cerr << "; " << reason << ": " << count;
+  std::cerr << "\n";
+}
+
 void sumt_consume() {
   const char* target = std::getenv("MOSS_SUMT_CONSUME");
   if (!target || p_.sumt_imported.empty()) return;
