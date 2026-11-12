@@ -19448,7 +19448,14 @@ static bool module_requires_specialization(const Program& program,
   return std::any_of(program.semantic_call_edges.begin(),
                      program.semantic_call_edges.end(),
                      [&](const SemanticCallEdge& edge) {
-                       return specialization_calling_module(program, edge.source,
+                       // An edge taken inside a caller specialization belongs
+                       // to whichever artifact owns that specialization, not
+                       // to the module that defines the generic caller: the
+                       // caller specialization's dependencies close over it
+                       // below. (Otherwise a provider module would claim
+                       // inner<ConsumerType> and fail to compile.)
+                       return edge.source_specialization_key.empty() &&
+                           specialization_calling_module(program, edge.source,
                                                             root_module) == module &&
                            edge_requires_specialization(edge, function,
                                                         specialization);
@@ -22723,8 +22730,11 @@ static vector<std::filesystem::path> write_module_interfaces(
         out << "    " << static_cast<int>(constraint.kind) << " "
             << constraint.subject << " " << constraint.detail << "\n";
       out << "  specialization_dependencies\n";
+      // The generic body's own edges; an edge taken inside one of its
+      // specializations repeats one of these with a consumer's types.
       for (const auto& edge : program.semantic_call_edges)
-        if (edge.source == "fn:" + function.name)
+        if (edge.source == "fn:" + function.name &&
+            edge.source_specialization_key.empty())
           out << "    " << edge.target << "\n";
       out << "  semantic_ir_body_hash=" << semantic_hash << "\n";
       out << "  generic_ir_version 1\n";

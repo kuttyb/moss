@@ -1,6 +1,7 @@
 # An exported function passes a trait-typed parameter through a local alias.
 # It crashed the provider build ("unresolved state layout") while recording
-# the function's parameter leaf effects.
+# the function's parameter leaf effects; Fast Debug then lost the trait
+# method target of inner<Box> (the call edge from outer<Box> had no key).
 module core
 
 export trait Measured:
