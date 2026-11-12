@@ -6327,9 +6327,24 @@ class Generator {
                   ? "<" + rust_type(checked_map_type) + ">::new()"
                   : expr(receiver_node, d, locals, types);
           string key = expr(key_node, d, locals, types);
+          string fallback = expr(fallback_node, d, locals, types);
+          if (shared_protocol_map_key(map_types->first)) {
+            // Record (key-protocol) keys live in MossMap, which looks up by
+            // the key's own hash/isequal, as the delete path above does.
+            const bool view_key = is_object_view(key_node, d, locals, types);
+            if (view_key) key = "(" + key + ").__moss_value()";
+            const auto key_binding = tree_identifier_name(key_node);
+            const string borrowed = !view_key && key_binding &&
+                borrowed_function_parameters_.count(*key_binding)
+                ? "__moss_key" : "&__moss_key";
+            return "{ let __moss_key = " + key + "; (" + receiver_value +
+                ").get_with(" + shared_map_hash(map_types->first, "__moss_key") +
+                ", " + borrowed + ", |a, b| " +
+                shared_map_equal(map_types->first, "a", "b") +
+                ").cloned().unwrap_or(" + fallback + ") }";
+          }
           if (map_types->first == "string") key = "(" + key + ").as_str()";
           else key = "&( " + key + " )";
-          string fallback = expr(fallback_node, d, locals, types);
           if (!copy_type(map_types->second))
             fallback = "(" + fallback + ").clone()";
           const string get_copy = map_types->second == "int" ||
