@@ -102,6 +102,7 @@ reject_case nontrivial_field_move "IMPLICIT_FIELD_MOVE"
 reject_case branch_join_consume "value 'item' was transferred"
 reject_case generic_constructor_field_consume "value 'x' was transferred"
 reject_case generic_constructor_field_consume_alias "value 'y' was transferred"
+reject_case generic_method_effect_self_conflict "overlapping WRITE and READ"
 reject_source example_recursive_call examples/errors/recursive_call.moss \
   "recursive local call cycle: countdown -> countdown"
 reject_source example_conflicting_access examples/errors/conflicting_access.moss \

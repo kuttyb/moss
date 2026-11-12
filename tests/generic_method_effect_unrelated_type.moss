@@ -1,0 +1,18 @@
+# A generic body must not take a method effect from an unrelated type: only
+# Sq (read-only absorb) is passed, so twice(c) = c.absorb(c) is accepted
+# even though Counter.absorb writes self.
+type Counter:
+  value: Int
+  fn absorb(other: Counter):
+    value = value + other.value
+
+type Sq:
+  side: Int
+  fn absorb(other: Sq):
+    return side + other.side
+
+fn twice(c):
+  return c.absorb(c)
+
+fn main():
+  echo twice(Sq(side = 2))

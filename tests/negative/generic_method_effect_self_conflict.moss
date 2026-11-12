@@ -1,0 +1,14 @@
+# The specialization still checks the concrete method: Counter.absorb writes
+# self while reading the same value as its argument.
+type Counter:
+  value: Int
+  fn absorb(other: Counter):
+    value = value + other.value
+
+fn twice(c):
+  c.absorb(c)
+
+fn main():
+  var k = Counter(value = 1)
+  twice(k)
+  echo k.value
