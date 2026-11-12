@@ -42,54 +42,10 @@ mutable vector<SumtOwnershipEvent> sumt_ownership_events_;
 // keyed by (function, line, which default).
 mutable std::map<std::tuple<string, int, string>, int> sumt_placeholder_defaults_;
 
-// Consumer-independent parameter effects (#5). The checker's effect walk
-// joins an open receiver's method effect over every method of that name the
-// build can see (a closed-world guess: in a package build the consumer's
-// types are absent). The base pass reruns effect inference with those joins
-// deferred; the deferred effect travels as an `effect|...` requirement and
-// is resolved at Inst against the consumer's own method. Shadow only: every
-// effect field the rerun touches is restored.
-bool sumt_open_method_effects_deferred_ = false;
-bool sumt_base_effects_failed_ = false;
-std::map<string, vector<Effect>> sumt_base_effects_;
-
-void sumt_capture_base_effects() {
-  if (!sumt_shadow_enabled_) return;
-  vector<std::pair<vector<Effect>, vector<bool>>> functions;
-  for (const auto& function : p_.functions)
-    functions.emplace_back(function.parameter_effects, function.parameter_mutations);
-  vector<std::pair<vector<Effect>, Effect>> methods;
-  for (const auto& object : p_.objects)
-    for (const auto& method : object.methods)
-      methods.emplace_back(method.parameter_effects, method.receiver_effect);
-  sumt_open_method_effects_deferred_ = true;
-  try {
-    infer_effects();
-    for (const auto& function : p_.functions)
-      if (function.generic || function.static_dispatch)
-        sumt_base_effects_[function.name] = function.parameter_effects;
-  } catch (const std::exception&) {
-    sumt_base_effects_.clear();
-    sumt_base_effects_failed_ = true;
-  }
-  sumt_open_method_effects_deferred_ = false;
-  size_t index = 0;
-  for (auto& function : p_.functions) {
-    function.parameter_effects = functions[index].first;
-    function.parameter_mutations = functions[index].second;
-    ++index;
-  }
-  index = 0;
-  for (auto& object : p_.objects)
-    for (auto& method : object.methods) {
-      method.parameter_effects = methods[index].first;
-      method.receiver_effect = methods[index].second;
-      ++index;
-    }
-  invalidate_concrete_effect_cache();
-  concrete_effect_cache_enabled_ = true;
-}
-
+// Parameter effects (#5): a method on an open receiver is the consumer's;
+// the checker leaves its effect out of the generic body's access (see
+// possible_method_effects), and the fold records it as an `effect|...`
+// requirement that Inst resolves against the consumer's own method.
 static string sumt_effect_name(Effect effect) {
   return effect == Effect::Consume ? "consume" : effect == Effect::Write ? "write" : "read";
 }
@@ -716,6 +672,35 @@ const SumtFold& sumt_fold(const Function& function) {
         bool free = false;
         const string receiver_term = value_of(*receiver, free);
         if (free) { unhandled(occurrence, "member call on a receiver not related to the inputs"); continue; }
+        if (starts_with(occurrence.semantic_target_id, "trait-method:")) {
+          // A trait method's effect is the implementor's (#5). The checker
+          // leaves it out of the generic body's access; it is resolved at
+          // Inst for a parameter passed directly. Through a local alias it
+          // has no attribution yet.
+          auto effect_term = [&](const BodyTypeState::ExpressionOccurrence& child, bool& unrelated) -> string {
+            if (starts_with(child.resolved_binding_id, "parameter:"))
+              return "$" + child.resolved_binding_id.substr(10);
+            return value_of(child, unrelated);
+          };
+          bool unrelated = false;
+          const string receiver_effect_term = effect_term(*receiver, unrelated);
+          if (!starts_with(receiver->resolved_binding_id, "parameter:")) {
+            unhandled(occurrence, "trait method effect on a value not passed as a parameter");
+            continue;
+          }
+          string trait_member = occurrence.operation_id;
+          if (starts_with(trait_member, "method:")) trait_member = trait_member.substr(7);
+          string terms;
+          size_t count = 0;
+          for (;; ++count) {
+            const auto* argument = child_with_role(occurrence.id, "argument:" + std::to_string(count));
+            if (!argument) break;
+            terms += (count ? ";" : "") + effect_term(*argument, unrelated);
+          }
+          if (unrelated) { unhandled(occurrence, "trait method argument not related to the inputs"); continue; }
+          require("effect|" + receiver_effect_term + "." + trait_member + "|" + std::to_string(count) +
+                  (count ? "|" + terms : string()));
+        }
         bool any_open_argument = false;
         for (const auto* child : children[occurrence.id])
           if (child->child_role != "receiver" && open(*child)) any_open_argument = true;
@@ -814,17 +799,28 @@ const SumtFold& sumt_fold(const Function& function) {
         if (callee_fold.computing) { unhandled(occurrence, "recursive generic call"); continue; }
         if (callee_fold.status != "complete")
           unhandled(occurrence, "callee '" + callee->name + "' entry is " + callee_fold.status);
-        vector<string> arguments;
+        vector<string> arguments, effect_arguments;
         bool free = false;
         for (size_t index = 0; ; ++index) {
           const auto* argument = child_with_role(occurrence.id, "argument:" + std::to_string(index));
           if (!argument) break;
           arguments.push_back(value_of(*argument, free));
+          // An effect lands on storage: a parameter passed directly keeps
+          // its identity even when its type term is a trait name (#5).
+          effect_arguments.push_back(starts_with(argument->resolved_binding_id, "parameter:")
+              ? "$" + argument->resolved_binding_id.substr(10) : arguments.back());
         }
         if (free) { unhandled(occurrence, "generic call argument not related to the inputs"); continue; }
+        bool lost_effect = false;
         for (const auto& requirement : callee_fold.requirements) {
           bool substitution_free = false;
-          const string substituted = sumt_substitute(requirement, arguments, substitution_free);
+          const bool effect_requirement = starts_with(requirement, "effect|");
+          const string substituted = sumt_substitute(
+              requirement, effect_requirement ? effect_arguments : arguments, substitution_free);
+          if (effect_requirement) {
+            const string target = substituted.substr(7, substituted.find('|', 7) - 7);
+            if (target.find('$') == string::npos) { lost_effect = true; continue; }
+          }
           const bool fresh_requirement = !requirement_set.count(substituted);
           require(substituted);
           if (fresh_requirement) {
@@ -834,6 +830,8 @@ const SumtFold& sumt_fold(const Function& function) {
                 " <- " + function.name + ":" + std::to_string(occurrence.line);
           }
         }
+        if (lost_effect)
+          unhandled(occurrence, "callee method effect on a value not passed as a parameter");
         if (open_var && callee_fold.status != "missing_fact") {
           bool substitution_free = false;
           const string term = sumt_substitute(callee_fold.result, arguments, substitution_free);
@@ -1108,10 +1106,7 @@ const SumtFold& sumt_fold(const Function& function) {
   // transfers of the parameter binding itself.
   for (size_t index = 0; index < function.params.size(); ++index) {
     string mode = "read";
-    auto base = sumt_base_effects_.find(function.name);
-    if (base != sumt_base_effects_.end() && index < base->second.size()) {
-      mode = sumt_effect_name(base->second[index]);
-    } else if (function.open_summary && index < function.open_summary->parameter_access.size()) {
+    if (function.open_summary && index < function.open_summary->parameter_access.size()) {
       const auto legacy = function.open_summary->parameter_access[index];
       mode = legacy == moss::AccessMode::Consume ? "consume" :
              legacy == moss::AccessMode::Write ? "write" : "read";
@@ -1126,8 +1121,6 @@ const SumtFold& sumt_fold(const Function& function) {
     }
     fold.access.push_back(mode);
   }
-  if (sumt_base_effects_failed_)
-    fold.missing_facts.push_back("consumer-independent parameter effects unavailable");
   return finish();
 }
 
@@ -1876,6 +1869,28 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
         receiver_effect = *fileio_operation_effect(member);
       } else {
         return {"unknown", "", "no effect model for " + concrete + "." + member};
+      }
+      {
+        // The call's own conflicting-access rule, with the consumer's
+        // effects: e.g. c.absorb(c) where absorb writes self.
+        vector<string> expressions;
+        vector<Effect> call_effects;
+        if (auto expression = sumt_term_expression(receiver_term, env, sigma, fresh)) {
+          expressions.push_back(*expression);
+          call_effects.push_back(receiver_effect);
+        }
+        for (size_t position = 0; position < argument_terms.size(); ++position)
+          if (auto expression = sumt_term_expression(argument_terms[position], env, sigma, fresh)) {
+            expressions.push_back(*expression);
+            call_effects.push_back(argument_effects[position]);
+          }
+        try {
+          OwnershipEnv ownership;
+          ownership.types = env;
+          check_conflicting_call_accesses(0, member, expressions, call_effects, ownership);
+        } catch (const CompileError& error) {
+          return {"reject", "", string("conflicting access: ") + error.what()};
+        }
       }
       if (auto index = bare_parameter(receiver_term); index && *index < effects.size())
         effects[*index] = join_effect(effects[*index], receiver_effect);
