@@ -1864,7 +1864,10 @@ SumtVerdict sumt_concrete(const Function& function, const vector<string>& sigma,
                                                 : error.code + ": " + error.what(),
                std::to_string(error.line)};
   } catch (const std::exception& error) {
-    verdict = {"reject", "", error.what()};
+    // Not a language rejection: the compiler failed internally (e.g. an
+    // internal synchronization invariant on a known-bug reproducer). That is
+    // no evidence about the summary either way.
+    verdict = {"crash", "", error.what()};
   }
   sumt_nested_flag() = false;
   program.reset();
@@ -1999,7 +2002,8 @@ void sumt_validate() {
       }
     };
     { vector<string> sigma; product(0, sigma); }
-    size_t runs = 0, agreed = 0, unobserved = 0, oracle_splits = 0, call_site_unavailable = 0;
+    size_t runs = 0, agreed = 0, unobserved = 0, oracle_splits = 0, call_site_unavailable = 0,
+           oracle_crashes = 0;
     for (const auto& sigma : sigmas) {
       sumt_failing_requirement_.clear();
       auto predicted = sumt_instantiate(function, fold, sigma);
@@ -2029,6 +2033,10 @@ void sumt_validate() {
       if (call.verdict != direct.verdict && call.verdict != "unknown" && callables.empty()) ++oracle_splits;
       if (call.verdict == "unknown") ++call_site_unavailable;
       SumtVerdict concrete = direct;
+      if (call.verdict == "crash" || direct.verdict == "crash") {
+        concrete = call.verdict == "crash" ? call : direct;
+        concrete.verdict = "crash";
+      } else
       if (!callables.empty()) concrete = call;  // only the call site can take a function name
       else if (call.verdict == "reject") concrete = call;
       else if (call.verdict == "unknown" && direct.verdict == "accept" &&
@@ -2038,9 +2046,12 @@ void sumt_validate() {
       const bool result_observed = concrete.verdict != "accept" || !concrete.result.empty();
       const bool result_agrees = !verdict_agrees || predicted.verdict != "accept" ||
           !result_observed || predicted.result == concrete.result;
-      ++runs;
-      if (!result_observed) ++unobserved;
-      if (verdict_agrees && result_agrees) ++agreed;
+      if (concrete.verdict == "crash") ++oracle_crashes;
+      else {
+        ++runs;
+        if (!result_observed) ++unobserved;
+        if (verdict_agrees && result_agrees) ++agreed;
+      }
       *out << "{\"phase\":\"validate\",\"function\":";
       sumt_json_string(*out, function.name);
       *out << ",\"status\":";
@@ -2096,6 +2107,7 @@ void sumt_validate() {
          << ",\"result_unobserved\":" << unobserved
          << ",\"oracle_splits\":" << oracle_splits
          << ",\"call_site_unavailable\":" << call_site_unavailable
+         << ",\"oracle_crashes\":" << oracle_crashes
          << ",\"validated\":"
          << (fold.status == "complete" && runs > 0 && agreed == runs ? "true" : "false") << "}\n";
   }

@@ -11,7 +11,10 @@ for path in sys.argv[1:]:
         except json.JSONDecodeError:
             tot["bad_json_lines"] += 1; continue
         ph = r.get("phase")
-        if ph == "validate": runs[r["function"]].append(r); continue
+        if ph == "validate":
+            if r.get("concrete") == "crash":
+                tot["oracle_crash"] += 1; continue  # compiler failed internally: no evidence
+            runs[r["function"]].append(r); continue
         if ph == "validation_summary": summ[r["function"]] = r; continue
         if ph == "validate_skipped": continue
         p = fin.get(r["function"])
