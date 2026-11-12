@@ -2252,12 +2252,17 @@ void sumt_validate() {
       } else if (call.verdict == "crash" || direct.verdict == "crash") {
         concrete = call.verdict == "crash" ? call : direct;
         concrete.verdict = "crash";
-      } else
-      if (callables.empty() && direct.verdict == "accept" && call.verdict == "unknown" &&
-          call.reason.find("probe unavailable") != string::npos) {
-        // The direct entry does not check trait bounds: the checker checks
-        // them at the call site, which cannot be probed in a module program.
-        // Apply that call site's own argument rule here.
+      } else if (!callables.empty()) {
+        concrete = call;  // only the call site can take a function name
+      } else if (call.verdict == "reject") {
+        concrete = call;
+      } else if (call.verdict == "unknown" && direct.verdict == "accept" &&
+                 call.reason.find("probe unavailable") == string::npos) {
+        concrete = call;  // a probe that could not run is not evidence either way
+      } else if (direct.verdict == "accept" && call.verdict == "unknown") {
+        // The probe is unavailable in a module program, and the direct entry
+        // does not check trait bounds: the checker checks them at the call
+        // site. Apply that call site's own argument rule here.
         for (size_t index = 0; index < sigma.size() && index < function.params.size(); ++index) {
           const string actual = canonical_type_name(sigma[index]);
           const auto& param = function.params[index];
@@ -2279,11 +2284,6 @@ void sumt_validate() {
           }
         }
       }
-      if (!callables.empty()) concrete = call;  // only the call site can take a function name
-      else if (call.verdict == "reject") concrete = call;
-      else if (call.verdict == "unknown" && direct.verdict == "accept" &&
-               call.reason.find("probe unavailable") == string::npos)
-        concrete = call;  // a probe that could not run is not evidence either way
       const bool verdict_agrees = predicted.verdict == concrete.verdict;
       const bool result_observed = concrete.verdict != "accept" || !concrete.result.empty();
       // Parameter effects (#5): compared where the oracle's specialization
