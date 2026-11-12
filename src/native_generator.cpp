@@ -5811,18 +5811,67 @@ class Generator {
           if (!checked_owner || !checked_method)
             throw std::runtime_error(
                 "MOSS_INTERNAL_INVARIANT checked sibling method target has no declaration");
+          // `put(take_item())`: when both sibling methods mutate self, Rust
+          // cannot hold `&mut self` for put while take_item borrows it again
+          // (E0499). Evaluate such arguments first, as the statement and
+          // member-call paths already do.
+          vector<string> sibling_temporaries(argument_nodes.size());
+          if (checked_method->receiver_effect != Effect::Read) {
+            for (size_t index = 0; index < argument_nodes.size(); ++index) {
+              const auto& argument = argument_nodes[index];
+              const auto* nested = std::get_if<est::Call>(&argument.arena->at(
+                  est::unparenthesized(*argument.arena, argument.id)));
+              if (!nested || !std::holds_alternative<est::Identifier>(
+                      argument.arena->at(nested->callee))) continue;
+              const auto* nested_facts = checked_expression_facts(argument);
+              const string nested_target =
+                  nested_facts ? nested_facts->resolved_target : string();
+              if (!starts_with(nested_target, "method:")) continue;
+              const auto nested_separator = nested_target.rfind('.');
+              if (nested_separator == string::npos ||
+                  canonical_type_name(nested_target.substr(
+                      7, nested_separator - 7)) != canonical_type_name(owner))
+                continue;
+              const string nested_name = nested_target.substr(nested_separator + 1);
+              const auto nested_method = std::find_if(
+                  checked_owner->methods.begin(), checked_owner->methods.end(),
+                  [&](const Method& method) { return method.name == nested_name; });
+              if (nested_method != checked_owner->methods.end() &&
+                  nested_method->receiver_effect != Effect::Read)
+                sibling_temporaries[index] = next_call_argument_name();
+            }
+          }
+          std::set<string> call_locals = locals;
+          for (const auto& temporary : sibling_temporaries)
+            if (!temporary.empty()) call_locals.insert(temporary);
           std::ostringstream rendered;
           rendered << "self." << rust_identifier(method_name) << "(";
           for (size_t index = 0; index < arguments.size(); ++index) {
             if (index) rendered << ", ";
-            rendered << method_call_argument(*checked_method, index,
-                argument_nodes[index], d, locals, types,
-                functional_pipeline_id);
+            if (sibling_temporaries[index].empty())
+              rendered << method_call_argument(*checked_method, index,
+                  argument_nodes[index], d, locals, types,
+                  functional_pipeline_id);
+            else
+              rendered << method_call_argument(*checked_method, index,
+                  sibling_temporaries[index], d, call_locals, types);
           }
           rendered << ")";
+          string call = rendered.str();
           if (!checked_method->observable_effects.raise_set.empty())
-            return phase21_propagate(rendered.str());
-          return rendered.str();
+            call = phase21_propagate(call);
+          if (std::all_of(sibling_temporaries.begin(), sibling_temporaries.end(),
+                          [](const string& value) { return value.empty(); }))
+            return call;
+          std::ostringstream sequenced;
+          sequenced << "{ ";
+          for (size_t index = 0; index < argument_nodes.size(); ++index)
+            if (!sibling_temporaries[index].empty())
+              sequenced << "let " << sibling_temporaries[index] << " = "
+                        << expr(argument_nodes[index], d, locals, types,
+                                functional_pipeline_id) << "; ";
+          sequenced << call << " }";
+          return sequenced.str();
         }
         (void)callee;
       } else if (const auto* member = std::get_if<est::Member>(
