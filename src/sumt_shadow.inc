@@ -653,6 +653,16 @@ const SumtFold& sumt_fold(const Function& function) {
     }
     context.derived[sumt_var_key(element->var_id)] = source + ".element";
     require("iterable|" + source);
+    // Iterating is a call of the source's own next() when it is an object
+    // (#5): the effect on a parameter iterated directly is deferred to Inst.
+    // A source inside a parameter (field, element, index) has no
+    // attribution yet.
+    if (source.size() > 1 && source[0] == '$' &&
+        source.find_first_not_of("0123456789", 1) == string::npos)
+      require("iterate|" + source);
+    else if (source.find('$') != string::npos)
+      fold.missing_representation.push_back("iteration effect on a value inside a parameter (" +
+          source + ") at line " + std::to_string(relation.line));
   }
 
   // Relate body variables to the inputs, in occurrence order, a few rounds
@@ -814,11 +824,13 @@ const SumtFold& sumt_fold(const Function& function) {
         bool lost_effect = false;
         for (const auto& requirement : callee_fold.requirements) {
           bool substitution_free = false;
-          const bool effect_requirement = starts_with(requirement, "effect|");
+          const bool effect_requirement = starts_with(requirement, "effect|") ||
+              starts_with(requirement, "iterate|");
           const string substituted = sumt_substitute(
               requirement, effect_requirement ? effect_arguments : arguments, substitution_free);
           if (effect_requirement) {
-            const string target = substituted.substr(7, substituted.find('|', 7) - 7);
+            const size_t start = substituted.find('|') + 1;
+            const string target = substituted.substr(start, substituted.find('|', start) - start);
             if (target.find('$') == string::npos) { lost_effect = true; continue; }
           }
           const bool fresh_requirement = !requirement_set.count(substituted);
@@ -1831,6 +1843,12 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
         if (!sumt_checks(call, env, why))
           return {"reject", "", *receiver + " member '" + member + "' rejected: " + why};
       }
+    } else if (parts[0] == "iterate" && parts.size() >= 2) {
+      auto source = sumt_type_of(parts[1], env, sigma, fresh);
+      if (!source) return {"unknown", "", "iteration source not expressible: " + requirement};
+      if (auto index = bare_parameter(parts[1]); index && *index < effects.size())
+        effects[*index] = join_effect(effects[*index],
+                                      iteration_source_effect(canonical_type_name(*source)));
     } else if (parts[0] == "effect" && parts.size() >= 3) {
       // The consumer's method, resolved at sigma: its receiver and argument
       // effects apply to the parameters passed directly.
@@ -1865,6 +1883,8 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
                  builtin && builtin->argument_effects.size() == argument_terms.size()) {
         receiver_effect = builtin->receiver_effect;
         argument_effects = builtin->argument_effects;
+      } else if (read_only_range_member(concrete, member, argument_terms.size())) {
+        // receiver and arguments read (the defaults above)
       } else if (concrete == "FileIO" && fileio_operation_effect(member)) {
         receiver_effect = *fileio_operation_effect(member);
       } else {
@@ -1892,11 +1912,19 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
           return {"reject", "", string("conflicting access: ") + error.what()};
         }
       }
+      // A consume moves only a non-copy value (primitives copy on
+      // assignment): at a copy type the checker's concrete walk reads it.
+      auto moved = [&](Effect effect, const string& type) {
+        return effect == Effect::Consume &&
+            ownership_transfer_decision(canonical_type_name(type)) == TransferDecision::NoTransfer
+            ? Effect::Read : effect;
+      };
       if (auto index = bare_parameter(receiver_term); index && *index < effects.size())
-        effects[*index] = join_effect(effects[*index], receiver_effect);
+        effects[*index] = join_effect(effects[*index], moved(receiver_effect, *receiver));
       for (size_t position = 0; position < argument_terms.size(); ++position)
         if (auto index = bare_parameter(argument_terms[position]); index && *index < effects.size())
-          effects[*index] = join_effect(effects[*index], argument_effects[position]);
+          effects[*index] = join_effect(effects[*index],
+                                        moved(argument_effects[position], argument_types[position]));
     } else if (parts[0] == "op" && parts.size() >= 4) {
       auto left = sumt_term_expression(parts[2], env, sigma, fresh);
       auto right = sumt_term_expression(parts[3], env, sigma, fresh);
@@ -2225,6 +2253,32 @@ void sumt_validate() {
         concrete = call.verdict == "crash" ? call : direct;
         concrete.verdict = "crash";
       } else
+      if (callables.empty() && direct.verdict == "accept" && call.verdict == "unknown" &&
+          call.reason.find("probe unavailable") != string::npos) {
+        // The direct entry does not check trait bounds: the checker checks
+        // them at the call site, which cannot be probed in a module program.
+        // Apply that call site's own argument rule here.
+        for (size_t index = 0; index < sigma.size() && index < function.params.size(); ++index) {
+          const string actual = canonical_type_name(sigma[index]);
+          const auto& param = function.params[index];
+          string why;
+          if (!concrete_specialization_type(actual) && traits_.count(param.type)) {
+            // A candidate type this module program does not hold as closed
+            // (loaded from an import but never named here): no real call
+            // site in this program can pass it, so there is no oracle.
+            concrete = {"crash", "", "no oracle: argument type '" + actual +
+                        "' is not closed in this module program"};
+            break;
+          }
+          if (concrete_specialization_type(actual) && !traits_.count(actual) &&
+              traits_.count(param.type) && !trait_conforms(actual, param.type, &why)) {
+            concrete = {"reject", "", "call-site rule: argument " + std::to_string(index + 1) +
+                        " has type '" + actual + "' which does not satisfy trait '" +
+                        param.type + "': " + why};
+            break;
+          }
+        }
+      }
       if (!callables.empty()) concrete = call;  // only the call site can take a function name
       else if (call.verdict == "reject") concrete = call;
       else if (call.verdict == "unknown" && direct.verdict == "accept" &&

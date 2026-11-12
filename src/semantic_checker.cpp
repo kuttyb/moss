@@ -11533,7 +11533,16 @@ class Checker {
   // The call-site rule for an argument bound to a parameter the callee
   // indexes ("[]" constraint). One definition, used by the call check and by
   // SUMT's instantiation.
-  static bool indexable_argument_shape(const moss::TypeRef& shape) {
+  // Range members that only read their receiver and arguments (the effect
+// walk's rule; SUMT's Inst resolves a deferred member effect with it too).
+static bool read_only_range_member(const string& receiver, const string& method,
+                                   size_t arity) {
+  return ((receiver == "Range" || receiver == "RangeBatch") && method == "length" &&
+          arity == 0) ||
+      (receiver == "Range" && method == "slice" && arity == 2);
+}
+
+static bool indexable_argument_shape(const moss::TypeRef& shape) {
     return applied_builtin(shape, {"vector", "map", "queue"});
   }
 
@@ -19102,11 +19111,7 @@ class Checker {
       auto receiver_type = inferred_expr_type(receiver, env);
       if (receiver_type) {
         const string concrete_receiver = canonical_type_name(*receiver_type);
-        if (((concrete_receiver == "Range" ||
-              concrete_receiver == "RangeBatch") &&
-             method == "length" && arguments.empty()) ||
-            (concrete_receiver == "Range" && method == "slice" &&
-             arguments.size() == 2)) {
+        if (read_only_range_member(concrete_receiver, method, arguments.size())) {
           analyze_effect_expression(receiver, env, params, parameter_effects,
                                     receiver_effect, receiver_fields, Effect::Read);
           for (const auto& argument : arguments)
@@ -19375,6 +19380,16 @@ class Checker {
         if (expression_uses(value, root.first)) observe_leaf_access({root.first, {}}, Effect::Read);
   }
 
+  // The effect a for-loop has on its source: an object iterates through its
+  // own next(), so the loop has that method's receiver effect; anything
+  // else is read. (SUMT's Inst resolves a deferred `iterate` with it too.)
+  Effect iteration_source_effect(const string& concrete) const {
+    if (objects_.count(concrete))
+      if (const Method* next = resolve_method(concrete, "next", {}, true, nullptr))
+        return next->receiver_effect;
+    return Effect::Read;
+  }
+
   void analyze_effect_block(const vector<Stmt>& statements, size_t& index, int level,
                             TypeEnv& env,
                             const vector<Param>& params,
@@ -19476,11 +19491,7 @@ class Checker {
         Effect iteration_effect = Effect::Read;
         if (statement.kind == Stmt::Kind::For) {
           auto source_type = inferred_expr_type(statement.b, env);
-          if (source_type && objects_.count(canonical_type_name(*source_type))) {
-            if (const Method* next = resolve_method(
-                    canonical_type_name(*source_type), "next", {}, true, nullptr))
-              iteration_effect = next->receiver_effect;
-          }
+          if (source_type) iteration_effect = iteration_source_effect(canonical_type_name(*source_type));
         }
         analyze_effect_expression(statement.kind == Stmt::Kind::For
                                       ? statement.b : statement.a,

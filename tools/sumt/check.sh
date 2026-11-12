@@ -45,9 +45,9 @@ echo "  $checked files, $differ differ"
 verdict "$([ "$differ" = 0 ] && echo 0 || echo 1)" "shadow neutrality"
 
 step "3/3 validation against the checker"
-total=$(wc -l < "$OUT/files.txt")
-( while sleep 30; do echo "  ... $(ls "$OUT/val" | wc -l) result files so far ($total inputs)"; done ) & progress=$!
-xargs -P "$JOBS" -n 1 tools/sumt/validate_one.sh "$MOSS" "$OUT" < "$OUT/files.txt"
+total=$(wc -l < "$OUT/files.txt"); : > "$OUT/done.txt"
+( while sleep 30; do echo "  ... $(wc -l < "$OUT/done.txt") of $total files validated"; done ) & progress=$!
+xargs -P "$JOBS" -n 1 sh -c 'tools/sumt/validate_one.sh "$1" "$2" "$3"; echo "$3" >> "$2/done.txt"' _ "$MOSS" "$OUT" < "$OUT/files.txt"
 kill "$progress" 2>/dev/null; wait "$progress" 2>/dev/null
 python3 tools/sumt/summarize.py "$OUT"/val/*.jsonl > "$OUT/summary.txt" 2>&1
 python3 - "$OUT/summary.txt" tools/sumt/known_disagreements.txt <<'PY'
