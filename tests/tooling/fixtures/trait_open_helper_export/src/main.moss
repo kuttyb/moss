@@ -1,0 +1,11 @@
+module app
+
+import core
+
+type Box:
+  v: Int
+  fn measure() -> Int:
+    return v * 2
+
+fn main():
+  echo core.outer(Box(v = 9))

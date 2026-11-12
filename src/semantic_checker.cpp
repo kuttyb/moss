@@ -26373,6 +26373,41 @@ class Checker {
                                      open_result ? std::optional<moss::TypeRef>(
                                                        open_result->result)
                                                  : std::nullopt);
+      // The checked call edge from this context records which callee
+      // specialization it selected (keyed by the caller's specialization).
+      auto attach_specialization_edge = [&](const string& exact_key) {
+        const string caller_key = checking_specialization_
+            ? checking_specialization_->stable_type_key : string();
+        std::optional<SemanticCallEdge> source_edge;
+        bool attached = false;
+        for (auto& edge : p_.semantic_call_edges) {
+          if (edge.source != current_semantic_context_ ||
+              edge.line != line ||
+              (nested_occurrences &&
+               edge.occurrence != nested_occurrences->first) ||
+              (edge.target != function->second->name &&
+               edge.target != "fn:" + function->second->name) ||
+              (!returned_result && current_check_statement_ &&
+               !edge.source_file.empty() &&
+               edge.source_file != current_check_statement_->source_file))
+            continue;
+          if (edge.source_specialization_key.empty() && !source_edge)
+            source_edge = edge;
+          if (edge.source_specialization_key != caller_key) continue;
+          if (!edge.specialization_key.empty() &&
+              edge.specialization_key != exact_key)
+            err(line, "one checked call context acquired two specialization identities",
+                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
+          edge.specialization_key = exact_key;
+          attached = true;
+        }
+        if (!attached && !caller_key.empty() && source_edge) {
+          SemanticCallEdge concrete_edge = *source_edge;
+          concrete_edge.source_specialization_key = caller_key;
+          concrete_edge.specialization_key = exact_key;
+          p_.semantic_call_edges.push_back(std::move(concrete_edge));
+        }
+      };
       if (open_result && function->second->static_dispatch) {
         auto key = specialization_key_inputs(
             function->second->semantic_callable_id,
@@ -26422,36 +26457,29 @@ class Checker {
             }
           }
         }
-        const string caller_key = checking_specialization_
-            ? checking_specialization_->stable_type_key : string();
-        std::optional<SemanticCallEdge> source_edge;
-        bool attached = false;
-        for (auto& edge : p_.semantic_call_edges) {
-          if (edge.source != current_semantic_context_ ||
-              edge.line != line ||
-              (nested_occurrences &&
-               edge.occurrence != nested_occurrences->first) ||
-              (edge.target != function->second->name &&
-               edge.target != "fn:" + function->second->name) ||
-              (!returned_result && !edge.source_file.empty() &&
-               edge.source_file != current_check_statement_->source_file))
-            continue;
-          if (edge.source_specialization_key.empty() && !source_edge)
-            source_edge = edge;
-          if (edge.source_specialization_key != caller_key) continue;
-          if (!edge.specialization_key.empty() &&
-              edge.specialization_key != exact_key)
-            err(line, "one checked call context acquired two specialization identities",
-                "SOURCE_FREE_SPECIALIZATION_MISMATCH");
-          edge.specialization_key = exact_key;
-          attached = true;
-        }
-        if (!attached && !caller_key.empty() && source_edge) {
-          SemanticCallEdge concrete_edge = *source_edge;
-          concrete_edge.source_specialization_key = caller_key;
-          concrete_edge.specialization_key = exact_key;
-          p_.semantic_call_edges.push_back(std::move(concrete_edge));
-        }
+        attach_specialization_edge(exact_key);
+      } else if (function->second->static_dispatch && checking_specialization_) {
+        // A closed-result callee checked inside a specialization: the call
+        // edge carries the callee specialization this context selected, as
+        // the open-result path above does. Without it a consumer of checked
+        // edges (Fast Debug) sees only the generic edge, whose argument types
+        // (e.g. a trait bound) match no specialization.
+        auto key = specialization_key_inputs(
+            function->second->semantic_callable_id,
+            semantic_specialization_arguments(line, actual_types),
+            std::nullopt, {});
+        // Several same-line calls to one callee are told apart only by an
+        // occurrence; without one, attach nothing (as before) rather than
+        // give one edge two identities.
+        size_t generic_edges = 0;
+        for (const auto& edge : p_.semantic_call_edges)
+          if (edge.source == current_semantic_context_ && edge.line == line &&
+              edge.source_specialization_key.empty() &&
+              (edge.target == function->second->name ||
+               edge.target == "fn:" + function->second->name))
+            ++generic_edges;
+        if (key && key->stable_key() && (nested_occurrences || generic_edges == 1))
+          attach_specialization_edge(*key->stable_key());
       }
     }
   }

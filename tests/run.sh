@@ -1436,6 +1436,17 @@ python3 tests/tooling/check_enum_source_free.py ||
 trait_alias_native=$(cd tests/tooling/fixtures/trait_alias_export && ../../../../margo run)
 [ "$trait_alias_native" = "18" ] ||
   fail "exported trait parameter through a local alias (native)"
+trait_alias_debug=$(cd tests/tooling/fixtures/trait_alias_export && ../../../../margo debug)
+[ "$trait_alias_debug" = "18" ] ||
+  fail "exported trait parameter through a local alias (Fast Debug)"
+trait_open_native=$(cd tests/tooling/fixtures/trait_open_helper_export && ../../../../margo run)
+[ "$trait_open_native" = "18" ] ||
+  fail "trait export calling an untyped helper with a consumer type (native)"
+trait_open_debug=$(cd tests/tooling/fixtures/trait_open_helper_export && ../../../../margo debug)
+[ "$trait_open_debug" = "18" ] ||
+  fail "trait export calling an untyped helper with a consumer type (Fast Debug)"
+[ "$("$compiler" run --interp tests/trait_bounded_helper_chain.moss)" = "18" ] ||
+  fail "trait-bounded helper chain (Fast Debug)"
 # EXPRESS-005 review registry: every repaired F case and decided D case is
 # an ordinary permanent regression across checking, native, and Fast Debug.
 PYTHONDONTWRITEBYTECODE=1 python3 tests/tooling/check_phase15_15_express005_followups.py "$compiler" --expect-fixed ||

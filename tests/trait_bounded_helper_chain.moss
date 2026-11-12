@@ -1,0 +1,18 @@
+# Fast Debug: a trait-bounded function calls a trait-bounded helper that
+# dispatches a trait method (the helper specialization must be selected).
+trait Measured:
+  fn measure() -> Int
+
+type Box:
+  v: Int
+  fn measure() -> Int:
+    return v * 2
+
+fn inner(item: Measured) -> Int:
+  return item.measure()
+
+fn outer(item: Measured) -> Int:
+  return inner(item)
+
+fn main():
+  echo outer(Box(v = 9))

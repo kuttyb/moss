@@ -1,0 +1,13 @@
+# A trait-bounded export calls an untyped private helper with a consumer type.
+# The provider module claimed inner<app__Box> and its crate failed to compile
+# (E0425 cannot find type app__Box); it belongs to the consumer's artifact.
+module core
+
+export trait Measured:
+  fn measure() -> Int
+
+fn inner(item):
+  return item.measure()
+
+export fn outer(item: Measured) -> Int:
+  return inner(item)
