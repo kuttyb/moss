@@ -466,10 +466,21 @@ const SumtFold& sumt_fold(const Function& function) {
   // Occurrence values given by a checker record rather than a checked type
   // (a deferred pipeline stage: the stage expression itself).
   std::map<uint32_t, string> recorded_values;
+  // Parameters whose checked structure came only from indexing them: the
+  // generic check's index rule defaults an open container to vector[elem]
+  // and an open key to int, which the concrete check does not (maps index
+  // too). Such a parameter stays bare ($i); the index itself is checked and
+  // typed by the checker at Inst.
+  std::set<uint32_t> bare_parameters;
+  std::set<uint32_t> explained_indexes;
   std::function<string(const BodyTypeState::ExpressionOccurrence&, bool&)> value_of =
       [&](const BodyTypeState::ExpressionOccurrence& occurrence, bool& free) -> string {
     auto recorded = recorded_values.find(occurrence.id);
     if (recorded != recorded_values.end()) return recorded->second;
+    if (occurrence.kind == Kind::Identifier && starts_with(occurrence.resolved_binding_id, "parameter:")) {
+      const auto ordinal = static_cast<uint32_t>(std::stoul(occurrence.resolved_binding_id.substr(10)));
+      if (bare_parameters.count(ordinal)) return "$" + std::to_string(ordinal);
+    }
     if (occurrence.checked_type) {
       bool local_free = false;
       const string term = term_of(occurrence, local_free);
@@ -569,6 +580,48 @@ const SumtFold& sumt_fold(const Function& function) {
     recorded_values[relation.occurrence] = pipeline;
     callback_lines.insert(relation.line);
     covered_pipelines.insert(relation.occurrence);
+  }
+
+  {
+    auto open_parameter = [&](const BodyTypeState::ExpressionOccurrence* occurrence) -> int {
+      if (!occurrence || !starts_with(occurrence->resolved_binding_id, "parameter:")) return -1;
+      const auto ordinal = std::stoul(occurrence->resolved_binding_id.substr(10));
+      if (ordinal >= function.params.size() || !function.params[ordinal].type.empty()) return -1;
+      return static_cast<int>(ordinal);
+    };
+    for (const auto& occurrence : state.expression_occurrences) {
+      if (occurrence.kind != Kind::Index || !occurrence.checked_type) continue;
+      const int container = open_parameter(child_with_role(occurrence.id, "container"));
+      if (container < 0) continue;
+      auto element = resolve_relation(occurrence.checked_type);
+      if (!element || element->kind != moss::TypeKind::InferenceVar) continue;
+      bare_parameters.insert(static_cast<uint32_t>(container));
+      const auto* key = child_with_role(occurrence.id, "index");
+      const int key_parameter = open_parameter(key);
+      if (key_parameter >= 0) bare_parameters.insert(static_cast<uint32_t>(key_parameter));
+      explained_indexes.insert(occurrence.id);
+    }
+    for (const auto& occurrence : state.expression_occurrences) {
+      if (!explained_indexes.count(occurrence.id)) continue;
+      const auto* key = child_with_role(occurrence.id, "index");
+      bool free = false;
+      const string key_term = key ? value_of(*key, free) : string();
+      const string container_term = "$" + child_with_role(occurrence.id, "container")->resolved_binding_id.substr(10);
+      if (free || key_term.empty()) { explained_indexes.erase(occurrence.id); continue; }
+      const string index = "index(" + container_term + "," + key_term + ")";
+      auto element = resolve_relation(occurrence.checked_type);
+      // The element is no longer a position of a structured parameter term:
+      // it is the index result.
+      auto& entries = context.vars.entries;
+      entries.erase(std::remove_if(entries.begin(), entries.end(),
+                                   [&](const auto& entry) { return entry.first == element->var_id; }),
+                    entries.end());
+      context.derived[sumt_var_key(element->var_id)] = index;
+      origin_line = occurrence.line;
+      require("check|" + index);
+    }
+    for (const auto ordinal : bare_parameters)
+      if (ordinal < fold.parameters.size()) fold.parameters[ordinal] = "$" + std::to_string(ordinal);
   }
 
   // Element relations recorded by the checker where it deferred iteration:
@@ -789,6 +842,7 @@ const SumtFold& sumt_fold(const Function& function) {
       unhandled(occurrence, "callable parameter used as a call target or callback");
     switch (occurrence.kind) {
       case Kind::Index: case Kind::Field: {
+        if (explained_indexes.count(occurrence.id)) break;  // checked at Inst
         // The checker resolved an index or field against the subject's
         // structured checked term (vector[$k], a nominal with field terms):
         // the relation is already in the terms Inst matches. A subject that
@@ -1280,6 +1334,22 @@ std::optional<string> sumt_term_expression(const string& term, TypeEnv& env,
                                            int& fresh) const {
   const string value = trim(term);
   if (value.empty() || value[0] == '?') return std::nullopt;
+  if (starts_with(value, "index(") && value.back() == ')') {
+    const string inner = value.substr(6, value.size() - 7);
+    int depth = 0;
+    size_t split = string::npos;
+    for (size_t at = 0; at < inner.size(); ++at) {
+      const char c = inner[at];
+      if (c == '(' || c == '[') ++depth;
+      else if (c == ')' || c == ']') --depth;
+      else if (c == ',' && depth == 0) { split = at; break; }
+    }
+    if (split == string::npos) return std::nullopt;
+    auto container = sumt_term_expression(inner.substr(0, split), env, sigma, fresh);
+    auto key = sumt_term_expression(inner.substr(split + 1), env, sigma, fresh);
+    if (!container || !key) return std::nullopt;
+    return *container + "[" + *key + "]";
+  }
   if (starts_with(value, "pipeline(") && value.back() == ')') {
     const string inner = value.substr(9, value.size() - 10);
     const size_t split = inner.find(';');
@@ -1496,7 +1566,6 @@ static bool sumt_match_term(const string& pattern, const string& concrete,
 
 SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
                              const vector<string>& sigma_in) const {
-  (void)function;
   if (fold.status != "complete") return {"unknown", "", "entry " + fold.status};
   // The generic check's own conclusion about each parameter's type: a bare
   // $i takes sigma[i]; a concrete or structured term must match sigma[i],
@@ -1518,6 +1587,18 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
     if (!sumt_match_term(fold.parameters[index], canonical_type_name(sigma_in[index]), bound))
       return {"reject", "", "parameter " + std::to_string(index) + " must be " +
               fold.parameters[index] + ", found " + canonical_type_name(sigma_in[index])};
+  }
+  // Call-site constraints the checker recorded for the callee's parameters:
+  // an indexed parameter needs an indexable argument (the call check's rule).
+  for (size_t index = 0; index < function.params.size() && index < sigma_in.size(); ++index) {
+    if (!has_constraint(function, function.params[index].name)) continue;
+    for (const auto& op : constraint_details(function, function.params[index].name)) {
+      if (op != "[]") continue;
+      auto shape = moss::Type::parse_canonical(canonical_type_name(sigma_in[index]));
+      if (!shape || !indexable_argument_shape(*shape))
+        return {"reject", "", "argument " + std::to_string(index + 1) + " (" +
+                canonical_type_name(sigma_in[index]) + ") is not an indexable container"};
+    }
   }
   vector<string> sigma = sigma_in;
   for (const auto& [ordinal, value] : bound) {
@@ -1635,7 +1716,7 @@ SumtVerdict sumt_instantiate(const Function& function, const SumtFold& fold,
           return {"reject", "", "operator " + parts[1] + " yields " + canonical_type_name(*type) +
                   ", generic check fixed " + *expected};
       }
-    } else if (parts[0] == "stage" && parts.size() >= 2) {
+    } else if ((parts[0] == "stage" || parts[0] == "check") && parts.size() >= 2) {
       auto expression = sumt_term_expression(parts[1], env, sigma, fresh);
       if (!expression) return {"unknown", "", "stage not expressible: " + requirement};
       string why;

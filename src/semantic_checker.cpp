@@ -11527,6 +11527,13 @@ class Checker {
     return false;
   }
 
+  // The call-site rule for an argument bound to a parameter the callee
+  // indexes ("[]" constraint). One definition, used by the call check and by
+  // SUMT's instantiation.
+  static bool indexable_argument_shape(const moss::TypeRef& shape) {
+    return applied_builtin(shape, {"vector", "map", "queue"});
+  }
+
   TransferDecision ownership_transfer_decision(const string& type) const {
     const string t = canonical_type_name(type);
     if (copy_type_name(t) || domains_.count(t)) return TransferDecision::NoTransfer;
@@ -26065,7 +26072,7 @@ class Checker {
           if ((op == "+" || op == "-" || op == "*" || op == "/" || op == "%") && !numeric &&
               !(op == "+" && primitive_term(actual_result.term, "string")))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' does not support inferred operation '" + op + "'");
-          if (op == "[]" && !applied_builtin(actual_shape, {"vector", "map", "queue"}))
+          if (op == "[]" && !indexable_argument_shape(actual_shape))
             err(line, "argument " + std::to_string(index + 1) + " to function '" + name + "' is not an indexable container");
         }
         for (const auto& c : function->second->constraints) if (c.subject == param.name) {
