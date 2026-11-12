@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 SKILLS = ROOT / ".agents" / "skills"
 LANGUAGE = SKILLS / "moss-language" / "SKILL.md"
 WORKFLOW = SKILLS / "moss-agent-workflow" / "SKILL.md"
-README = ROOT / "README.md"
 AGENT_SKILLS_DOC = ROOT / "docs" / "AGENT_SKILLS.md"
 AGENT_API_DOC = ROOT / "docs" / "AGENT_API.md"
 EXAMPLE = ROOT / "tests" / "tooling" / "fixtures" / "moss_language_skill_example.moss"
@@ -99,7 +98,6 @@ def main() -> int:
 
     language = LANGUAGE.read_text(encoding="utf-8")
     workflow = WORKFLOW.read_text(encoding="utf-8")
-    readme = README.read_text(encoding="utf-8")
     agent_skills_doc = AGENT_SKILLS_DOC.read_text(encoding="utf-8")
     agent_api_doc = AGENT_API_DOC.read_text(encoding="utf-8")
     require_markers(
@@ -208,10 +206,8 @@ def main() -> int:
         if marker not in feedback_policy:
             fail(f"developer-experience feedback policy drifted: {marker}")
 
-    onboarding = readme.split("### Coding-agent onboarding", 1)[1]
-    loop = onboarding.split("```sh", 1)[1].split("```", 1)[0].strip().splitlines()
-    if not loop or loop[0] != "./moss agent bootstrap --json":
-        fail("README coding-agent onboarding no longer starts with ./moss bootstrap")
+    # The README is the landing page; agent onboarding is routed by AGENTS.md
+    # (checked below), AGENT_SKILLS and AGENT_API.
     if "live ./moss agent bootstrap --json" not in agent_skills_doc:
         fail("AGENT_SKILLS discovery hierarchy no longer uses ./moss")
     if "./moss agent bootstrap --json" not in agent_api_doc:
