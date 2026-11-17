@@ -70,9 +70,13 @@ GCC/Clang-compatible `-MMD -MP` flags. Included headers and `.inc` files rebuild
 their actual dependents; unrelated headers do not trigger compiler rebuilds.
 A missing depfile is regenerated along with its object.
 
-`make`, `make moss`, and `make moss-dev` keep the `-O0` development profile and
-update `./moss`. `make moss-opt` and `make moss-release` keep the `-O2` profile.
-Override `CXX`, `CXXFLAGS_BASE`, `CXXFLAGS_DEV`, and `CXXFLAGS_OPT` as needed.
+`make` and `make moss` keep the `-O0` development profile and copy the compiler
+to a standalone `./moss` binary beside `margo`. `make moss-dev` links `./moss`
+to `build/compiler/moss-dev`; `make moss-opt` and `make moss-release` keep the
+`-O2` profile and link `./moss` to the selected optimized executable. Running a
+profile target therefore leaves the top-level `moss` entrypoint pointing at its
+corresponding build artifact. Override `CXX`, `CXXFLAGS_BASE`, `CXXFLAGS_DEV`,
+and `CXXFLAGS_OPT` as needed.
 The object directory includes a checksum of the compiler command and relevant
 flags, so configuration changes select a fresh object tree. A small active-link
 configuration stamp beside each public executable also forces relinking when a

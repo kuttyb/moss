@@ -70,13 +70,15 @@ TEST_JOBS ?= $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 
 
 .PHONY: all moss moss-dev moss-opt moss-release check check-parallel check-shadow check-preflight check-serial check-perf compiler-perf package-perf c1-corpus-gates examples examples-optimized clean help FORCE
 
-# Default target: build fast development compiler (-O0) and update ./moss
-all: moss-dev
+# Default target: build fast development compiler (-O0) as ./moss.
+all: moss
 
-moss: moss-dev
+moss: $(MOSS_DEV)
+	@rm -f moss
+	@cp -f $(MOSS_DEV) moss
 
 moss-dev: $(MOSS_DEV)
-	@cp -f $(MOSS_DEV) moss
+	@ln -sfn $(MOSS_DEV) moss
 
 # These active-link stamps detect toolchain/flag switches even though all
 # configurations intentionally preserve the public executable paths.
@@ -98,8 +100,10 @@ $(MOSS_DEV): $(COMPILER_OBJECTS_DEV) $(COMPILER_ACTIVE_CONFIG_DEV)
 	@mv -f $@.tmp $@
 
 moss-opt: $(MOSS_OPT)
+	@ln -sfn $(MOSS_OPT) moss
 
 moss-release: $(MOSS_RELEASE)
+	@ln -sfn $(MOSS_RELEASE) moss
 
 $(MOSS_RELEASE): $(MOSS_OPT)
 	@cp -f $(MOSS_OPT) $@
@@ -219,9 +223,10 @@ clean:
 
 help:
 	@echo "Available Makefile targets:"
-	@echo "  make              - Build fast development compiler (-O0) and update ./moss (default)"
-	@echo "  make moss-dev     - Build development compiler (-O0) in build/compiler/moss-dev"
-	@echo "  make moss-opt     - Build optimized compiler (-O2) in build/compiler/moss-opt"
+	@echo "  make              - Build fast development compiler (-O0) as ./moss (default)"
+	@echo "  make moss         - Build fast development compiler (-O0) as ./moss"
+	@echo "  make moss-dev     - Build development compiler (-O0) and link ./moss to it"
+	@echo "  make moss-opt     - Build optimized compiler (-O2) and link ./moss to it"
 	@echo "  make moss-release - Alias for moss-opt"
 	@echo "  make check        - Run default-mode gates and parallel suite (TEST_JOBS=N)"
 	@echo "  make check-shadow - Run shadow cross-check gates and parallel suite (TEST_JOBS=N)"

@@ -1,3 +1,17 @@
+# Build entrypoint update (2026-11-16)
+
+- Updated `Makefile` so `make`/`make moss` build a standalone top-level `./moss`
+  binary beside `margo`.
+- `make moss-dev` and `make moss-opt` now replace `./moss` with a relative
+  symlink to `build/compiler/moss-dev` or `build/compiler/moss-opt`; the release
+  target links to its optimized release artifact.
+- Updated `docs/BUILD_SYSTEM.md` and Makefile help text.
+- Validation: live bootstrap reports `moss-0.1`; `git diff --check` passes;
+  standalone/link switching checks pass; `python3
+  tests/tooling/check_make_incremental_dependencies.py` passes.
+- Worktree changes are intentionally uncommitted: `Makefile` and
+  `docs/BUILD_SYSTEM.md`.
+
 # Phase 27 closeout docs handover (2026-11-02)
 
 ## Current checkpoint
